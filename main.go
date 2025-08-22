@@ -121,7 +121,7 @@ func initialModel() (model, error) {
 
 	// Configure the list
 	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
-	l.Title = "Visible Wi-Fi Networks"
+	l.Title = "Wi-Fi Networks"
 	l.SetShowStatusBar(true)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
