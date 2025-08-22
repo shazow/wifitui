@@ -15,7 +15,7 @@ A replacement for `nmtui`.
 - [x] Multiple backends (experimental `iwd` support, untested)
 
 More things I'd like to do:
-- [ ] macOS support maybe for fun? (using 
+- [ ] macOS support maybe for fun?
 - [ ] Non-interactive modes
 - [ ] More stats about the current network
 - [ ] Maybe a better name?
