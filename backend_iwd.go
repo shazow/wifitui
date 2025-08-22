@@ -2,19 +2,18 @@ package main
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/godbus/dbus/v5"
 )
 
 // IWD constants
 const (
-	iwdDest           = "net.connman.iwd"
-	iwdPath           = "/"
-	iwdIface          = "net.connman.iwd"
-	iwdDeviceIface    = "net.connman.iwd.Device"
-	iwdNetworkIface   = "net.connman.iwd.Network"
-	iwdStationIface   = "net.connman.iwd.Station"
+	iwdDest              = "net.connman.iwd"
+	iwdPath              = "/"
+	iwdIface             = "net.connman.iwd"
+	iwdDeviceIface       = "net.connman.iwd.Device"
+	iwdNetworkIface      = "net.connman.iwd.Network"
+	iwdStationIface      = "net.connman.iwd.Station"
 	iwdKnownNetworkIface = "net.connman.iwd.KnownNetwork"
 )
 
@@ -145,22 +144,7 @@ func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		connections = append(connections, conn)
 	}
 
-	// Sort by active, then visible, then by SSID
-	sort.SliceStable(connections, func(i, j int) bool {
-		if connections[i].IsActive != connections[j].IsActive {
-			return connections[i].IsActive
-		}
-		if connections[i].IsVisible != connections[j].IsVisible {
-			return connections[i].IsVisible
-		}
-		// If both are visible, sort by strength. Otherwise, sort by name.
-		if connections[i].IsVisible {
-			if connections[i].Strength != connections[j].Strength {
-				return connections[i].Strength > connections[j].Strength
-			}
-		}
-		return connections[i].SSID < connections[j].SSID
-	})
+	sortConnections(connections)
 
 	return connections, nil
 }
