@@ -11,13 +11,13 @@ A replacement for `nmtui`.
 - [x] Show non-known visible networks
 - [x] Connect to new networks
 - [x] Initiate a scan
+- [x] QR code for sharing a known network
 
 More things I'd like to do:
 - [ ] Refactor to support multiple backends (iwd?)
 - [ ] macOS support maybe for fun?
 - [ ] Non-interactive modes
 - [ ] More stats about the current network
-- [ ] QR code for sharing a known network?
 - [ ] Maybe a better name?
 
 
