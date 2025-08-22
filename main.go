@@ -9,7 +9,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -63,17 +62,10 @@ func (i connectionItem) Title() string {
 }
 func (i connectionItem) FilterValue() string { return i.SSID }
 
-type itemDelegate struct {
-	progress progress.Model
-}
+type itemDelegate struct{}
 
 func newItemDelegate() *itemDelegate {
-	p := progress.New(
-		progress.WithDefaultGradient(),
-		progress.WithWidth(30),
-		progress.WithoutPercentage(),
-	)
-	return &itemDelegate{progress: p}
+	return &itemDelegate{}
 }
 
 func (d *itemDelegate) Height() int {
@@ -90,22 +82,28 @@ func (d *itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
 	return nil
 }
 
+func renderBar(width int, percent int) string {
+	if width < 0 {
+		width = 0
+	}
+	filled := int(float64(width) * (float64(percent) / 100.0))
+	bar := strings.Repeat("=", filled) + strings.Repeat(" ", width-filled)
+	return fmt.Sprintf("[%s]", bar)
+}
+
 func (d *itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	i, ok := listItem.(connectionItem)
 	if !ok {
 		return
 	}
 
-	// Set the progress bar width based on the list width.
-	// This is a bit of a hack, but it's the easiest way to make it responsive.
-	d.progress.Width = m.Width() - 25
-
 	s := &strings.Builder{}
 	s.WriteString(i.Title())
 	s.WriteString("\n ")
 
 	if i.IsVisible {
-		s.WriteString(d.progress.ViewAs(float64(i.Strength)/100.0))
+		barWidth := m.Width() - 25
+		s.WriteString(renderBar(barWidth, int(i.Strength)))
 		s.WriteString(fmt.Sprintf(" %3d%%", i.Strength))
 	} else {
 		s.WriteString(disabledStyle.Render("Not visible"))
