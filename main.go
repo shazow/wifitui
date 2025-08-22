@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,13 +61,58 @@ func (i connectionItem) Title() string {
 
 	return styledSSID
 }
-func (i connectionItem) Description() string {
-	if i.Strength > 0 {
-		return fmt.Sprintf("Strength: %d%%", i.Strength)
-	}
-	return ""
-}
 func (i connectionItem) FilterValue() string { return i.SSID }
+
+type itemDelegate struct {
+	progress progress.Model
+}
+
+func newItemDelegate() *itemDelegate {
+	p := progress.New(
+		progress.WithDefaultGradient(),
+		progress.WithWidth(30),
+		progress.WithoutPercentage(),
+	)
+	return &itemDelegate{progress: p}
+}
+
+func (d *itemDelegate) Height() int {
+	return 2
+}
+
+func (d *itemDelegate) Spacing() int {
+	return 1
+}
+
+func (d *itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
+	// This is where we could handle messages for our delegate.
+	// For now, we don't need to do anything here.
+	return nil
+}
+
+func (d *itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(connectionItem)
+	if !ok {
+		return
+	}
+
+	// Set the progress bar width based on the list width.
+	// This is a bit of a hack, but it's the easiest way to make it responsive.
+	d.progress.Width = m.Width() - 25
+
+	s := &strings.Builder{}
+	s.WriteString(i.Title())
+	s.WriteString("\n ")
+
+	if i.IsVisible {
+		s.WriteString(d.progress.ViewAs(float64(i.Strength)/100.0))
+		s.WriteString(fmt.Sprintf(" %3d%%", i.Strength))
+	} else {
+		s.WriteString(disabledStyle.Render("Not visible"))
+	}
+
+	fmt.Fprint(w, s.String())
+}
 
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
@@ -105,9 +152,10 @@ func initialModel() model {
 	ti.EchoMode = textinput.EchoNormal // Show password visibly
 
 	// Configure the list
-	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	delegate := newItemDelegate()
+	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = "Visible Wi-Fi Networks"
-	l.SetShowStatusBar(true)
+	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),

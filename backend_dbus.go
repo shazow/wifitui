@@ -134,13 +134,19 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		}
 	}
 
-	// Sort by active, then visible, then by SSID
+	// Sort by active, then visible (by strength), then by SSID
 	sort.SliceStable(connections, func(i, j int) bool {
 		if connections[i].IsActive != connections[j].IsActive {
 			return connections[i].IsActive
 		}
 		if connections[i].IsVisible != connections[j].IsVisible {
 			return connections[i].IsVisible
+		}
+		// If both are visible, sort by strength. Otherwise, sort by name.
+		if connections[i].IsVisible {
+			if connections[i].Strength != connections[j].Strength {
+				return connections[i].Strength > connections[j].Strength
+			}
 		}
 		return connections[i].SSID < connections[j].SSID
 	})
