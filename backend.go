@@ -7,6 +7,7 @@ type Connection struct {
 	IsKnown   bool
 	IsSecure  bool
 	IsVisible bool
+	IsHidden  bool
 	Strength  uint8 // 0-100
 }
 

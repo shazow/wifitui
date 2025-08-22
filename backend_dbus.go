@@ -53,10 +53,30 @@ type internalAccessPoint struct {
 }
 
 // NewDBusBackend creates a new DBusBackend.
-func NewDBusBackend() Backend {
+func NewDBusBackend() (Backend, error) {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return nil, err
+	}
+	// We don't defer conn.Close() here because the backend will use it.
+	// Instead, we'll just use this connection to check for service availability.
+	// A better implementation might pool or reuse the connection.
+	obj := conn.Object(nmDest, nmPath)
+	if obj == nil {
+		return nil, fmt.Errorf("failed to get dbus object for %s", nmDest)
+	}
+
+	// This is a simple way to check if the service is available.
+	// A more robust check might involve trying to call a method.
+	var devices []dbus.ObjectPath
+	err = obj.Call(nmIface+".GetDevices", 0).Store(&devices)
+	if err != nil {
+		return nil, fmt.Errorf("networkmanager is not available: %w", err)
+	}
+
 	return &DBusBackend{
 		connectionDetails: make(map[string]dbusDetails),
-	}
+	}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
@@ -104,12 +124,21 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		processedSSIDs[ssid] = true
 		var connInfo Connection
 		if known, ok := knowns[ssid]; ok {
+			isHidden := false
+			if wirelessSettings, ok := known.settings["802-11-wireless"]; ok {
+				if hidden, ok := wirelessSettings["hidden"]; ok {
+					if hiddenValue, ok := hidden.Value().(bool); ok {
+						isHidden = hiddenValue
+					}
+				}
+			}
 			connInfo = Connection{
 				SSID:      ssid,
 				IsActive:  (activeWifiPath != "" && known.path == activeWifiPath),
 				IsKnown:   true,
 				IsSecure:  ap.isSecure,
 				IsVisible: true,
+				IsHidden:  isHidden,
 				Strength:  ap.strength,
 			}
 			b.connectionDetails[ssid] = dbusDetails{path: known.path, apPath: ap.path, settings: known.settings}
@@ -129,7 +158,15 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 	// Add known connections that are not visible
 	for ssid, known := range knowns {
 		if _, processed := processedSSIDs[ssid]; !processed {
-			connections = append(connections, Connection{SSID: ssid, IsKnown: true})
+			isHidden := false
+			if wirelessSettings, ok := known.settings["802-11-wireless"]; ok {
+				if hidden, ok := wirelessSettings["hidden"]; ok {
+					if hiddenValue, ok := hidden.Value().(bool); ok {
+						isHidden = hiddenValue
+					}
+				}
+			}
+			connections = append(connections, Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
 			b.connectionDetails[ssid] = dbusDetails{path: known.path, settings: known.settings}
 		}
 	}
@@ -439,7 +476,15 @@ func (b *DBusBackend) buildListOfKnownConnectionsOnly(conn *dbus.Conn) ([]Connec
 	}
 	var connections []Connection
 	for ssid, known := range knowns {
-		connections = append(connections, Connection{SSID: ssid, IsKnown: true})
+		isHidden := false
+		if wirelessSettings, ok := known.settings["802-11-wireless"]; ok {
+			if hidden, ok := wirelessSettings["hidden"]; ok {
+				if hiddenValue, ok := hidden.Value().(bool); ok {
+					isHidden = hiddenValue
+				}
+			}
+		}
+		connections = append(connections, Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
 		b.connectionDetails[ssid] = dbusDetails{path: known.path, settings: known.settings}
 	}
 	return connections, nil

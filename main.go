@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	qrcode "github.com/skip2/go-qrcode"
 )
 
 // Define some styles for the UI
@@ -90,8 +89,23 @@ type model struct {
 	selectedItem  connectionItem
 }
 
+// NewBackend determines which backend to use.
+// It first tries NetworkManager, then falls back to iwd.
+func NewBackend() (Backend, error) {
+	backend, err := NewDBusBackend()
+	if err == nil {
+		return backend, nil
+	}
+	// If DBus backend failed, try the iwd backend
+	return NewIwdBackend()
+}
+
 // initialModel creates the starting state of our application
-func initialModel() model {
+func initialModel() (model, error) {
+	backend, err := NewBackend()
+	if err != nil {
+		return model{}, fmt.Errorf("failed to initialize backend: %w", err)
+	}
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -136,10 +150,10 @@ func initialModel() model {
 		list:          l,
 		passwordInput: ti,
 		spinner:       s,
-		backend:       NewDBusBackend(),
+		backend:       backend,
 		loading:       true,
 		statusMessage: "Loading connections...",
-	}
+	}, nil
 }
 
 // Init is the first command that is run when the program starts
@@ -347,15 +361,10 @@ func (m model) View() string {
 		// Add QR code if we have a password
 		password := m.passwordInput.Value()
 		if password != "" {
-			authType := "WPA" // Assume WPA for secure networks
-			if !m.selectedItem.IsSecure {
-				authType = "nopass"
-			}
-			qrString := fmt.Sprintf("WIFI:T:%s;S:%s;P:%s;;", authType, m.selectedItem.SSID, password)
-			q, err := qrcode.New(qrString, qrcode.Medium)
+			qrCodeString, err := GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
 			if err == nil {
 				s.WriteString("\n\n")
-				s.WriteString(q.ToSmallString(false))
+				s.WriteString(qrCodeString)
 			}
 		}
 	case stateJoinView:
@@ -450,7 +459,12 @@ func updateSecret(b Backend, c Connection, newPassword string) tea.Cmd {
 
 // main is the entry point of the application
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	m, err := initialModel()
+	if err != nil {
+		fmt.Printf("Error initializing model: %v\n", err)
+		os.Exit(1)
+	}
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Error running program: %v", err)
 		os.Exit(1)
