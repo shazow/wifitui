@@ -12,6 +12,7 @@ Cute wifi TUI that can:
 
 More things I'd like to do:
 - [ ] Refactor to support multiple backends (iwd?)
+- [ ] macOS support maybe for fun?
 - [ ] Non-interactive modes
 - [ ] More stats about the current network
 - [ ] QR code for sharing a known network?
