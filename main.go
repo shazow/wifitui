@@ -130,6 +130,12 @@ func initialModel() model {
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 		}
 	}
+	l.AdditionalFullHelpKeys = func() []key.Binding {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
+			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
+		}
+	}
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
@@ -347,6 +353,16 @@ const (
 )
 
 func scanNetworks() tea.Msg {
+	return buildNetworkList(true)
+}
+
+func refreshNetworks() tea.Msg {
+	return buildNetworkList(false)
+}
+
+// buildNetworkList is the core logic for populating the network list.
+// It can optionally trigger a scan before fetching the list.
+func buildNetworkList(shouldScan bool) tea.Msg {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return errorMsg{err}
@@ -355,61 +371,174 @@ func scanNetworks() tea.Msg {
 
 	wirelessDevice, err := getWirelessDevice(conn)
 	if err != nil {
-		return errorMsg{err}
+		// No wireless device, can't scan or get APs.
+		// Fallback to just listing known connections.
+		return buildListOfKnownConnectionsOnly(conn)
 	}
 
-	obj := conn.Object(nmDest, wirelessDevice)
-	err = obj.Call(nmWirelessIface+".RequestScan", 0, map[string]dbus.Variant{}).Store()
+	if shouldScan {
+		devObj := conn.Object(nmDest, wirelessDevice)
+		err = devObj.Call(nmWirelessIface+".RequestScan", 0, map[string]dbus.Variant{}).Store()
+		if err != nil {
+			return errorMsg{err}
+		}
+		// In a real app, we'd wait for the scan to finish.
+		// For this TUI, the user sees a loading spinner, which is good enough.
+	}
+
+	// 1. Get all saved connections and map them by SSID
+	knownConnections, err := getKnownConnections(conn)
 	if err != nil {
 		return errorMsg{err}
 	}
 
-	// For simplicity, we're not waiting for LastScan to update.
-	// In a real app, you'd listen for PropertiesChanged signal.
+	// 2. Get all visible access points and map them by SSID
+	visibleAPs, err := getVisibleAccessPoints(conn, wirelessDevice)
+	if err != nil {
+		return errorMsg{err}
+	}
 
+	// 3. Build the final list
+	var visibleItems []list.Item
+	var nonVisibleItems []list.Item
+	processedSSIDs := make(map[string]bool)
+	activeWifiPath := getActiveWifiConnectionPath(conn)
+
+	// Process visible APs first
+	for ssid, ap := range visibleAPs {
+		processedSSIDs[ssid] = true
+		var item connectionItem
+		if known, ok := knownConnections[ssid]; ok {
+			item = known
+			item.isActive = (activeWifiPath != "" && item.path == activeWifiPath)
+			item.isSecure = ap.isSecure
+			item.strength = ap.strength
+		} else {
+			item = connectionItem{
+				ssid:     ssid,
+				path:     ap.path,
+				isKnown:  false,
+				isSecure: ap.isSecure,
+				strength: ap.strength,
+			}
+		}
+		item.isVisible = true
+		visibleItems = append(visibleItems, item)
+	}
+
+	// Add known connections that are not visible
+	for ssid, conn := range knownConnections {
+		if _, processed := processedSSIDs[ssid]; !processed {
+			conn.isVisible = false
+			nonVisibleItems = append(nonVisibleItems, conn)
+		}
+	}
+
+	// Sort: active on top, then visible, then non-visible
+	var activeItem list.Item
+	var otherVisibleItems []list.Item
+	for _, item := range visibleItems {
+		if connItem, ok := item.(connectionItem); ok && connItem.isActive {
+			activeItem = item
+		} else {
+			otherVisibleItems = append(otherVisibleItems, item)
+		}
+	}
+
+	finalItems := []list.Item{}
+	if activeItem != nil {
+		finalItems = append(finalItems, activeItem)
+	}
+	finalItems = append(finalItems, otherVisibleItems...)
+	finalItems = append(finalItems, nonVisibleItems...)
+
+	if shouldScan {
+		return scanFinishedMsg(finalItems)
+	}
+	return connectionsLoadedMsg(finalItems)
+}
+
+func getKnownConnections(conn *dbus.Conn) (map[string]connectionItem, error) {
+	knownConnections := make(map[string]connectionItem)
+	settingsObj := conn.Object(nmDest, nmSettingsPath)
+	var connectionPaths []dbus.ObjectPath
+	err := settingsObj.Call(nmSettingsIface+".ListConnections", 0).Store(&connectionPaths)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range connectionPaths {
+		connObj := conn.Object(nmDest, path)
+		settings, err := getSettings(connObj)
+		if err != nil {
+			continue // Or handle error
+		}
+		if connType, ok := settings["connection"]["type"]; ok && connType.Value() == "802-11-wireless" {
+			if ssidBytes, ok := settings["802-11-wireless"]["ssid"].Value().([]byte); ok {
+				ssid := string(ssidBytes)
+				knownConnections[ssid] = connectionItem{
+					ssid:     ssid,
+					path:     path,
+					settings: settings,
+					isKnown:  true,
+				}
+			}
+		}
+	}
+	return knownConnections, nil
+}
+
+func getVisibleAccessPoints(conn *dbus.Conn, wirelessDevice dbus.ObjectPath) (map[string]accessPoint, error) {
+	visibleAPs := make(map[string]accessPoint)
+	devObj := conn.Object(nmDest, wirelessDevice)
 	var apPaths []dbus.ObjectPath
-	err = obj.Call(nmWirelessIface+".GetAllAccessPoints", 0).Store(&apPaths)
+	err := devObj.Call(nmWirelessIface+".GetAllAccessPoints", 0).Store(&apPaths)
 	if err != nil {
-		return errorMsg{err}
+		return nil, err
 	}
-
-	var items []list.Item
 	for _, path := range apPaths {
 		apObj := conn.Object(nmDest, path)
 		ssidVar, err := apObj.GetProperty(nmAccessPointIface + ".Ssid")
-		if err != nil {
+		if err != nil || ssidVar.Value() == nil {
 			continue
 		}
-		ssidBytes := ssidVar.Value().([]byte)
+		ssidBytes, ok := ssidVar.Value().([]byte)
+		if !ok || len(ssidBytes) == 0 {
+			continue
+		}
+		ssid := string(ssidBytes)
 
-		strengthVar, err := apObj.GetProperty(nmAccessPointIface + ".Strength")
-		if err != nil {
-			continue
-		}
+		strengthVar, _ := apObj.GetProperty(nmAccessPointIface + ".Strength")
 		strength := strengthVar.Value().(byte)
 
-		flagsVar, err := apObj.GetProperty(nmAccessPointIface + ".Flags")
-		if err != nil {
-			continue
+		// If we've already seen this SSID, only replace it if the new signal is stronger.
+		if existing, exists := visibleAPs[ssid]; exists {
+			if strength <= existing.strength {
+				continue
+			}
 		}
-		flags := flagsVar.Value().(uint32)
 
-		// NM_802_11_AP_FLAGS_PRIVACY
-		isSecure := (flags&0x1) != 0
-
-		items = append(items, connectionItem{
-			ssid:      string(ssidBytes),
-			path:      path,
-			settings:  nil, // Not a known connection
-			isActive:  false,
-			isKnown:   false,
-			isSecure:  isSecure,
-			strength:  strength,
-			isVisible: true,
-		})
+		flagsVar, _ := apObj.GetProperty(nmAccessPointIface + ".Flags")
+		visibleAPs[ssid] = accessPoint{
+			ssid:     ssid,
+			path:     path,
+			strength: strength,
+			isSecure: (flagsVar.Value().(uint32) & 0x1) != 0,
+		}
 	}
+	return visibleAPs, nil
+}
 
-	return scanFinishedMsg(items)
+func buildListOfKnownConnectionsOnly(conn *dbus.Conn) tea.Msg {
+	knownConnections, err := getKnownConnections(conn)
+	if err != nil {
+		return errorMsg{err}
+	}
+	var items []list.Item
+	for _, conn := range knownConnections {
+		conn.isVisible = false // None are visible
+		items = append(items, conn)
+	}
+	return connectionsLoadedMsg(items)
 }
 
 func getWirelessDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
@@ -504,135 +633,6 @@ func joinNetwork(item connectionItem, password string) tea.Cmd {
 
 		return connectionSavedMsg{}
 	}
-}
-
-// refreshNetworks is a tea.Cmd that gets connections from D-Bus
-func refreshNetworks() tea.Msg {
-	conn, err := dbus.SystemBus()
-	if err != nil {
-		return errorMsg{err}
-	}
-	defer conn.Close()
-
-	// 1. Get all saved connections and map them by SSID
-	knownConnections := make(map[string]connectionItem)
-	settingsObj := conn.Object(nmDest, nmSettingsPath)
-	var connectionPaths []dbus.ObjectPath
-	err = settingsObj.Call(nmSettingsIface+".ListConnections", 0).Store(&connectionPaths)
-	if err != nil {
-		return errorMsg{err}
-	}
-	for _, path := range connectionPaths {
-		connObj := conn.Object(nmDest, path)
-		settings, err := getSettings(connObj)
-		if err != nil {
-			continue
-		}
-		if connType, ok := settings["connection"]["type"]; ok && connType.Value() == "802-11-wireless" {
-			if ssidBytes, ok := settings["802-11-wireless"]["ssid"].Value().([]byte); ok {
-				ssid := string(ssidBytes)
-				knownConnections[ssid] = connectionItem{
-					ssid:     ssid,
-					path:     path,
-					settings: settings,
-					isKnown:  true,
-				}
-			}
-		}
-	}
-
-	// 2. Get all visible access points and map them by SSID
-	visibleAPs := make(map[string]accessPoint)
-	wirelessDevice, err := getWirelessDevice(conn)
-	if err == nil {
-		var apPaths []dbus.ObjectPath
-		devObj := conn.Object(nmDest, wirelessDevice)
-		err = devObj.Call(nmWirelessIface+".GetAllAccessPoints", 0).Store(&apPaths)
-		if err == nil {
-			for _, path := range apPaths {
-				apObj := conn.Object(nmDest, path)
-				ssidVar, err := apObj.GetProperty(nmAccessPointIface + ".Ssid")
-				if err != nil || ssidVar.Value() == nil {
-					continue
-				}
-				ssidBytes, ok := ssidVar.Value().([]byte)
-				if !ok || len(ssidBytes) == 0 {
-					continue
-				}
-				ssid := string(ssidBytes)
-
-				if _, exists := visibleAPs[ssid]; exists {
-					continue // Already seen a stronger signal for this SSID
-				}
-
-				strengthVar, _ := apObj.GetProperty(nmAccessPointIface + ".Strength")
-				flagsVar, _ := apObj.GetProperty(nmAccessPointIface + ".Flags")
-
-				visibleAPs[ssid] = accessPoint{
-					ssid:     ssid,
-					path:     path,
-					strength: strengthVar.Value().(byte),
-					isSecure: (flagsVar.Value().(uint32) & 0x1) != 0,
-				}
-			}
-		}
-	}
-
-	// 3. Build the final list
-	var visibleItems []list.Item
-	var nonVisibleItems []list.Item
-	processedSSIDs := make(map[string]bool)
-	activeWifiPath := getActiveWifiConnectionPath(conn)
-
-	// Process visible APs first
-	for ssid, ap := range visibleAPs {
-		processedSSIDs[ssid] = true
-		var item connectionItem
-		if known, ok := knownConnections[ssid]; ok {
-			item = known
-			item.isActive = (activeWifiPath != "" && item.path == activeWifiPath)
-			item.isSecure = ap.isSecure
-			item.strength = ap.strength
-		} else {
-			item = connectionItem{
-				ssid:     ssid,
-				path:     ap.path,
-				isKnown:  false,
-				isSecure: ap.isSecure,
-				strength: ap.strength,
-			}
-		}
-		item.isVisible = true
-		visibleItems = append(visibleItems, item)
-	}
-
-	// Add known connections that are not visible
-	for ssid, conn := range knownConnections {
-		if _, processed := processedSSIDs[ssid]; !processed {
-			conn.isVisible = false
-			nonVisibleItems = append(nonVisibleItems, conn)
-		}
-	}
-
-	// Sort: active on top, then visible, then non-visible
-	var activeItem list.Item
-	var otherVisibleItems []list.Item
-	for _, item := range visibleItems {
-		if connItem, ok := item.(connectionItem); ok && connItem.isActive {
-			activeItem = item
-		} else {
-			otherVisibleItems = append(otherVisibleItems, item)
-		}
-	}
-
-	finalItems := []list.Item{}
-	if activeItem != nil {
-		finalItems = append(finalItems, activeItem)
-	}
-	finalItems = append(finalItems, otherVisibleItems...)
-	finalItems = append(finalItems, nonVisibleItems...)
-
-	return connectionsLoadedMsg(finalItems)
 }
 
 // getActiveWifiConnectionPath finds the settings path of the currently active Wi-Fi connection
