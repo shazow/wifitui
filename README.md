@@ -1,11 +1,11 @@
 # wifitui 🫣
 
 Cute wifi TUI that can:
+- [x] **Works with dbus and nm-applet**
 - [x] List all known networks
 - [x] Fuzzy search for known networks
 - [x] Show current network
 - [x] Show passphrases of known networks
-- [x] Works with dbus and nm-applet
 - [ ] Show non-known visible networks
 - [ ] Connect to new networks
 - [ ] Initiate a scan
