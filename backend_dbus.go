@@ -53,10 +53,30 @@ type internalAccessPoint struct {
 }
 
 // NewDBusBackend creates a new DBusBackend.
-func NewDBusBackend() Backend {
+func NewDBusBackend() (Backend, error) {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return nil, err
+	}
+	// We don't defer conn.Close() here because the backend will use it.
+	// Instead, we'll just use this connection to check for service availability.
+	// A better implementation might pool or reuse the connection.
+	obj := conn.Object(nmDest, nmPath)
+	if obj == nil {
+		return nil, fmt.Errorf("failed to get dbus object for %s", nmDest)
+	}
+
+	// This is a simple way to check if the service is available.
+	// A more robust check might involve trying to call a method.
+	var devices []dbus.ObjectPath
+	err = obj.Call(nmIface+".GetDevices", 0).Store(&devices)
+	if err != nil {
+		return nil, fmt.Errorf("networkmanager is not available: %w", err)
+	}
+
 	return &DBusBackend{
 		connectionDetails: make(map[string]dbusDetails),
-	}
+	}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
