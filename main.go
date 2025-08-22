@@ -128,12 +128,16 @@ func initialModel() model {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
+			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
 		}
 	}
+	// Make 'q' the only quit key
+	l.KeyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
 	l.AdditionalFullHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
+			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
 		}
 	}
 	// Enable the fuzzy finder
@@ -216,6 +220,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedItem = selected
 						m.state = stateForgetView
 						m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.ssid)
+					}
+				}
+			case "c":
+				if len(m.list.Items()) > 0 {
+					selected, ok := m.list.SelectedItem().(connectionItem)
+					if ok {
+						m.selectedItem = selected
+						if selected.isKnown {
+							m.loading = true
+							m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.ssid)
+							cmds = append(cmds, activateConnection(m.selectedItem))
+						} else {
+							// For unknown networks, 'connect' is the same as 'join'
+							if selected.isSecure {
+								m.state = stateJoinView
+								m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.ssid)
+								m.errorMessage = ""
+								m.passwordInput.SetValue("")
+								m.passwordInput.Focus()
+							} else {
+								m.loading = true
+								m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.ssid)
+								m.errorMessage = ""
+								cmds = append(cmds, joinNetwork(m.selectedItem, ""))
+							}
+						}
 					}
 				}
 			case "enter":
@@ -562,6 +592,38 @@ func getWirelessDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
 	}
 
 	return "", fmt.Errorf("no wireless device found")
+}
+
+func activateConnection(item connectionItem) tea.Cmd {
+	return func() tea.Msg {
+		conn, err := dbus.SystemBus()
+		if err != nil {
+			return errorMsg{err}
+		}
+		defer conn.Close()
+
+		nmObj := conn.Object(nmDest, nmPath)
+
+		wirelessDevice, err := getWirelessDevice(conn)
+		if err != nil {
+			return errorMsg{err}
+		}
+
+		var activeConnectionPath dbus.ObjectPath
+		err = nmObj.Call(
+			nmIface+".ActivateConnection",
+			0,
+			item.path,      // connection
+			wirelessDevice, // device
+			item.path,      // specific_object (for wifi, this is the AP path)
+		).Store(&activeConnectionPath)
+
+		if err != nil {
+			return errorMsg{fmt.Errorf("failed to activate connection: %w", err)}
+		}
+
+		return connectionSavedMsg{} // Re-use this to trigger a refresh
+	}
 }
 
 func forgetNetwork(item connectionItem) tea.Cmd {
