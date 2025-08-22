@@ -61,7 +61,7 @@ func (i connectionItem) Title() string {
 }
 func (i connectionItem) Description() string {
 	if i.Strength > 0 {
-		return fmt.Sprintf("%d%% %s", i.Strength, strings.Repeat("█", int(i.Strength / 10)))
+		return fmt.Sprintf("%d%% %s", i.Strength, strings.Repeat("█", int(i.Strength / 2)))
 	}
 	return ""
 }
