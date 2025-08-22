@@ -121,13 +121,22 @@ func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 			knownObj := conn.Object(iwdDest, path)
 			nameVar, _ := knownObj.GetProperty(iwdKnownNetworkIface + ".Name")
 			ssid := nameVar.Value().(string)
+			hiddenVar, err := knownObj.GetProperty(iwdKnownNetworkIface + ".Hidden")
+			isHidden := false
+			if err == nil {
+				if val, ok := hiddenVar.Value().(bool); ok {
+					isHidden = val
+				}
+			}
+
 			if _, exists := visibleNetworks[ssid]; exists {
 				c := visibleNetworks[ssid]
 				c.IsKnown = true
+				c.IsHidden = isHidden
 				visibleNetworks[ssid] = c
 			} else {
 				// Add non-visible known network
-				connections = append(connections, Connection{SSID: ssid, IsKnown: true})
+				connections = append(connections, Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
 			}
 		}
 	}
