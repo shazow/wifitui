@@ -89,8 +89,23 @@ type model struct {
 	selectedItem  connectionItem
 }
 
+// NewBackend determines which backend to use.
+// It first tries NetworkManager, then falls back to iwd.
+func NewBackend() (Backend, error) {
+	backend, err := NewDBusBackend()
+	if err == nil {
+		return backend, nil
+	}
+	// If DBus backend failed, try the iwd backend
+	return NewIwdBackend()
+}
+
 // initialModel creates the starting state of our application
-func initialModel() model {
+func initialModel() (model, error) {
+	backend, err := NewBackend()
+	if err != nil {
+		return model{}, fmt.Errorf("failed to initialize backend: %w", err)
+	}
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -135,10 +150,10 @@ func initialModel() model {
 		list:          l,
 		passwordInput: ti,
 		spinner:       s,
-		backend:       NewDBusBackend(),
+		backend:       backend,
 		loading:       true,
 		statusMessage: "Loading connections...",
-	}
+	}, nil
 }
 
 // Init is the first command that is run when the program starts
@@ -434,7 +449,12 @@ func updateSecret(b Backend, c Connection, newPassword string) tea.Cmd {
 
 // main is the entry point of the application
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	m, err := initialModel()
+	if err != nil {
+		fmt.Printf("Error initializing model: %v\n", err)
+		os.Exit(1)
+	}
+	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Error running program: %v", err)
 		os.Exit(1)
