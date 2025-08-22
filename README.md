@@ -1,14 +1,16 @@
 # wifitui 🫣
 
-Cute wifi TUI that can:
+A replacement for `nmtui`.
+
+`wifitui` is a cute wifi TUI that can:
 - [x] **Works with dbus and nm-applet**
 - [x] List all known networks
 - [x] Fuzzy search for known networks
 - [x] Show current network
 - [x] Show passphrases of known networks
-- [ ] Show non-known visible networks
-- [ ] Connect to new networks
-- [ ] Initiate a scan
+- [x] Show non-known visible networks
+- [x] Connect to new networks
+- [x] Initiate a scan
 
 More things I'd like to do:
 - [ ] Refactor to support multiple backends (iwd?)
