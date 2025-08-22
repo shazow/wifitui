@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	qrcode "github.com/skip2/go-qrcode"
 )
 
 // Define some styles for the UI
@@ -357,6 +358,21 @@ func (m model) View() string {
 		s.WriteString(fmt.Sprintf("\nEditing Wi-Fi Connection: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
 		s.WriteString("\n\n(press enter to save, esc to cancel)")
+
+		// Add QR code if we have a password
+		password := m.passwordInput.Value()
+		if password != "" {
+			authType := "WPA" // Assume WPA for secure networks
+			if !m.selectedItem.IsSecure {
+				authType = "nopass"
+			}
+			qrString := fmt.Sprintf("WIFI:T:%s;S:%s;P:%s;;", authType, m.selectedItem.SSID, password)
+			q, err := qrcode.New(qrString, qrcode.Medium)
+			if err == nil {
+				s.WriteString("\n\n")
+				s.WriteString(q.ToSmallString(false))
+			}
+		}
 	case stateJoinView:
 		s.WriteString(fmt.Sprintf("\nJoining Wi-Fi Network: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
