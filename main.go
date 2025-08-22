@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/godbus/dbus/v5"
+	"github.com/google/uuid"
 )
 
 // Define some styles for the UI
@@ -23,7 +24,9 @@ var (
 	errorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("196")).
 			Render
-	activeStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("46"))
+	activeStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("46"))
+	knownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("40"))
+	unknownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 )
 
 // viewState represents the current screen of the TUI
@@ -32,6 +35,7 @@ type viewState int
 const (
 	stateListView viewState = iota
 	stateEditView
+	stateJoinView
 )
 
 // connectionItem holds the information for a single Wi-Fi connection in our list
@@ -40,21 +44,38 @@ type connectionItem struct {
 	path     dbus.ObjectPath
 	settings map[string]map[string]dbus.Variant
 	isActive bool
+	isKnown  bool
+	isSecure bool
+	strength uint8
 }
 
 // Implement the list.Item interface for our connectionItem
 func (i connectionItem) Title() string {
+	var styledSSID string
+	if i.isKnown {
+		styledSSID = knownNetworkStyle.Render(i.ssid)
+	} else {
+		styledSSID = unknownNetworkStyle.Render(i.ssid)
+	}
+
 	if i.isActive {
 		return activeStyle.Render("* " + i.ssid)
 	}
-	return i.ssid
+
+	return styledSSID
 }
-func (i connectionItem) Description() string { return string(i.path) }
+func (i connectionItem) Description() string {
+	if i.strength > 0 {
+		return fmt.Sprintf("Strength: %d%%", i.strength)
+	}
+	return ""
+}
 func (i connectionItem) FilterValue() string { return i.ssid }
 
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
 	connectionsLoadedMsg []list.Item // Sent when connections are fetched
+	scanFinishedMsg      []list.Item // Sent when a scan is finished
 	secretsLoadedMsg     string      // Sent when a password is fetched
 	connectionSavedMsg   struct{}    // Sent when a password is saved
 	errorMsg             struct{ err error }
@@ -89,7 +110,7 @@ func initialModel() model {
 
 	// Configure the list
 	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
-	l.Title = "Search Known Wi-Fi Networks"
+	l.Title = "Visible Wi-Fi Networks"
 	l.SetShowStatusBar(true)
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
@@ -109,7 +130,7 @@ func initialModel() model {
 
 // Init is the first command that is run when the program starts
 func (m model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, fetchConnections)
+	return tea.Batch(m.spinner.Tick, refreshNetworks)
 }
 
 // Update handles all incoming messages and updates the model accordingly
@@ -127,15 +148,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.statusMessage = ""
 		m.list.SetItems(msg)
+	case scanFinishedMsg:
+		m.loading = false
+		m.statusMessage = "Scan finished."
+		m.list.SetItems(msg)
 	case secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		m.passwordInput.SetValue(string(msg))
 		m.passwordInput.CursorEnd()
 	case connectionSavedMsg:
-		m.loading = false
-		m.statusMessage = fmt.Sprintf("Password for '%s' saved!", m.selectedItem.ssid)
+		m.loading = true // Show loading while we refresh
+		m.statusMessage = fmt.Sprintf("Successfully updated '%s'. Refreshing list...", m.selectedItem.ssid)
 		m.state = stateListView
+		return m, refreshNetworks
 	case errorMsg:
 		m.loading = false
 		m.errorMessage = msg.err.Error()
@@ -150,20 +176,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case stateListView:
 			// Handle quit and enter in list view
-			if m.list.FilterState() != list.Filtering && msg.String() == "q" {
-				return m, tea.Quit
-			}
-			if msg.String() == "enter" && len(m.list.Items()) > 0 {
-				selected, ok := m.list.SelectedItem().(connectionItem)
-				if ok {
+			switch msg.String() {
+			case "q":
+				if m.list.FilterState() != list.Filtering {
+					return m, tea.Quit
+				}
+			case "s":
+				m.loading = true
+				m.statusMessage = "Scanning for networks..."
+				cmds = append(cmds, scanNetworks)
+			case "enter":
+				if len(m.list.Items()) > 0 {
+					selected, ok := m.list.SelectedItem().(connectionItem)
+					if !ok {
+						break
+					}
 					m.selectedItem = selected
-					m.state = stateEditView
-					m.loading = true
-					m.statusMessage = fmt.Sprintf("Fetching secret for %s...", m.selectedItem.ssid)
-					m.errorMessage = ""
-					m.passwordInput.SetValue("")
-					m.passwordInput.Focus()
-					cmds = append(cmds, getSecrets(m.selectedItem))
+					if selected.isKnown {
+						m.state = stateEditView
+						m.loading = true
+						m.statusMessage = fmt.Sprintf("Fetching secret for %s...", m.selectedItem.ssid)
+						m.errorMessage = ""
+						m.passwordInput.SetValue("")
+						m.passwordInput.Focus()
+						cmds = append(cmds, getSecrets(m.selectedItem))
+					} else {
+						if selected.isSecure {
+							m.state = stateJoinView
+							m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.ssid)
+							m.errorMessage = ""
+							m.passwordInput.SetValue("")
+							m.passwordInput.Focus()
+						} else {
+							m.loading = true
+							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.ssid)
+							m.errorMessage = ""
+							cmds = append(cmds, joinNetwork(m.selectedItem, ""))
+						}
+					}
 				}
 			}
 		case stateEditView:
@@ -179,6 +229,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errorMessage = ""
 				cmds = append(cmds, updateSecret(m.selectedItem, m.passwordInput.Value()))
 			}
+		case stateJoinView:
+			switch msg.String() {
+			case "q", "esc":
+				m.state = stateListView
+				m.statusMessage = ""
+				m.errorMessage = ""
+			case "enter":
+				m.loading = true
+				m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.ssid)
+				m.errorMessage = ""
+				cmds = append(cmds, joinNetwork(m.selectedItem, m.passwordInput.Value()))
+			}
 		}
 	}
 
@@ -187,7 +249,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateListView:
 		m.list, cmd = m.list.Update(msg)
 		cmds = append(cmds, cmd)
-	case stateEditView:
+	case stateEditView, stateJoinView:
 		m.passwordInput, cmd = m.passwordInput.Update(msg)
 		cmds = append(cmds, cmd)
 	}
@@ -214,6 +276,10 @@ func (m model) View() string {
 		s.WriteString(fmt.Sprintf("\nEditing Wi-Fi Connection: %s\n\n", m.selectedItem.ssid))
 		s.WriteString(m.passwordInput.View())
 		s.WriteString("\n\n(press enter to save, esc to cancel)")
+	case stateJoinView:
+		s.WriteString(fmt.Sprintf("\nJoining Wi-Fi Network: %s\n\n", m.selectedItem.ssid))
+		s.WriteString(m.passwordInput.View())
+		s.WriteString("\n\n(press enter to join, esc to cancel)")
 	}
 
 	if m.loading {
@@ -233,22 +299,164 @@ const (
 	nmIface         = "org.freedesktop.NetworkManager"
 	nmSettingsPath  = "/org/freedesktop/NetworkManager/Settings"
 	nmSettingsIface = "org.freedesktop.NetworkManager.Settings"
-	nmConnIface     = "org.freedesktop.NetworkManager.Settings.Connection"
+	nmConnIface       = "org.freedesktop.NetworkManager.Settings.Connection"
 	nmActiveConnIface = "org.freedesktop.NetworkManager.Connection.Active"
+	nmDeviceIface     = "org.freedesktop.NetworkManager.Device"
+	nmWirelessIface   = "org.freedesktop.NetworkManager.Device.Wireless"
+	nmAccessPointIface = "org.freedesktop.NetworkManager.AccessPoint"
 )
 
-// fetchConnections is a tea.Cmd that gets connections from D-Bus
-func fetchConnections() tea.Msg {
+func scanNetworks() tea.Msg {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return errorMsg{err}
 	}
 	defer conn.Close()
 
-	// First, find the active Wi-Fi connection's settings path, if any
-	activeWifiPath := getActiveWifiConnectionPath(conn)
+	wirelessDevice, err := getWirelessDevice(conn)
+	if err != nil {
+		return errorMsg{err}
+	}
 
-	// Now, get all saved connections
+	obj := conn.Object(nmDest, wirelessDevice)
+	err = obj.Call(nmWirelessIface+".RequestScan", 0, map[string]dbus.Variant{}).Store()
+	if err != nil {
+		return errorMsg{err}
+	}
+
+	// For simplicity, we're not waiting for LastScan to update.
+	// In a real app, you'd listen for PropertiesChanged signal.
+
+	var apPaths []dbus.ObjectPath
+	err = obj.Call(nmWirelessIface+".GetAllAccessPoints", 0).Store(&apPaths)
+	if err != nil {
+		return errorMsg{err}
+	}
+
+	var items []list.Item
+	for _, path := range apPaths {
+		apObj := conn.Object(nmDest, path)
+		ssidVar, err := apObj.GetProperty(nmAccessPointIface + ".Ssid")
+		if err != nil {
+			continue
+		}
+		ssidBytes := ssidVar.Value().([]byte)
+
+		strengthVar, err := apObj.GetProperty(nmAccessPointIface + ".Strength")
+		if err != nil {
+			continue
+		}
+		strength := strengthVar.Value().(byte)
+
+		flagsVar, err := apObj.GetProperty(nmAccessPointIface + ".Flags")
+		if err != nil {
+			continue
+		}
+		flags := flagsVar.Value().(uint32)
+
+		// NM_802_11_AP_FLAGS_PRIVACY
+		isSecure := (flags&0x1) != 0
+
+		items = append(items, connectionItem{
+			ssid:     string(ssidBytes),
+			path:     path,
+			settings: nil, // Not a known connection
+			isActive: false,
+			isKnown:  false,
+			isSecure: isSecure,
+			strength: strength,
+		})
+	}
+
+	return scanFinishedMsg(items)
+}
+
+func getWirelessDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
+	nmObj := conn.Object(nmDest, nmPath)
+	var devices []dbus.ObjectPath
+	err := nmObj.Call(nmIface+".GetDevices", 0).Store(&devices)
+	if err != nil {
+		return "", err
+	}
+
+	for _, devicePath := range devices {
+		deviceObj := conn.Object(nmDest, devicePath)
+		deviceTypeVar, err := deviceObj.GetProperty(nmDeviceIface + ".DeviceType")
+		if err != nil {
+			continue
+		}
+		// NM_DEVICE_TYPE_WIFI = 2
+		if deviceType, ok := deviceTypeVar.Value().(uint32); ok && deviceType == 2 {
+			return devicePath, nil
+		}
+	}
+
+	return "", fmt.Errorf("no wireless device found")
+}
+
+func joinNetwork(item connectionItem, password string) tea.Cmd {
+	return func() tea.Msg {
+		conn, err := dbus.SystemBus()
+		if err != nil {
+			return errorMsg{err}
+		}
+		defer conn.Close()
+
+		wirelessDevice, err := getWirelessDevice(conn)
+		if err != nil {
+			return errorMsg{err}
+		}
+
+		connection := map[string]map[string]dbus.Variant{
+			"connection": {
+				"id":   dbus.MakeVariant(item.ssid),
+				"uuid": dbus.MakeVariant(uuid.New().String()),
+				"type": dbus.MakeVariant("802-11-wireless"),
+			},
+			"802-11-wireless": {
+				"mode": dbus.MakeVariant("infrastructure"),
+				"ssid": dbus.MakeVariant([]byte(item.ssid)),
+			},
+			"ipv4": {"method": dbus.MakeVariant("auto")},
+			"ipv6": {"method": dbus.MakeVariant("auto")},
+		}
+
+		if item.isSecure {
+			connection["802-11-wireless-security"] = map[string]dbus.Variant{
+				"key-mgmt": dbus.MakeVariant("wpa-psk"),
+				"psk":      dbus.MakeVariant(password),
+			}
+		}
+
+		nmObj := conn.Object(nmDest, nmPath)
+		var activeConnectionPath dbus.ObjectPath
+		var newConnectionPath dbus.ObjectPath
+		err = nmObj.Call(
+			nmIface+".AddAndActivateConnection",
+			0,
+			connection,
+			wirelessDevice,
+			item.path, // specific AP path
+		).Store(&newConnectionPath, &activeConnectionPath)
+
+		if err != nil {
+			return errorMsg{fmt.Errorf("failed to add/activate connection: %w", err)}
+		}
+
+		return connectionSavedMsg{}
+	}
+}
+
+// refreshNetworks is a tea.Cmd that gets connections from D-Bus
+func refreshNetworks() tea.Msg {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return errorMsg{err}
+	}
+	defer conn.Close()
+
+	// 1. Get all saved connections and map them by SSID
+	knownConnections := make(map[string]connectionItem)
 	settingsObj := conn.Object(nmDest, nmSettingsPath)
 	var connectionPaths []dbus.ObjectPath
 	err = settingsObj.Call(nmSettingsIface+".ListConnections", 0).Store(&connectionPaths)
@@ -256,46 +464,115 @@ func fetchConnections() tea.Msg {
 		return errorMsg{err}
 	}
 
-	var activeItem list.Item
-	var otherItems []list.Item
-
 	for _, path := range connectionPaths {
 		connObj := conn.Object(nmDest, path)
 		settings, err := getSettings(connObj)
 		if err != nil {
 			continue
 		}
-
 		if connType, ok := settings["connection"]["type"]; ok && connType.Value() == "802-11-wireless" {
-			ssidBytes, ok := settings["802-11-wireless"]["ssid"].Value().([]byte)
-			if !ok {
-				continue
-			}
-
-			isActive := (activeWifiPath != "" && path == activeWifiPath)
-			item := connectionItem{
-				ssid:     string(ssidBytes),
-				path:     path,
-				settings: settings,
-				isActive: isActive,
-			}
-
-			if isActive {
-				activeItem = item
-			} else {
-				otherItems = append(otherItems, item)
+			if ssidBytes, ok := settings["802-11-wireless"]["ssid"].Value().([]byte); ok {
+				ssid := string(ssidBytes)
+				knownConnections[ssid] = connectionItem{
+					ssid:     ssid,
+					path:     path,
+					settings: settings,
+					isKnown:  true,
+				}
 			}
 		}
 	}
-	
-	finalItems := []list.Item{}
-	if activeItem != nil {
-		finalItems = append(finalItems, activeItem)
+
+	// 2. Get all visible access points
+	wirelessDevice, err := getWirelessDevice(conn)
+	if err != nil {
+		// If there's no wifi device, just return the list of known connections
+		var items []list.Item
+		for _, conn := range knownConnections {
+			items = append(items, conn)
+		}
+		return connectionsLoadedMsg(items)
 	}
-	finalItems = append(finalItems, otherItems...)
+
+	var apPaths []dbus.ObjectPath
+	devObj := conn.Object(nmDest, wirelessDevice)
+	err = devObj.Call(nmWirelessIface+".GetAllAccessPoints", 0).Store(&apPaths)
+	if err != nil {
+		return errorMsg{err}
+	}
+
+	// 3. Merge visible APs with known connections
+	var finalItems []list.Item
+	processedSSIDs := make(map[string]bool)
+	activeWifiPath := getActiveWifiConnectionPath(conn)
+
+	for _, path := range apPaths {
+		apObj := conn.Object(nmDest, path)
+		ssidVar, err := apObj.GetProperty(nmAccessPointIface + ".Ssid")
+		if err != nil {
+			continue
+		}
+		ssidBytes, ok := ssidVar.Value().([]byte)
+		if !ok || len(ssidBytes) == 0 {
+			continue
+		}
+		ssid := string(ssidBytes)
+
+		if _, processed := processedSSIDs[ssid]; processed {
+			continue
+		}
+		processedSSIDs[ssid] = true
+
+		flagsVar, err := apObj.GetProperty(nmAccessPointIface + ".Flags")
+		if err != nil {
+			continue
+		}
+		flags := flagsVar.Value().(uint32)
+		isSecure := (flags&0x1) != 0
+
+		strengthVar, err := apObj.GetProperty(nmAccessPointIface + ".Strength")
+		if err != nil {
+			continue
+		}
+		strength := strengthVar.Value().(byte)
+
+		var item connectionItem
+		if known, ok := knownConnections[ssid]; ok {
+			item = known
+			item.isActive = (activeWifiPath != "" && item.path == activeWifiPath)
+			item.isSecure = isSecure
+			item.strength = strength
+		} else {
+			item = connectionItem{
+				ssid:     ssid,
+				path:     path,
+				isKnown:  false,
+				isSecure: isSecure,
+				strength: strength,
+			}
+		}
+		finalItems = append(finalItems, item)
+	}
+
+	// Move active connection to the top
+	var activeItem list.Item
+	var otherItems []list.Item
+	for _, item := range finalItems {
+		if connItem, ok := item.(connectionItem); ok && connItem.isActive {
+			activeItem = item
+		} else {
+			otherItems = append(otherItems, item)
+		}
+	}
+	
+	sortedItems := []list.Item{}
+	if activeItem != nil {
+		sortedItems = append(sortedItems, activeItem)
+	}
+	sortedItems = append(sortedItems, otherItems...)
 
 
-	return connectionsLoadedMsg(finalItems)
+	return connectionsLoadedMsg(sortedItems)
 }
 
 // getActiveWifiConnectionPath finds the settings path of the currently active Wi-Fi connection
