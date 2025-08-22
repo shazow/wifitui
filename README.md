@@ -1,6 +1,6 @@
-# wifitui
+# wifitui 🫣
 
-A pretty WIFI TUI that can:
+Cute wifi TUI that can:
 - [x] List all known networks
 - [x] Fuzzy search for known networks
 - [x] Show current network
