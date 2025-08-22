@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -17,16 +18,13 @@ import (
 
 // Define some styles for the UI
 var (
-	docStyle    = lipgloss.NewStyle().Margin(1, 2)
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")).
-			Render
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
-			Render
-	activeStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("46"))
-	knownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("40"))
+	docStyle            = lipgloss.NewStyle().Margin(1, 2)
+	statusStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render
+	errorStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render
+	activeStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("46"))
+	knownNetworkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("40"))
 	unknownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
 
 // viewState represents the current screen of the TUI
@@ -36,21 +34,35 @@ const (
 	stateListView viewState = iota
 	stateEditView
 	stateJoinView
+	stateForgetView
 )
+
+// accessPoint holds the information for a single visible Wi-Fi access point.
+type accessPoint struct {
+	ssid     string
+	path     dbus.ObjectPath
+	strength uint8
+	isSecure bool
+}
 
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
-	ssid     string
-	path     dbus.ObjectPath
-	settings map[string]map[string]dbus.Variant
-	isActive bool
-	isKnown  bool
-	isSecure bool
-	strength uint8
+	ssid      string
+	path      dbus.ObjectPath
+	settings  map[string]map[string]dbus.Variant
+	isActive  bool
+	isKnown   bool
+	isSecure  bool
+	isVisible bool
+	strength  uint8
 }
 
 // Implement the list.Item interface for our connectionItem
 func (i connectionItem) Title() string {
+	if !i.isVisible {
+		return disabledStyle.Render(i.ssid)
+	}
+
 	var styledSSID string
 	if i.isKnown {
 		styledSSID = knownNetworkStyle.Render(i.ssid)
@@ -112,6 +124,12 @@ func initialModel() model {
 	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
 	l.Title = "Visible Wi-Fi Networks"
 	l.SetShowStatusBar(true)
+	l.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
+			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
+		}
+	}
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
@@ -185,6 +203,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				m.statusMessage = "Scanning for networks..."
 				cmds = append(cmds, scanNetworks)
+			case "f":
+				if len(m.list.Items()) > 0 {
+					selected, ok := m.list.SelectedItem().(connectionItem)
+					if ok && selected.isKnown {
+						m.selectedItem = selected
+						m.state = stateForgetView
+						m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.ssid)
+					}
+				}
 			case "enter":
 				if len(m.list.Items()) > 0 {
 					selected, ok := m.list.SelectedItem().(connectionItem)
@@ -241,6 +268,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errorMessage = ""
 				cmds = append(cmds, joinNetwork(m.selectedItem, m.passwordInput.Value()))
 			}
+		case stateForgetView:
+			switch msg.String() {
+			case "y":
+				m.loading = true
+				m.statusMessage = fmt.Sprintf("Forgetting '%s'...", m.selectedItem.ssid)
+				cmds = append(cmds, forgetNetwork(m.selectedItem))
+			case "n", "q", "esc":
+				m.state = stateListView
+				m.statusMessage = ""
+			}
 		}
 	}
 
@@ -280,6 +317,9 @@ func (m model) View() string {
 		s.WriteString(fmt.Sprintf("\nJoining Wi-Fi Network: %s\n\n", m.selectedItem.ssid))
 		s.WriteString(m.passwordInput.View())
 		s.WriteString("\n\n(press enter to join, esc to cancel)")
+	case stateForgetView:
+		// The status message is used as the prompt
+		s.WriteString(m.list.View())
 	}
 
 	if m.loading {
@@ -294,15 +334,15 @@ func (m model) View() string {
 // --- D-Bus Logic ---
 
 const (
-	nmDest          = "org.freedesktop.NetworkManager"
-	nmPath          = "/org/freedesktop/NetworkManager"
-	nmIface         = "org.freedesktop.NetworkManager"
-	nmSettingsPath  = "/org/freedesktop/NetworkManager/Settings"
-	nmSettingsIface = "org.freedesktop.NetworkManager.Settings"
-	nmConnIface       = "org.freedesktop.NetworkManager.Settings.Connection"
-	nmActiveConnIface = "org.freedesktop.NetworkManager.Connection.Active"
-	nmDeviceIface     = "org.freedesktop.NetworkManager.Device"
-	nmWirelessIface   = "org.freedesktop.NetworkManager.Device.Wireless"
+	nmDest             = "org.freedesktop.NetworkManager"
+	nmPath             = "/org/freedesktop/NetworkManager"
+	nmIface            = "org.freedesktop.NetworkManager"
+	nmSettingsPath     = "/org/freedesktop/NetworkManager/Settings"
+	nmSettingsIface    = "org.freedesktop.NetworkManager.Settings"
+	nmConnIface        = "org.freedesktop.NetworkManager.Settings.Connection"
+	nmActiveConnIface  = "org.freedesktop.NetworkManager.Connection.Active"
+	nmDeviceIface      = "org.freedesktop.NetworkManager.Device"
+	nmWirelessIface    = "org.freedesktop.NetworkManager.Device.Wireless"
 	nmAccessPointIface = "org.freedesktop.NetworkManager.AccessPoint"
 )
 
@@ -358,13 +398,14 @@ func scanNetworks() tea.Msg {
 		isSecure := (flags&0x1) != 0
 
 		items = append(items, connectionItem{
-			ssid:     string(ssidBytes),
-			path:     path,
-			settings: nil, // Not a known connection
-			isActive: false,
-			isKnown:  false,
-			isSecure: isSecure,
-			strength: strength,
+			ssid:      string(ssidBytes),
+			path:      path,
+			settings:  nil, // Not a known connection
+			isActive:  false,
+			isKnown:   false,
+			isSecure:  isSecure,
+			strength:  strength,
+			isVisible: true,
 		})
 	}
 
@@ -392,6 +433,24 @@ func getWirelessDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
 	}
 
 	return "", fmt.Errorf("no wireless device found")
+}
+
+func forgetNetwork(item connectionItem) tea.Cmd {
+	return func() tea.Msg {
+		conn, err := dbus.SystemBus()
+		if err != nil {
+			return errorMsg{err}
+		}
+		defer conn.Close()
+
+		obj := conn.Object(nmDest, item.path)
+		err = obj.Call(nmConnIface+".Delete", 0).Store()
+		if err != nil {
+			return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
+		}
+
+		return connectionSavedMsg{} // Re-use this to trigger a refresh
+	}
 }
 
 func joinNetwork(item connectionItem, password string) tea.Cmd {
@@ -463,7 +522,6 @@ func refreshNetworks() tea.Msg {
 	if err != nil {
 		return errorMsg{err}
 	}
-
 	for _, path := range connectionPaths {
 		connObj := conn.Object(nmDest, path)
 		settings, err := getSettings(connObj)
@@ -483,102 +541,104 @@ func refreshNetworks() tea.Msg {
 		}
 	}
 
-	// 2. Get all visible access points
+	// 2. Get all visible access points and map them by SSID
+	visibleAPs := make(map[string]accessPoint)
 	wirelessDevice, err := getWirelessDevice(conn)
-	if err != nil {
-		// If there's no wifi device, just return the list of known connections
-		var items []list.Item
-		for _, conn := range knownConnections {
-			items = append(items, conn)
+	if err == nil {
+		var apPaths []dbus.ObjectPath
+		devObj := conn.Object(nmDest, wirelessDevice)
+		err = devObj.Call(nmWirelessIface+".GetAllAccessPoints", 0).Store(&apPaths)
+		if err == nil {
+			for _, path := range apPaths {
+				apObj := conn.Object(nmDest, path)
+				ssidVar, err := apObj.GetProperty(nmAccessPointIface + ".Ssid")
+				if err != nil || ssidVar.Value() == nil {
+					continue
+				}
+				ssidBytes, ok := ssidVar.Value().([]byte)
+				if !ok || len(ssidBytes) == 0 {
+					continue
+				}
+				ssid := string(ssidBytes)
+
+				if _, exists := visibleAPs[ssid]; exists {
+					continue // Already seen a stronger signal for this SSID
+				}
+
+				strengthVar, _ := apObj.GetProperty(nmAccessPointIface + ".Strength")
+				flagsVar, _ := apObj.GetProperty(nmAccessPointIface + ".Flags")
+
+				visibleAPs[ssid] = accessPoint{
+					ssid:     ssid,
+					path:     path,
+					strength: strengthVar.Value().(byte),
+					isSecure: (flagsVar.Value().(uint32) & 0x1) != 0,
+				}
+			}
 		}
-		return connectionsLoadedMsg(items)
 	}
 
-	var apPaths []dbus.ObjectPath
-	devObj := conn.Object(nmDest, wirelessDevice)
-	err = devObj.Call(nmWirelessIface+".GetAllAccessPoints", 0).Store(&apPaths)
-	if err != nil {
-		return errorMsg{err}
-	}
-
-	// 3. Merge visible APs with known connections
-	var finalItems []list.Item
+	// 3. Build the final list
+	var visibleItems []list.Item
+	var nonVisibleItems []list.Item
 	processedSSIDs := make(map[string]bool)
 	activeWifiPath := getActiveWifiConnectionPath(conn)
 
-	for _, path := range apPaths {
-		apObj := conn.Object(nmDest, path)
-		ssidVar, err := apObj.GetProperty(nmAccessPointIface + ".Ssid")
-		if err != nil {
-			continue
-		}
-		ssidBytes, ok := ssidVar.Value().([]byte)
-		if !ok || len(ssidBytes) == 0 {
-			continue
-		}
-		ssid := string(ssidBytes)
-
-		if _, processed := processedSSIDs[ssid]; processed {
-			continue
-		}
+	// Process visible APs first
+	for ssid, ap := range visibleAPs {
 		processedSSIDs[ssid] = true
-
-		flagsVar, err := apObj.GetProperty(nmAccessPointIface + ".Flags")
-		if err != nil {
-			continue
-		}
-		flags := flagsVar.Value().(uint32)
-		isSecure := (flags&0x1) != 0
-
-		strengthVar, err := apObj.GetProperty(nmAccessPointIface + ".Strength")
-		if err != nil {
-			continue
-		}
-		strength := strengthVar.Value().(byte)
-
 		var item connectionItem
 		if known, ok := knownConnections[ssid]; ok {
 			item = known
 			item.isActive = (activeWifiPath != "" && item.path == activeWifiPath)
-			item.isSecure = isSecure
-			item.strength = strength
+			item.isSecure = ap.isSecure
+			item.strength = ap.strength
 		} else {
 			item = connectionItem{
 				ssid:     ssid,
-				path:     path,
+				path:     ap.path,
 				isKnown:  false,
-				isSecure: isSecure,
-				strength: strength,
+				isSecure: ap.isSecure,
+				strength: ap.strength,
 			}
 		}
-		finalItems = append(finalItems, item)
+		item.isVisible = true
+		visibleItems = append(visibleItems, item)
 	}
 
-	// Move active connection to the top
+	// Add known connections that are not visible
+	for ssid, conn := range knownConnections {
+		if _, processed := processedSSIDs[ssid]; !processed {
+			conn.isVisible = false
+			nonVisibleItems = append(nonVisibleItems, conn)
+		}
+	}
+
+	// Sort: active on top, then visible, then non-visible
 	var activeItem list.Item
-	var otherItems []list.Item
-	for _, item := range finalItems {
+	var otherVisibleItems []list.Item
+	for _, item := range visibleItems {
 		if connItem, ok := item.(connectionItem); ok && connItem.isActive {
 			activeItem = item
 		} else {
-			otherItems = append(otherItems, item)
+			otherVisibleItems = append(otherVisibleItems, item)
 		}
 	}
-	
-	sortedItems := []list.Item{}
+
+	finalItems := []list.Item{}
 	if activeItem != nil {
-		sortedItems = append(sortedItems, activeItem)
+		finalItems = append(finalItems, activeItem)
 	}
-	sortedItems = append(sortedItems, otherItems...)
+	finalItems = append(finalItems, otherVisibleItems...)
+	finalItems = append(finalItems, nonVisibleItems...)
 
-
-	return connectionsLoadedMsg(sortedItems)
+	return connectionsLoadedMsg(finalItems)
 }
 
 // getActiveWifiConnectionPath finds the settings path of the currently active Wi-Fi connection
 func getActiveWifiConnectionPath(conn *dbus.Conn) dbus.ObjectPath {
 	nmObj := conn.Object(nmDest, nmPath)
-	
+
 	var activeConnPaths []dbus.ObjectPath
 	variant, err := nmObj.GetProperty(nmIface + ".ActiveConnections")
 	if err != nil {
@@ -604,7 +664,6 @@ func getActiveWifiConnectionPath(conn *dbus.Conn) dbus.ObjectPath {
 	}
 	return ""
 }
-
 
 // getSecrets is a tea.Cmd that fetches the password for a connection
 func getSecrets(item connectionItem) tea.Cmd {
@@ -683,4 +742,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-
