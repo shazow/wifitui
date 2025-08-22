@@ -179,6 +179,12 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		if connections[i].IsVisible != connections[j].IsVisible {
 			return connections[i].IsVisible
 		}
+		// If both are visible, sort by strength. Otherwise, sort by name.
+		if connections[i].IsVisible {
+			if connections[i].Strength != connections[j].Strength {
+				return connections[i].Strength > connections[j].Strength
+			}
+		}
 		return connections[i].SSID < connections[j].SSID
 	})
 
