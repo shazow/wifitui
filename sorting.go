@@ -4,24 +4,48 @@ import "sort"
 
 // sortConnections sorts a slice of Connection structs in place.
 // The sorting order is:
-// 1. Active connections first.
-// 2. Visible connections first.
-// 3. For visible connections, by strength (strongest first).
-// 4. By SSID alphabetically.
+// 1. Active connection first.
+// 2. Visible networks, sorted by signal strength (strongest first).
+// 3. Non-visible known networks, sorted by LastConnected timestamp (most recent first).
+// 4. Fallback to SSID alphabetically.
 func sortConnections(connections []Connection) {
 	sort.SliceStable(connections, func(i, j int) bool {
-		if connections[i].IsActive != connections[j].IsActive {
-			return connections[i].IsActive
+		a := connections[i]
+		b := connections[j]
+
+		// Active connections first.
+		if a.IsActive != b.IsActive {
+			return a.IsActive
 		}
-		if connections[i].IsVisible != connections[j].IsVisible {
-			return connections[i].IsVisible
+
+		// Visible connections before non-visible.
+		if a.IsVisible != b.IsVisible {
+			return a.IsVisible
 		}
-		// If both are visible, sort by strength. Otherwise, sort by name.
-		if connections[i].IsVisible {
-			if connections[i].Strength != connections[j].Strength {
-				return connections[i].Strength > connections[j].Strength
+
+		// If both are visible, sort by strength.
+		// If both are not visible, sort by timestamp.
+		if a.IsVisible {
+			if a.Strength != b.Strength {
+				return a.Strength > b.Strength
+			}
+		} else {
+			// Sort by LastConnected, most recent first.
+			// A non-nil time is considered more recent than a nil time.
+			if a.LastConnected != nil && b.LastConnected == nil {
+				return true
+			}
+			if a.LastConnected == nil && b.LastConnected != nil {
+				return false
+			}
+			if a.LastConnected != nil && b.LastConnected != nil {
+				if !a.LastConnected.Equal(*b.LastConnected) {
+					return a.LastConnected.After(*b.LastConnected)
+				}
 			}
 		}
-		return connections[i].SSID < connections[j].SSID
+
+		// Fallback to sorting by SSID.
+		return a.SSID < b.SSID
 	})
 }
