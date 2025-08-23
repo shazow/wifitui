@@ -15,7 +15,7 @@ clean:
 	rm $(BINARY)
 
 run: $(BINARY)
-	go run *.go
+	go run .
 
 test:
 	go test -race -test.timeout 5s ./...
