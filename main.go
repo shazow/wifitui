@@ -260,7 +260,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						if selected.IsKnown {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
-							cmds = append(cmds, activateConnection(m.backend, m.selectedItem.Connection))
+							cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 						} else {
 							// For unknown networks, 'connect' is the same as 'join'
 							if selected.IsSecure {
@@ -273,7 +273,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								m.loading = true
 								m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
 								m.errorMessage = ""
-								cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.Connection, ""))
+								cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, ""))
 							}
 						}
 					}
@@ -292,7 +292,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.errorMessage = ""
 						m.passwordInput.SetValue("")
 						m.passwordInput.Focus()
-						cmds = append(cmds, getSecrets(m.backend, m.selectedItem.Connection))
+						cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 					} else {
 						if selected.IsSecure {
 							m.state = stateJoinView
@@ -304,7 +304,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
 							m.errorMessage = ""
-							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.Connection, ""))
+							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, ""))
 						}
 					}
 				}
@@ -320,7 +320,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Saving password for %s...", m.selectedItem.SSID)
 				m.errorMessage = ""
-				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.Connection, m.passwordInput.Value()))
+				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
 			}
 		case stateJoinView:
 			switch msg.String() {
@@ -332,14 +332,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
 				m.errorMessage = ""
-				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.Connection, m.passwordInput.Value()))
+				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
 			}
 		case stateForgetView:
 			switch msg.String() {
 			case "y":
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Forgetting '%s'...", m.selectedItem.SSID)
-				cmds = append(cmds, forgetNetwork(m.backend, m.selectedItem.Connection))
+				cmds = append(cmds, forgetNetwork(m.backend, m.selectedItem.SSID))
 			case "n", "q", "esc":
 				m.state = stateListView
 				m.statusMessage = ""
@@ -429,9 +429,9 @@ func refreshNetworks(b Backend) tea.Cmd {
 	}
 }
 
-func activateConnection(b Backend, c Connection) tea.Cmd {
+func activateConnection(b Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
-		err := b.ActivateConnection(c)
+		err := b.ActivateConnection(ssid)
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to activate connection: %w", err)}
 		}
@@ -439,9 +439,9 @@ func activateConnection(b Backend, c Connection) tea.Cmd {
 	}
 }
 
-func forgetNetwork(b Backend, c Connection) tea.Cmd {
+func forgetNetwork(b Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
-		err := b.ForgetNetwork(c)
+		err := b.ForgetNetwork(ssid)
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
 		}
@@ -449,9 +449,9 @@ func forgetNetwork(b Backend, c Connection) tea.Cmd {
 	}
 }
 
-func joinNetwork(b Backend, c Connection, password string) tea.Cmd {
+func joinNetwork(b Backend, ssid string, password string) tea.Cmd {
 	return func() tea.Msg {
-		err := b.JoinNetwork(c, password)
+		err := b.JoinNetwork(ssid, password)
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 		}
@@ -459,9 +459,9 @@ func joinNetwork(b Backend, c Connection, password string) tea.Cmd {
 	}
 }
 
-func getSecrets(b Backend, c Connection) tea.Cmd {
+func getSecrets(b Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
-		secret, err := b.GetSecrets(c)
+		secret, err := b.GetSecrets(ssid)
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to get secrets: %w", err)}
 		}
@@ -469,9 +469,9 @@ func getSecrets(b Backend, c Connection) tea.Cmd {
 	}
 }
 
-func updateSecret(b Backend, c Connection, newPassword string) tea.Cmd {
+func updateSecret(b Backend, ssid string, newPassword string) tea.Cmd {
 	return func() tea.Msg {
-		err := b.UpdateSecret(c, newPassword)
+		err := b.UpdateSecret(ssid, newPassword)
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
 		}

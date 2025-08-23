@@ -149,7 +149,7 @@ func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 	return connections, nil
 }
 
-func (b *IwdBackend) ActivateConnection(c Connection) error {
+func (b *IwdBackend) ActivateConnection(ssid string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -158,25 +158,25 @@ func (b *IwdBackend) ActivateConnection(c Connection) error {
 	if err != nil {
 		return err
 	}
-	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, c.SSID).Store()
+	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid).Store()
 }
 
-func (b *IwdBackend) ForgetNetwork(c Connection) error {
+func (b *IwdBackend) ForgetNetwork(ssid string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
 	}
-	path, err := b.findKnownNetworkPath(conn, c.SSID)
+	path, err := b.findKnownNetworkPath(conn, ssid)
 	if err != nil {
 		return err
 	}
 	if path == "" {
-		return fmt.Errorf("cannot forget: network %s is not known", c.SSID)
+		return fmt.Errorf("cannot forget: network %s is not known", ssid)
 	}
 	return conn.Object(iwdDest, iwdPath).Call(iwdIface+".ForgetNetwork", 0, path).Store()
 }
 
-func (b *IwdBackend) JoinNetwork(c Connection, password string) error {
+func (b *IwdBackend) JoinNetwork(ssid string, password string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -185,18 +185,18 @@ func (b *IwdBackend) JoinNetwork(c Connection, password string) error {
 	if err != nil {
 		return err
 	}
-	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, c.SSID, password).Store()
+	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
 }
 
-func (b *IwdBackend) GetSecrets(c Connection) (string, error) {
+func (b *IwdBackend) GetSecrets(ssid string) (string, error) {
 	// The iwd API doesn't seem to expose a way to get the PSK directly for security reasons.
 	// We can't implement this feature for iwd.
 	return "", fmt.Errorf("getting secrets is not supported by the iwd backend")
 }
 
-func (b *IwdBackend) UpdateSecret(c Connection, newPassword string) error {
+func (b *IwdBackend) UpdateSecret(ssid string, newPassword string) error {
 	// To "update" a secret, we have to forget the network and then re-join it.
-	err := b.ForgetNetwork(c)
+	err := b.ForgetNetwork(ssid)
 	if err != nil {
 		return fmt.Errorf("failed to forget network before updating secret: %w", err)
 	}

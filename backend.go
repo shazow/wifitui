@@ -19,13 +19,13 @@ type Backend interface {
 	// BuildNetworkList scans (if shouldScan is true) and returns all networks.
 	BuildNetworkList(shouldScan bool) ([]Connection, error)
 	// ActivateConnection activates a known network.
-	ActivateConnection(conn Connection) error
+	ActivateConnection(ssid string) error
 	// ForgetNetwork removes a known network configuration.
-	ForgetNetwork(conn Connection) error
+	ForgetNetwork(ssid string) error
 	// JoinNetwork connects to a new network, potentially creating a new configuration.
-	JoinNetwork(conn Connection, password string) error
+	JoinNetwork(ssid string, password string) error
 	// GetSecrets retrieves the password for a known connection.
-	GetSecrets(conn Connection) (string, error)
+	GetSecrets(ssid string) (string, error)
 	// UpdateSecret changes the password for a known connection.
-	UpdateSecret(conn Connection, newPassword string) error
+	UpdateSecret(ssid string, newPassword string) error
 }
