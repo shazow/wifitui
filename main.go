@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
-	"log"
+	"io"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/peterbourgon/ff/v3/ffcli"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -70,6 +74,25 @@ func (i connectionItem) Description() string {
 	return ""
 }
 func (i connectionItem) FilterValue() string { return i.SSID }
+
+// plainTitle returns the title of the connection item without any styling
+func (i connectionItem) plainTitle() string {
+	if i.IsActive {
+		return "* " + i.SSID
+	}
+	return i.SSID
+}
+
+// plainDescription returns the description of the connection item without any styling
+func (i connectionItem) plainDescription() string {
+	if i.Strength > 0 {
+		return fmt.Sprintf("%d%%", i.Strength)
+	}
+	if !i.IsVisible && i.LastConnected != nil {
+		return formatDuration(*i.LastConnected)
+	}
+	return ""
+}
 
 // formatDuration takes a time and returns a human-readable string like "2 hours ago"
 func formatDuration(t time.Time) string {
@@ -470,14 +493,102 @@ func updateSecret(b Backend, ssid string, newPassword string) tea.Cmd {
 
 // main is the entry point of the application
 func main() {
+	var (
+		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
+		verbose     = rootFlagSet.Bool("v", false, "verbose output")
+	)
+
+	listCmd := &ffcli.Command{
+		Name:      "list",
+		ShortHelp: "List wifi networks",
+		Exec: func(ctx context.Context, args []string) error {
+			return runList(os.Stdout, *verbose)
+		},
+	}
+
+	showCmd := &ffcli.Command{
+		Name:      "show",
+		ShortHelp: "Show a wifi network",
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf("show requires an ssid")
+			}
+			return runShow(os.Stdout, *verbose, args[0])
+		},
+	}
+
+	root := &ffcli.Command{
+		ShortUsage:  "wifitui [flags] <subcommand> [args...]",
+		FlagSet:     rootFlagSet,
+		Subcommands: []*ffcli.Command{listCmd, showCmd},
+		Exec: func(ctx context.Context, args []string) error {
+			return runTUI()
+		},
+	}
+
+	if err := root.ParseAndRun(context.Background(), os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runTUI() error {
 	m, err := initialModel()
 	if err != nil {
-		fmt.Printf("Error initializing model: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error initializing model: %w", err)
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
-		log.Fatalf("Error running program: %v", err)
-		os.Exit(1)
+		return fmt.Errorf("error running program: %w", err)
 	}
+	return nil
+}
+
+func runList(w io.Writer, verbose bool) error {
+	backend, err := NewBackend()
+	if err != nil {
+		return fmt.Errorf("failed to initialize backend: %w", err)
+	}
+
+	connections, err := backend.BuildNetworkList(true)
+	if err != nil {
+		return fmt.Errorf("failed to list networks: %w", err)
+	}
+
+	for _, c := range connections {
+		item := connectionItem{Connection: c}
+		fmt.Fprintf(w, "%s\t%s\n", item.plainTitle(), item.plainDescription())
+	}
+
+	return nil
+}
+
+func runShow(w io.Writer, verbose bool, ssid string) error {
+	backend, err := NewBackend()
+	if err != nil {
+		return fmt.Errorf("failed to initialize backend: %w", err)
+	}
+
+	connections, err := backend.BuildNetworkList(true)
+	if err != nil {
+		return fmt.Errorf("failed to list networks: %w", err)
+	}
+
+	for _, c := range connections {
+		if c.SSID == ssid {
+			fmt.Fprintf(w, "SSID: %s\n", c.SSID)
+			fmt.Fprintf(w, "Active: %t\n", c.IsActive)
+			fmt.Fprintf(w, "Known: %t\n", c.IsKnown)
+			fmt.Fprintf(w, "Secure: %t\n", c.IsSecure)
+			fmt.Fprintf(w, "Visible: %t\n", c.IsVisible)
+			fmt.Fprintf(w, "Hidden: %t\n", c.IsHidden)
+			fmt.Fprintf(w, "Strength: %d%%\n", c.Strength)
+			if c.LastConnected != nil {
+				fmt.Fprintf(w, "Last Connected: %s\n", formatDuration(*c.LastConnected))
+			}
+			return nil
+		}
+	}
+
+	return fmt.Errorf("network not found: %s", ssid)
 }
