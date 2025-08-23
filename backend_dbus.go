@@ -2,504 +2,317 @@ package main
 
 import (
 	"fmt"
-	"time"
 
-	"github.com/godbus/dbus/v5"
+	"github.com/Wifx/gonetworkmanager"
 	"github.com/google/uuid"
-)
-
-// D-Bus constants for NetworkManager
-const (
-	nmDest             = "org.freedesktop.NetworkManager"
-	nmPath             = "/org/freedesktop/NetworkManager"
-	nmIface            = "org.freedesktop.NetworkManager"
-	nmSettingsPath     = "/org/freedesktop/NetworkManager/Settings"
-	nmSettingsIface    = "org.freedesktop.NetworkManager.Settings"
-	nmConnIface        = "org.freedesktop.NetworkManager.Settings.Connection"
-	nmActiveConnIface  = "org.freedesktop.NetworkManager.Connection.Active"
-	nmDeviceIface      = "org.freedesktop.NetworkManager.Device"
-	nmWirelessIface    = "org.freedesktop.NetworkManager.Device.Wireless"
-	nmAccessPointIface = "org.freedesktop.NetworkManager.AccessPoint"
 )
 
 // DBusBackend implements the Backend interface using D-Bus to communicate with NetworkManager.
 type DBusBackend struct {
-	// connectionDetails stores D-Bus specific info needed for operations.
-	// It's populated by BuildNetworkList and used by other methods.
-	// The key is the SSID of the network.
-	connectionDetails map[string]dbusDetails
-}
-
-// dbusDetails holds the D-Bus specific information for a connection.
-type dbusDetails struct {
-	path     dbus.ObjectPath // Path to the connection settings
-	apPath   dbus.ObjectPath // Path to the access point
-	settings map[string]map[string]dbus.Variant
-}
-
-// internalKnownConnection is a temporary struct used during list building.
-type internalKnownConnection struct {
-	ssid      string
-	path      dbus.ObjectPath
-	settings  map[string]map[string]dbus.Variant
-	timestamp uint64
-}
-
-// internalAccessPoint holds the information for a single visible Wi-Fi access point.
-type internalAccessPoint struct {
-	ssid     string
-	path     dbus.ObjectPath
-	strength uint8
-	isSecure bool
+	nm           gonetworkmanager.NetworkManager
+	settings     gonetworkmanager.Settings
+	connections  map[string]gonetworkmanager.Connection
+	accessPoints map[string]gonetworkmanager.AccessPoint
 }
 
 // NewDBusBackend creates a new DBusBackend.
 func NewDBusBackend() (Backend, error) {
-	conn, err := dbus.SystemBus()
+	nm, err := gonetworkmanager.NewNetworkManager()
 	if err != nil {
-		return nil, err
-	}
-	// We don't defer conn.Close() here because the backend will use it.
-	// Instead, we'll just use this connection to check for service availability.
-	// A better implementation might pool or reuse the connection.
-	obj := conn.Object(nmDest, nmPath)
-	if obj == nil {
-		return nil, fmt.Errorf("failed to get dbus object for %s", nmDest)
+		return nil, fmt.Errorf("failed to create network manager client: %w", err)
 	}
 
-	// This is a simple way to check if the service is available.
-	// A more robust check might involve trying to call a method.
-	var devices []dbus.ObjectPath
-	err = obj.Call(nmIface+".GetDevices", 0).Store(&devices)
+	settings, err := gonetworkmanager.NewSettings()
 	if err != nil {
-		return nil, fmt.Errorf("networkmanager is not available: %w", err)
+		return nil, fmt.Errorf("failed to get settings: %w", err)
 	}
 
 	return &DBusBackend{
-		connectionDetails: make(map[string]dbusDetails),
+		nm:           nm,
+		settings:     settings,
+		connections:  make(map[string]gonetworkmanager.Connection),
+		accessPoints: make(map[string]gonetworkmanager.AccessPoint),
 	}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
 func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
-	conn, err := dbus.SystemBus()
+	b.connections = make(map[string]gonetworkmanager.Connection)
+	b.accessPoints = make(map[string]gonetworkmanager.AccessPoint)
+
+	devices, err := b.nm.GetDevices()
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
 
-	// Clear previous details
-	b.connectionDetails = make(map[string]dbusDetails)
-
-	wirelessDevice, err := b.getWirelessDevice(conn)
-	if err != nil {
-		// No wireless device, can't scan or get APs.
-		// Fallback to just listing known connections.
-		return b.buildListOfKnownConnectionsOnly(conn)
+	var wirelessDevice gonetworkmanager.DeviceWireless
+	for _, device := range devices {
+		if dev, ok := device.(gonetworkmanager.DeviceWireless); ok {
+			wirelessDevice = dev
+			break
+		}
+	}
+	if wirelessDevice == nil {
+		return nil, fmt.Errorf("no wireless device found")
 	}
 
 	if shouldScan {
-		devObj := conn.Object(nmDest, wirelessDevice)
-		err = devObj.Call(nmWirelessIface+".RequestScan", 0, map[string]dbus.Variant{}).Store()
+		err = wirelessDevice.RequestScan()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	knowns, err := b.getKnownConnections(conn)
+	knownConnections, err := b.settings.ListConnections()
 	if err != nil {
 		return nil, err
 	}
 
-	aps, err := b.getVisibleAccessPoints(conn, wirelessDevice)
+	accessPoints, err := wirelessDevice.GetAccessPoints()
 	if err != nil {
 		return nil, err
 	}
 
-	var connections []Connection
+	var conns []Connection
 	processedSSIDs := make(map[string]bool)
-	activeWifiPath := b.getActiveWifiConnectionPath(conn)
 
-	// Process visible APs first
-	for ssid, ap := range aps {
+	activeConnections, err := b.nm.GetPropertyActiveConnections()
+	if err != nil {
+		return nil, err
+	}
+
+	var activeConnectionID string
+	for _, activeConn := range activeConnections {
+		id, err := activeConn.GetPropertyID()
+		if err != nil {
+			continue
+		}
+		typ, err := activeConn.GetPropertyType()
+		if err != nil {
+			continue
+		}
+		if typ == "802-11-wireless" {
+			activeConnectionID = id
+			break
+		}
+	}
+
+	for _, ap := range accessPoints {
+		ssid, err := ap.GetPropertySSID()
+		if err != nil || ssid == "" {
+			continue
+		}
+
+		strength, _ := ap.GetPropertyStrength()
+		if existing, exists := b.accessPoints[ssid]; exists {
+			exStrength, _ := existing.GetPropertyStrength()
+			if strength <= exStrength {
+				continue
+			}
+		}
+
 		processedSSIDs[ssid] = true
+		b.accessPoints[ssid] = ap
+
+		flags, _ := ap.GetPropertyFlags()
+		isSecure := uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0
+
 		var connInfo Connection
-		if known, ok := knowns[ssid]; ok {
-			isHidden := false
-			if wirelessSettings, ok := known.settings["802-11-wireless"]; ok {
-				if hidden, ok := wirelessSettings["hidden"]; ok {
-					if hiddenValue, ok := hidden.Value().(bool); ok {
-						isHidden = hiddenValue
+		var knownConn gonetworkmanager.Connection
+		for _, kc := range knownConnections {
+			s, err := kc.GetSettings()
+			if err != nil {
+				continue
+			}
+			if wireless, ok := s["802-11-wireless"]; ok {
+				if ssidBytes, ok := wireless["ssid"].([]byte); ok {
+					if string(ssidBytes) == ssid {
+						knownConn = kc
+						break
 					}
+				}
+			}
+		}
+
+		if knownConn != nil {
+			b.connections[ssid] = knownConn
+			s, _ := knownConn.GetSettings()
+			var id string
+			if c, ok := s["connection"]; ok {
+				if i, ok := c["id"].(string); ok {
+					id = i
 				}
 			}
 			connInfo = Connection{
 				SSID:      ssid,
-				IsActive:  (activeWifiPath != "" && known.path == activeWifiPath),
+				IsActive:  activeConnectionID != "" && id == activeConnectionID,
 				IsKnown:   true,
-				IsSecure:  ap.isSecure,
+				IsSecure:  isSecure,
 				IsVisible: true,
-				IsHidden:  isHidden,
-				Strength:  ap.strength,
+				Strength:  strength,
 			}
-			b.connectionDetails[ssid] = dbusDetails{path: known.path, apPath: ap.path, settings: known.settings}
 		} else {
 			connInfo = Connection{
 				SSID:      ssid,
 				IsKnown:   false,
-				IsSecure:  ap.isSecure,
+				IsSecure:  isSecure,
 				IsVisible: true,
-				Strength:  ap.strength,
+				Strength:  strength,
 			}
-			b.connectionDetails[ssid] = dbusDetails{apPath: ap.path}
 		}
-		connections = append(connections, connInfo)
+		conns = append(conns, connInfo)
 	}
 
-	// Add known connections that are not visible
-	for ssid, known := range knowns {
+	for _, knownConn := range knownConnections {
+		s, _ := knownConn.GetSettings()
+		var connType string
+		if ct, ok := s["connection"]["type"]; ok {
+			if t, ok := ct.(string); ok {
+				connType = t
+			}
+		}
+		if connType != "802-11-wireless" {
+			continue
+		}
+		var ssid string
+		if wireless, ok := s["802-11-wireless"]; ok {
+			if ssidBytes, ok := wireless["ssid"].([]byte); ok {
+				ssid = string(ssidBytes)
+			}
+		}
+		if ssid == "" {
+			continue
+		}
+
 		if _, processed := processedSSIDs[ssid]; !processed {
-			isHidden := false
-			if wirelessSettings, ok := known.settings["802-11-wireless"]; ok {
-				if hidden, ok := wirelessSettings["hidden"]; ok {
-					if hiddenValue, ok := hidden.Value().(bool); ok {
-						isHidden = hiddenValue
-					}
-				}
-			}
-			var lastConnected *time.Time
-			if known.timestamp > 0 {
-				t := time.Unix(int64(known.timestamp), 0)
-				lastConnected = &t
-			}
-			connections = append(connections, Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden, LastConnected: lastConnected})
-			b.connectionDetails[ssid] = dbusDetails{path: known.path, settings: known.settings}
+			b.connections[ssid] = knownConn
+			conns = append(conns, Connection{SSID: ssid, IsKnown: true})
 		}
 	}
 
-	sortConnections(connections)
-
-	return connections, nil
+	sortConnections(conns)
+	return conns, nil
 }
 
 func (b *DBusBackend) ActivateConnection(c Connection) error {
-	details, ok := b.connectionDetails[c.SSID]
-	if !ok || details.path == "" {
-		return fmt.Errorf("connection details not found for %s", c.SSID)
+	conn, ok := b.connections[c.SSID]
+	if !ok {
+		return fmt.Errorf("connection not found for %s", c.SSID)
 	}
 
-	conn, err := dbus.SystemBus()
+	ap, apOK := b.accessPoints[c.SSID]
+	if !apOK {
+		return fmt.Errorf("access point not found for %s", c.SSID)
+	}
+
+	devices, err := b.nm.GetDevices()
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
-	nmObj := conn.Object(nmDest, nmPath)
-	wirelessDevice, err := b.getWirelessDevice(conn)
-	if err != nil {
-		return err
+	var wirelessDevice gonetworkmanager.Device
+	for _, device := range devices {
+		deviceType, err := device.GetPropertyDeviceType()
+		if err != nil {
+			continue
+		}
+		if deviceType == gonetworkmanager.NmDeviceTypeWifi {
+			wirelessDevice = device
+			break
+		}
+	}
+	if wirelessDevice == nil {
+		return fmt.Errorf("no wireless device found")
 	}
 
-	apPath := details.apPath
-	if apPath == "" {
-		// If not visible, we might not have an AP path.
-		// Try activating without a specific AP. This may or may not work.
-		apPath = "/"
-	}
-
-	var activeConnectionPath dbus.ObjectPath
-	err = nmObj.Call(
-		nmIface+".ActivateConnection", 0,
-		details.path,   // connection
-		wirelessDevice, // device
-		apPath,         // specific_object
-	).Store(&activeConnectionPath)
-
-	if err != nil {
-		return fmt.Errorf("failed to activate connection: %w", err)
-	}
-	return nil
+	_, err = b.nm.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	return err
 }
 
 func (b *DBusBackend) ForgetNetwork(c Connection) error {
-	details, ok := b.connectionDetails[c.SSID]
-	if !ok || details.path == "" {
-		return fmt.Errorf("connection details not found for %s", c.SSID)
+	conn, ok := b.connections[c.SSID]
+	if !ok {
+		return fmt.Errorf("connection not found for %s", c.SSID)
 	}
-
-	conn, err := dbus.SystemBus()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	obj := conn.Object(nmDest, details.path)
-	call := obj.Call(nmConnIface+".Delete", 0)
-	if call.Err != nil {
-		return fmt.Errorf("failed to forget connection: %w", call.Err)
-	}
-	return nil
+	return conn.Delete()
 }
 
 func (b *DBusBackend) JoinNetwork(c Connection, password string) error {
-	details, ok := b.connectionDetails[c.SSID]
-	if !ok || details.apPath == "" {
-		return fmt.Errorf("access point details not found for %s", c.SSID)
+	ap, ok := b.accessPoints[c.SSID]
+	if !ok {
+		return fmt.Errorf("access point not found for %s", c.SSID)
 	}
 
-	conn, err := dbus.SystemBus()
+	devices, err := b.nm.GetDevices()
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
-	wirelessDevice, err := b.getWirelessDevice(conn)
-	if err != nil {
-		return err
-	}
-
-	connection := map[string]map[string]dbus.Variant{
-		"connection": {
-			"id":   dbus.MakeVariant(c.SSID),
-			"uuid": dbus.MakeVariant(uuid.New().String()),
-			"type": dbus.MakeVariant("802-11-wireless"),
-		},
-		"802-11-wireless": {
-			"mode": dbus.MakeVariant("infrastructure"),
-			"ssid": dbus.MakeVariant([]byte(c.SSID)),
-		},
-		"ipv4": {"method": dbus.MakeVariant("auto")},
-		"ipv6": {"method": dbus.MakeVariant("auto")},
-	}
-
-	if c.IsSecure {
-		connection["802-11-wireless-security"] = map[string]dbus.Variant{
-			"key-mgmt": dbus.MakeVariant("wpa-psk"),
-			"psk":      dbus.MakeVariant(password),
+	var wirelessDevice gonetworkmanager.Device
+	for _, device := range devices {
+		deviceType, err := device.GetPropertyDeviceType()
+		if err != nil {
+			continue
+		}
+		if deviceType == gonetworkmanager.NmDeviceTypeWifi {
+			wirelessDevice = device
+			break
 		}
 	}
-
-	nmObj := conn.Object(nmDest, nmPath)
-	var activeConnectionPath dbus.ObjectPath
-	var newConnectionPath dbus.ObjectPath
-	err = nmObj.Call(
-		nmIface+".AddAndActivateConnection", 0,
-		connection,
-		wirelessDevice,
-		details.apPath,
-	).Store(&newConnectionPath, &activeConnectionPath)
-
-	if err != nil {
-		return fmt.Errorf("failed to add/activate connection: %w", err)
+	if wirelessDevice == nil {
+		return fmt.Errorf("no wireless device found")
 	}
-	return nil
+
+	connection := make(map[string]map[string]interface{})
+	connection["802-11-wireless"] = make(map[string]interface{})
+	connection["802-11-wireless"]["security"] = "802-11-wireless-security"
+	connection["802-11-wireless-security"] = make(map[string]interface{})
+	connection["802-11-wireless-security"]["key-mgmt"] = "wpa-psk"
+	connection["802-11-wireless-security"]["psk"] = password
+	connection["connection"] = make(map[string]interface{})
+	connection["connection"]["id"] = c.SSID
+	connection["connection"]["uuid"] = uuid.New().String()
+	connection["connection"]["type"] = "802-11-wireless"
+
+	_, err = b.nm.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
+	return err
 }
 
 func (b *DBusBackend) GetSecrets(c Connection) (string, error) {
-	details, ok := b.connectionDetails[c.SSID]
-	if !ok || details.path == "" {
-		return "", fmt.Errorf("connection details not found for %s", c.SSID)
-	}
-	if _, ok := details.settings["802-11-wireless-security"]; !ok {
-		return "", nil // No security settings, so no secret
+	conn, ok := b.connections[c.SSID]
+	if !ok {
+		return "", fmt.Errorf("connection not found for %s", c.SSID)
 	}
 
-	conn, err := dbus.SystemBus()
+	settings, err := conn.GetSecrets("802-11-wireless-security")
 	if err != nil {
 		return "", err
 	}
-	defer conn.Close()
 
-	obj := conn.Object(nmDest, details.path)
-	var secrets map[string]map[string]dbus.Variant
-	err = obj.Call(nmConnIface+".GetSecrets", 0, "802-11-wireless-security").Store(&secrets)
-	if err != nil {
-		return "", fmt.Errorf("failed to get secrets (did you authenticate?): %w", err)
+	if s, ok := settings["802-11-wireless-security"]; ok {
+		if psk, ok := s["psk"]; ok {
+			if p, ok := psk.(string); ok {
+				return p, nil
+			}
+		}
 	}
 
-	psk, ok := secrets["802-11-wireless-security"]["psk"]
-	if !ok {
-		return "", nil // No PSK found
-	}
-	return psk.Value().(string), nil
+	return "", nil
 }
 
 func (b *DBusBackend) UpdateSecret(c Connection, newPassword string) error {
-	details, ok := b.connectionDetails[c.SSID]
-	if !ok || details.path == "" {
-		return fmt.Errorf("connection details not found for %s", c.SSID)
+	conn, ok := b.connections[c.SSID]
+	if !ok {
+		return fmt.Errorf("connection not found for %s", c.SSID)
 	}
 
-	conn, err := dbus.SystemBus()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	obj := conn.Object(nmDest, details.path)
-	currentSettings, err := b.getSettings(obj)
+	settings, err := conn.GetSettings()
 	if err != nil {
 		return err
 	}
 
-	if _, ok := currentSettings["802-11-wireless-security"]; !ok {
-		currentSettings["802-11-wireless-security"] = make(map[string]dbus.Variant)
+	if _, ok := settings["802-11-wireless-security"]; !ok {
+		settings["802-11-wireless-security"] = make(map[string]interface{})
 	}
-	currentSettings["802-11-wireless-security"]["psk"] = dbus.MakeVariant(newPassword)
+	settings["802-11-wireless-security"]["psk"] = newPassword
 
-	err = obj.Call(nmConnIface+".Update", 0, currentSettings).Store()
-	if err != nil {
-		return fmt.Errorf("failed to update connection: %w", err)
-	}
-	return nil
-}
-
-// --- D-Bus Helper Functions ---
-
-func (b *DBusBackend) getWirelessDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
-	nmObj := conn.Object(nmDest, nmPath)
-	var devices []dbus.ObjectPath
-	err := nmObj.Call(nmIface+".GetDevices", 0).Store(&devices)
-	if err != nil {
-		return "", err
-	}
-	for _, devicePath := range devices {
-		deviceObj := conn.Object(nmDest, devicePath)
-		deviceTypeVar, err := deviceObj.GetProperty(nmDeviceIface + ".DeviceType")
-		if err != nil {
-			continue
-		}
-		if deviceType, ok := deviceTypeVar.Value().(uint32); ok && deviceType == 2 { // NM_DEVICE_TYPE_WIFI
-			return devicePath, nil
-		}
-	}
-	return "", fmt.Errorf("no wireless device found")
-}
-
-func (b *DBusBackend) getKnownConnections(conn *dbus.Conn) (map[string]internalKnownConnection, error) {
-	knowns := make(map[string]internalKnownConnection)
-	settingsObj := conn.Object(nmDest, nmSettingsPath)
-	var connPaths []dbus.ObjectPath
-	err := settingsObj.Call(nmSettingsIface+".ListConnections", 0).Store(&connPaths)
-	if err != nil {
-		return nil, err
-	}
-	for _, path := range connPaths {
-		connObj := conn.Object(nmDest, path)
-		settings, err := b.getSettings(connObj)
-		if err != nil {
-			continue
-		}
-		if connType, ok := settings["connection"]["type"]; ok && connType.Value() == "802-11-wireless" {
-			if ssidBytes, ok := settings["802-11-wireless"]["ssid"].Value().([]byte); ok {
-				ssid := string(ssidBytes)
-				var ts uint64
-				if connSettings, ok := settings["connection"]; ok {
-					if timestampVar, ok := connSettings["timestamp"]; ok {
-						if timestamp, ok := timestampVar.Value().(uint64); ok {
-							ts = timestamp
-						}
-					}
-				}
-				knowns[ssid] = internalKnownConnection{ssid: ssid, path: path, settings: settings, timestamp: ts}
-			}
-		}
-	}
-	return knowns, nil
-}
-
-func (b *DBusBackend) getVisibleAccessPoints(conn *dbus.Conn, wirelessDevice dbus.ObjectPath) (map[string]internalAccessPoint, error) {
-	aps := make(map[string]internalAccessPoint)
-	devObj := conn.Object(nmDest, wirelessDevice)
-	var apPaths []dbus.ObjectPath
-	err := devObj.Call(nmWirelessIface+".GetAllAccessPoints", 0).Store(&apPaths)
-	if err != nil {
-		return nil, err
-	}
-	for _, path := range apPaths {
-		apObj := conn.Object(nmDest, path)
-		ssidVar, err := apObj.GetProperty(nmAccessPointIface + ".Ssid")
-		if err != nil || ssidVar.Value() == nil {
-			continue
-		}
-		ssidBytes, ok := ssidVar.Value().([]byte)
-		if !ok || len(ssidBytes) == 0 {
-			continue
-		}
-		ssid := string(ssidBytes)
-
-		strengthVar, _ := apObj.GetProperty(nmAccessPointIface + ".Strength")
-		strength := strengthVar.Value().(byte)
-
-		if existing, exists := aps[ssid]; exists && strength <= existing.strength {
-			continue
-		}
-
-		flagsVar, _ := apObj.GetProperty(nmAccessPointIface + ".Flags")
-		aps[ssid] = internalAccessPoint{
-			ssid:     ssid,
-			path:     path,
-			strength: strength,
-			isSecure: (flagsVar.Value().(uint32) & 0x1) != 0, // NM_802_11_AP_FLAGS_PRIVACY
-		}
-	}
-	return aps, nil
-}
-
-func (b *DBusBackend) getActiveWifiConnectionPath(conn *dbus.Conn) dbus.ObjectPath {
-	nmObj := conn.Object(nmDest, nmPath)
-	var activeConnPaths []dbus.ObjectPath
-	variant, err := nmObj.GetProperty(nmIface + ".ActiveConnections")
-	if err != nil {
-		return ""
-	}
-	activeConnPaths, _ = variant.Value().([]dbus.ObjectPath)
-
-	for _, path := range activeConnPaths {
-		activeConnObj := conn.Object(nmDest, path)
-		connTypeVar, err := activeConnObj.GetProperty(nmActiveConnIface + ".Type")
-		if err != nil {
-			continue
-		}
-		if connType, ok := connTypeVar.Value().(string); ok && connType == "802-11-wireless" {
-			settingsPathVar, err := activeConnObj.GetProperty(nmActiveConnIface + ".Connection")
-			if err != nil {
-				continue
-			}
-			if settingsPath, ok := settingsPathVar.Value().(dbus.ObjectPath); ok {
-				return settingsPath
-			}
-		}
-	}
-	return ""
-}
-
-func (b *DBusBackend) buildListOfKnownConnectionsOnly(conn *dbus.Conn) ([]Connection, error) {
-	knowns, err := b.getKnownConnections(conn)
-	if err != nil {
-		return nil, err
-	}
-	var connections []Connection
-	for ssid, known := range knowns {
-		isHidden := false
-		if wirelessSettings, ok := known.settings["802-11-wireless"]; ok {
-			if hidden, ok := wirelessSettings["hidden"]; ok {
-				if hiddenValue, ok := hidden.Value().(bool); ok {
-					isHidden = hiddenValue
-				}
-			}
-		}
-		connections = append(connections, Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
-		b.connectionDetails[ssid] = dbusDetails{path: known.path, settings: known.settings}
-	}
-	return connections, nil
-}
-
-func (b *DBusBackend) getSettings(obj dbus.BusObject) (map[string]map[string]dbus.Variant, error) {
-	var settings map[string]map[string]dbus.Variant
-	err := obj.Call(nmConnIface+".GetSettings", 0).Store(&settings)
-	if err != nil {
-		return nil, err
-	}
-	return settings, nil
+	return conn.Update(settings)
 }
