@@ -1,4 +1,5 @@
 //go:build darwin
+// WARNING: This implementation is untested.
 
 package main
 
