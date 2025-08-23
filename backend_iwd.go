@@ -1,3 +1,4 @@
+// WARNING: This implementation is untested.
 package main
 
 import (
