@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
@@ -38,9 +39,10 @@ type dbusDetails struct {
 
 // internalKnownConnection is a temporary struct used during list building.
 type internalKnownConnection struct {
-	ssid     string
-	path     dbus.ObjectPath
-	settings map[string]map[string]dbus.Variant
+	ssid      string
+	path      dbus.ObjectPath
+	settings  map[string]map[string]dbus.Variant
+	timestamp uint64
 }
 
 // internalAccessPoint holds the information for a single visible Wi-Fi access point.
@@ -165,7 +167,12 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 					}
 				}
 			}
-			connections = append(connections, Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
+			var lastConnected *time.Time
+			if known.timestamp > 0 {
+				t := time.Unix(int64(known.timestamp), 0)
+				lastConnected = &t
+			}
+			connections = append(connections, Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden, LastConnected: lastConnected})
 			b.connectionDetails[ssid] = dbusDetails{path: known.path, settings: known.settings}
 		}
 	}
@@ -386,7 +393,15 @@ func (b *DBusBackend) getKnownConnections(conn *dbus.Conn) (map[string]internalK
 		if connType, ok := settings["connection"]["type"]; ok && connType.Value() == "802-11-wireless" {
 			if ssidBytes, ok := settings["802-11-wireless"]["ssid"].Value().([]byte); ok {
 				ssid := string(ssidBytes)
-				knowns[ssid] = internalKnownConnection{ssid: ssid, path: path, settings: settings}
+				var ts uint64
+				if connSettings, ok := settings["connection"]; ok {
+					if timestampVar, ok := connSettings["timestamp"]; ok {
+						if timestamp, ok := timestampVar.Value().(uint64); ok {
+							ts = timestamp
+						}
+					}
+				}
+				knowns[ssid] = internalKnownConnection{ssid: ssid, path: path, settings: settings, timestamp: ts}
 			}
 		}
 	}

@@ -1,14 +1,17 @@
 package main
 
+import "time"
+
 // Connection represents a single network, visible or known.
 type Connection struct {
-	SSID      string
-	IsActive  bool
-	IsKnown   bool
-	IsSecure  bool
-	IsVisible bool
-	IsHidden  bool
-	Strength  uint8 // 0-100
+	SSID          string
+	IsActive      bool
+	IsKnown       bool
+	IsSecure      bool
+	IsVisible     bool
+	IsHidden      bool
+	Strength      uint8 // 0-100
+	LastConnected *time.Time
 }
 
 // Backend defines the interface for managing network connections.

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -61,11 +62,32 @@ func (i connectionItem) Title() string {
 }
 func (i connectionItem) Description() string {
 	if i.Strength > 0 {
-		return fmt.Sprintf("%d%% %s", i.Strength, strings.Repeat("█", int(i.Strength / 2)))
+		return fmt.Sprintf("%d%% %s", i.Strength, strings.Repeat("█", int(i.Strength/2)))
+	}
+	if !i.IsVisible && i.LastConnected != nil {
+		return formatDuration(*i.LastConnected)
 	}
 	return ""
 }
 func (i connectionItem) FilterValue() string { return i.SSID }
+
+// formatDuration takes a time and returns a human-readable string like "2 hours ago"
+func formatDuration(t time.Time) string {
+	d := time.Since(t)
+	var s string
+	switch {
+	case d < time.Minute*2:
+		s = fmt.Sprintf("%0.f seconds", d.Seconds())
+	case d < time.Hour*2:
+		s = fmt.Sprintf("%0.f minutes", d.Minutes())
+	case d < time.Hour*48:
+		s = fmt.Sprintf("%0.1f hours", d.Hours())
+	default:
+		days := d.Hours() / 24
+		s = fmt.Sprintf("%0.1f days", days)
+	}
+	return fmt.Sprintf("last seen %s ago", s)
+}
 
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
