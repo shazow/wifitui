@@ -111,17 +111,6 @@ type model struct {
 	selectedItem  connectionItem
 }
 
-// NewBackend determines which backend to use.
-// It first tries NetworkManager, then falls back to iwd.
-func NewBackend() (Backend, error) {
-	backend, err := NewDBusBackend()
-	if err == nil {
-		return backend, nil
-	}
-	// If DBus backend failed, try the iwd backend
-	return NewIwdBackend()
-}
-
 // initialModel creates the starting state of our application
 func initialModel() (model, error) {
 	backend, err := NewBackend()
