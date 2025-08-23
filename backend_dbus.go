@@ -208,15 +208,15 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 	return conns, nil
 }
 
-func (b *DBusBackend) ActivateConnection(c Connection) error {
-	conn, ok := b.connections[c.SSID]
+func (b *DBusBackend) ActivateConnection(ssid string) error {
+	conn, ok := b.connections[ssid]
 	if !ok {
-		return fmt.Errorf("connection not found for %s", c.SSID)
+		return fmt.Errorf("connection not found for %s", ssid)
 	}
 
-	ap, apOK := b.accessPoints[c.SSID]
+	ap, apOK := b.accessPoints[ssid]
 	if !apOK {
-		return fmt.Errorf("access point not found for %s", c.SSID)
+		return fmt.Errorf("access point not found for %s", ssid)
 	}
 
 	devices, err := b.nm.GetDevices()
@@ -242,18 +242,18 @@ func (b *DBusBackend) ActivateConnection(c Connection) error {
 	return err
 }
 
-func (b *DBusBackend) ForgetNetwork(c Connection) error {
-	conn, ok := b.connections[c.SSID]
+func (b *DBusBackend) ForgetNetwork(ssid string) error {
+	conn, ok := b.connections[ssid]
 	if !ok {
-		return fmt.Errorf("connection not found for %s", c.SSID)
+		return fmt.Errorf("connection not found for %s", ssid)
 	}
 	return conn.Delete()
 }
 
-func (b *DBusBackend) JoinNetwork(c Connection, password string) error {
-	ap, ok := b.accessPoints[c.SSID]
+func (b *DBusBackend) JoinNetwork(ssid string, password string) error {
+	ap, ok := b.accessPoints[ssid]
 	if !ok {
-		return fmt.Errorf("access point not found for %s", c.SSID)
+		return fmt.Errorf("access point not found for %s", ssid)
 	}
 
 	devices, err := b.nm.GetDevices()
@@ -282,7 +282,7 @@ func (b *DBusBackend) JoinNetwork(c Connection, password string) error {
 	connection["802-11-wireless-security"]["key-mgmt"] = "wpa-psk"
 	connection["802-11-wireless-security"]["psk"] = password
 	connection["connection"] = make(map[string]interface{})
-	connection["connection"]["id"] = c.SSID
+	connection["connection"]["id"] = ssid
 	connection["connection"]["uuid"] = uuid.New().String()
 	connection["connection"]["type"] = "802-11-wireless"
 
@@ -290,10 +290,10 @@ func (b *DBusBackend) JoinNetwork(c Connection, password string) error {
 	return err
 }
 
-func (b *DBusBackend) GetSecrets(c Connection) (string, error) {
-	conn, ok := b.connections[c.SSID]
+func (b *DBusBackend) GetSecrets(ssid string) (string, error) {
+	conn, ok := b.connections[ssid]
 	if !ok {
-		return "", fmt.Errorf("connection not found for %s", c.SSID)
+		return "", fmt.Errorf("connection not found for %s", ssid)
 	}
 
 	settings, err := conn.GetSecrets("802-11-wireless-security")
@@ -312,10 +312,10 @@ func (b *DBusBackend) GetSecrets(c Connection) (string, error) {
 	return "", nil
 }
 
-func (b *DBusBackend) UpdateSecret(c Connection, newPassword string) error {
-	conn, ok := b.connections[c.SSID]
+func (b *DBusBackend) UpdateSecret(ssid string, newPassword string) error {
+	conn, ok := b.connections[ssid]
 	if !ok {
-		return fmt.Errorf("connection not found for %s", c.SSID)
+		return fmt.Errorf("connection not found for %s", ssid)
 	}
 
 	settings, err := conn.GetSettings()
