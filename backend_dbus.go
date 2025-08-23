@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Wifx/gonetworkmanager"
 	"github.com/google/uuid"
@@ -138,18 +139,24 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 			b.connections[ssid] = knownConn
 			s, _ := knownConn.GetSettings()
 			var id string
+			var lastConnected *time.Time
 			if c, ok := s["connection"]; ok {
 				if i, ok := c["id"].(string); ok {
 					id = i
 				}
+				if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
+					t := time.Unix(int64(ts), 0)
+					lastConnected = &t
+				}
 			}
 			connInfo = Connection{
-				SSID:      ssid,
-				IsActive:  activeConnectionID != "" && id == activeConnectionID,
-				IsKnown:   true,
-				IsSecure:  isSecure,
-				IsVisible: true,
-				Strength:  strength,
+				SSID:          ssid,
+				IsActive:      activeConnectionID != "" && id == activeConnectionID,
+				IsKnown:       true,
+				IsSecure:      isSecure,
+				IsVisible:     true,
+				Strength:      strength,
+				LastConnected: lastConnected,
 			}
 		} else {
 			connInfo = Connection{
@@ -186,7 +193,14 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 
 		if _, processed := processedSSIDs[ssid]; !processed {
 			b.connections[ssid] = knownConn
-			conns = append(conns, Connection{SSID: ssid, IsKnown: true})
+			var lastConnected *time.Time
+			if c, ok := s["connection"]; ok {
+				if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
+					t := time.Unix(int64(ts), 0)
+					lastConnected = &t
+				}
+			}
+			conns = append(conns, Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
 		}
 	}
 
