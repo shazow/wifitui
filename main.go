@@ -86,7 +86,7 @@ func formatDuration(t time.Time) string {
 		days := d.Hours() / 24
 		s = fmt.Sprintf("%0.1f days", days)
 	}
-	return fmt.Sprintf("last seen %s ago", s)
+	return fmt.Sprintf("%s ago", s)
 }
 
 // Bubbletea messages are used to communicate between the main loop and commands
