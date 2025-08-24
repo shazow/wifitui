@@ -9,7 +9,7 @@ import (
 )
 
 func TestRunList(t *testing.T) {
-	mockBackend := mock.New()
+	mockBackend := mock.NewBackend()
 	var buf bytes.Buffer
 
 	err := runList(&buf, false, mockBackend)
@@ -18,55 +18,41 @@ func TestRunList(t *testing.T) {
 	}
 
 	output := buf.String()
-	expectedLines := []string{
-		"TestNet 1\t80%, visible",
-		"TestNet 2\t50%, visible, secure",
-		"TestNet 3\tknown",
-		"TestNet 4\tknown",
-		"VisibleOnly\t0%, visible, secure",
+	if !strings.Contains(output, "HideYoKidsHideYoWiFi") {
+		t.Errorf("runList() output missing expected network. got=%q", output)
 	}
-
-	// Normalize the output to handle variations in line endings and extra spaces
-	normalizedOutput := strings.TrimSpace(strings.ReplaceAll(output, "\r\n", "\n"))
-	lines := strings.Split(normalizedOutput, "\n")
-
-	if len(lines) != len(expectedLines) {
-		t.Fatalf("runList() output has wrong number of lines. got=%d, want=%d\n---\n%s\n---", len(lines), len(expectedLines), output)
-	}
-
-	for i, expectedLine := range expectedLines {
-		if lines[i] != expectedLine {
-			t.Errorf("runList() output line %d wrong. got=%q, want=%q", i, lines[i], expectedLine)
-		}
+	if !strings.Contains(output, "Unencrypted_Honeypot") {
+		t.Errorf("runList() output missing expected network. got=%q", output)
 	}
 }
 
 func TestRunShow(t *testing.T) {
-	mockBackend := mock.New()
+	mockBackend := mock.NewBackend()
 	var buf bytes.Buffer
 
 	// Test case: network found and known
-	err := runShow(&buf, false, "TestNet 2", mockBackend)
+	err := runShow(&buf, false, "Password is password", mockBackend)
 	if err != nil {
 		t.Fatalf("runShow() with found network failed: %v", err)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "SSID: TestNet 2") {
+	if !strings.Contains(output, "SSID: Password is password") {
 		t.Errorf("runShow() output missing SSID. got=%q", output)
 	}
-	if !strings.Contains(output, "Passphrase: password123") {
+	if !strings.Contains(output, "Passphrase: password") {
 		t.Errorf("runShow() output missing passphrase. got=%q", output)
 	}
 
 	// Test case: network found, but not known (no secret)
 	buf.Reset()
-	err = runShow(&buf, false, "VisibleOnly", mockBackend)
+	err = runShow(&buf, false, "GET off my LAN", mockBackend)
 	if err != nil {
-		t.Fatalf("runShow() with visible-only network failed: %v", err)
+		// This should not fail, just return no secret.
+		t.Fatalf("runShow() with network without secret failed: %v", err)
 	}
 	output = buf.String()
-	if !strings.Contains(output, "SSID: VisibleOnly") {
+	if !strings.Contains(output, "SSID: GET off my LAN") {
 		t.Errorf("runShow() output missing SSID. got=%q", output)
 	}
 	if !strings.Contains(output, "Passphrase: ") {

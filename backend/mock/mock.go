@@ -2,6 +2,7 @@ package mock
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 
 	"github.com/shazow/wifitui/backend"
@@ -18,27 +19,61 @@ type Backend struct {
 	UpdateSecretError error
 }
 
-// New creates a new mock.Backend with some default data.
-func New() *Backend {
-	now := time.Now()
-	yesterday := now.Add(-24 * time.Hour)
+// NewBackend creates a new mock.Backend with a list of fun wifi networks.
+func NewBackend() backend.Backend {
+	networks := []string{
+		"HideYoKidsHideYoWiFi",
+		"GET off my LAN",
+		"NeverGonnaGiveYouIP",
+		"Unencrypted_Honeypot",
+		"YourWiFi.exe",
+		"I See Dead Packets",
+		"Dunder MiffLAN",
+		"Police Surveillance 2",
+		"I Believe Wi Can Fi",
+		"Hot singles in your area",
+		"Password is password",
+		"TacoBoutAGoodSignal",
+		"Wi-Fight the Feeling?",
+		"xX_D4rkR0ut3r_Xx",
+		"Luke, I am your WiFi",
+		"FreeHugsAndWiFi",
+	}
+
+	connections := make([]backend.Connection, len(networks))
+	secrets := make(map[string]string)
+
+	s := rand.NewSource(time.Now().Unix())
+	r := rand.New(s)
+
+	for i, ssid := range networks {
+		isSecure := ssid != "Unencrypted_Honeypot" && ssid != "FreeHugsAndWiFi"
+		connections[i] = backend.Connection{
+			SSID:      ssid,
+			IsVisible: true,
+			Strength:  uint8(r.Intn(70) + 30), // 30-100
+			IsSecure:  isSecure,
+		}
+		if isSecure {
+			if ssid == "Password is password" {
+				secrets[ssid] = "password"
+			}
+		}
+	}
+
 	return &Backend{
-		Connections: []backend.Connection{
-			{SSID: "TestNet 1", IsVisible: true, Strength: 80},
-			{SSID: "TestNet 2", IsVisible: true, Strength: 50, IsSecure: true},
-			{SSID: "TestNet 3", IsVisible: false, IsKnown: true, LastConnected: &now},
-			{SSID: "TestNet 4", IsVisible: false, IsKnown: true, LastConnected: &yesterday},
-			{SSID: "VisibleOnly", IsVisible: true, IsSecure: true},
-		},
-		Secrets: map[string]string{
-			"TestNet 2": "password123",
-			"TestNet 3": "password3",
-			"TestNet 4": "password4",
-		},
+		Connections: connections,
+		Secrets:     secrets,
 	}
 }
 
 func (m *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
+	// For mock, we can re-randomize strengths on each scan
+	s := rand.NewSource(time.Now().Unix())
+	r := rand.New(s)
+	for i := range m.Connections {
+		m.Connections[i].Strength = uint8(r.Intn(70) + 30)
+	}
 	return m.Connections, nil
 }
 
