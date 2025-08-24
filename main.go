@@ -9,11 +9,17 @@ import (
 	"github.com/peterbourgon/ff/v3/ffcli"
 )
 
+var (
+	// Version is the version of the application. It is set at build time.
+	Version string
+)
+
 // main is the entry point of the application
 func main() {
 	var (
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
 		verbose     = rootFlagSet.Bool("v", false, "verbose output")
+		version     = rootFlagSet.Bool("version", false, "display version")
 	)
 
 	listCmd := &ffcli.Command{
@@ -44,7 +50,17 @@ func main() {
 		},
 	}
 
-	if err := root.ParseAndRun(context.Background(), os.Args[1:]); err != nil {
+	if err := root.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if *version {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
+
+	if err := root.Run(context.Background()); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
