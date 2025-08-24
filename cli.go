@@ -9,8 +9,8 @@ import (
 	"github.com/shazow/wifitui/backend"
 )
 
-func runTUI() error {
-	m, err := initialModel()
+func runTUI(b backend.Backend) error {
+	m, err := initialModel(b)
 	if err != nil {
 		return fmt.Errorf("error initializing model: %w", err)
 	}

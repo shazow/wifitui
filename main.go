@@ -7,6 +7,8 @@ import (
 	"os"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
+	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/backend/mock"
 )
 
 var (
@@ -20,17 +22,17 @@ func main() {
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
 		verbose     = rootFlagSet.Bool("v", false, "verbose output")
 		version     = rootFlagSet.Bool("version", false, "display version")
+		mockBackend = rootFlagSet.Bool("mock", false, "") // Hidden flag
 	)
+
+	var b backend.Backend
+	var err error
 
 	listCmd := &ffcli.Command{
 		Name:      "list",
 		ShortHelp: "List wifi networks",
 		Exec: func(ctx context.Context, args []string) error {
-			backend, err := NewBackend()
-			if err != nil {
-				return fmt.Errorf("failed to initialize backend: %w", err)
-			}
-			return runList(os.Stdout, *verbose, backend)
+			return runList(os.Stdout, *verbose, b)
 		},
 	}
 
@@ -41,11 +43,7 @@ func main() {
 			if len(args) == 0 {
 				return fmt.Errorf("show requires an ssid")
 			}
-			backend, err := NewBackend()
-			if err != nil {
-				return fmt.Errorf("failed to initialize backend: %w", err)
-			}
-			return runShow(os.Stdout, *verbose, args[0], backend)
+			return runShow(os.Stdout, *verbose, args[0], b)
 		},
 	}
 
@@ -54,7 +52,7 @@ func main() {
 		FlagSet:     rootFlagSet,
 		Subcommands: []*ffcli.Command{listCmd, showCmd},
 		Exec: func(ctx context.Context, args []string) error {
-			return runTUI()
+			return runTUI(b)
 		},
 	}
 
@@ -66,6 +64,16 @@ func main() {
 	if *version {
 		fmt.Println(Version)
 		os.Exit(0)
+	}
+
+	if *mockBackend {
+		b = mock.NewBackend()
+	} else {
+		b, err = NewBackend()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	if err := root.Run(context.Background()); err != nil {

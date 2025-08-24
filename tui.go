@@ -131,11 +131,7 @@ type model struct {
 }
 
 // initialModel creates the starting state of our application
-func initialModel() (model, error) {
-	be, err := NewBackend()
-	if err != nil {
-		return model{}, fmt.Errorf("failed to initialize backend: %w", err)
-	}
+func initialModel(b backend.Backend) (model, error) {
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -180,7 +176,7 @@ func initialModel() (model, error) {
 		list:          l,
 		passwordInput: ti,
 		spinner:       s,
-		backend:       be,
+		backend:       b,
 		loading:       true,
 		statusMessage: "Loading connections...",
 	}, nil
