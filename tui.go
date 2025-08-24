@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -42,34 +43,10 @@ type connectionItem struct {
 }
 
 // Implement the list.Item interface for our connectionItem
-func (i connectionItem) Title() string {
-	if !i.IsVisible {
-		return disabledStyle.Render(i.SSID)
-	}
-
-	var styledSSID string
-	if i.IsKnown {
-		styledSSID = knownNetworkStyle.Render(i.SSID)
-	} else {
-		styledSSID = unknownNetworkStyle.Render(i.SSID)
-	}
-
-	if i.IsActive {
-		return activeStyle.Render("* " + i.SSID)
-	}
-
-	return styledSSID
-}
-func (i connectionItem) Description() string {
-	if i.Strength > 0 {
-		return fmt.Sprintf("%d%% %s", i.Strength, strings.Repeat("█", int(i.Strength/2)))
-	}
-	if !i.IsVisible && i.LastConnected != nil {
-		return formatDuration(*i.LastConnected)
-	}
-	return ""
-}
-func (i connectionItem) FilterValue() string { return i.SSID }
+// Implement the list.Item interface for our connectionItem
+func (i connectionItem) Title() string       { return i.plainTitle() }
+func (i connectionItem) Description() string { return i.plainDescription() }
+func (i connectionItem) FilterValue() string { return i.plainTitle() }
 
 // plainTitle returns the title of the connection item without any styling
 func (i connectionItem) plainTitle() string {
@@ -82,6 +59,7 @@ func (i connectionItem) plainTitle() string {
 // plainDescription returns the description of the connection item without any styling
 func (i connectionItem) plainDescription() string {
 	if i.Strength > 0 {
+		// return fmt.Sprintf("%d%% %s", i.Strength, strings.Repeat("█", int(i.Strength/10)))
 		return fmt.Sprintf("%d%%", i.Strength)
 	}
 	if !i.IsVisible && i.LastConnected != nil {
@@ -106,6 +84,46 @@ func formatDuration(t time.Time) string {
 		s = fmt.Sprintf("%0.1f days", days)
 	}
 	return fmt.Sprintf("%s ago", s)
+}
+
+// itemDelegate is our custom list delegate
+type itemDelegate struct {
+	list.DefaultDelegate
+}
+
+func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(connectionItem)
+	if !ok {
+		return
+	}
+
+	var styledSSID, styledDesc string
+	if i.IsVisible {
+		if i.IsKnown {
+			styledSSID = knownNetworkStyle.Render(i.SSID)
+		} else {
+			styledSSID = unknownNetworkStyle.Render(i.SSID)
+		}
+		if i.IsActive {
+			styledSSID = activeStyle.Render("* " + i.SSID)
+		}
+	} else {
+		styledSSID = disabledStyle.Render(i.SSID)
+	}
+
+	if i.Strength > 0 {
+		styledDesc = fmt.Sprintf("%d%%", i.Strength)
+	} else if !i.IsVisible && i.LastConnected != nil {
+		styledDesc = formatDuration(*i.LastConnected)
+	}
+
+	fn := d.Styles.NormalTitle.Render
+	if index == m.Index() {
+		fn = func(s ...string) string {
+			return d.Styles.SelectedTitle.Render(strings.Join(s, " "))
+		}
+	}
+	fmt.Fprint(w, fn(styledSSID, styledDesc))
 }
 
 // Bubbletea messages are used to communicate between the main loop and commands
@@ -146,7 +164,8 @@ func initialModel(b backend.Backend) (model, error) {
 	ti.EchoMode = textinput.EchoNormal // Show password visibly
 
 	// Configure the list
-	l := list.New([]list.Item{}, list.NewDefaultDelegate(), 0, 0)
+	delegate := itemDelegate{}
+	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = "Wi-Fi Networks"
 	l.SetShowStatusBar(true)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
