@@ -13,7 +13,7 @@ import (
 
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
 type Backend struct {
-	Nm           gonetworkmanager.NetworkManager
+	NM           gonetworkmanager.NetworkManager
 	Settings     gonetworkmanager.Settings
 	Connections  map[string]gonetworkmanager.Connection
 	AccessPoints map[string]gonetworkmanager.AccessPoint
@@ -32,7 +32,7 @@ func New() (backend.Backend, error) {
 	}
 
 	return &Backend{
-		Nm:           nm,
+		NM:           nm,
 		Settings:     settings,
 		Connections:  make(map[string]gonetworkmanager.Connection),
 		AccessPoints: make(map[string]gonetworkmanager.AccessPoint),
@@ -44,7 +44,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	b.Connections = make(map[string]gonetworkmanager.Connection)
 	b.AccessPoints = make(map[string]gonetworkmanager.AccessPoint)
 
-	devices, err := b.Nm.GetDevices()
+	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	var conns []backend.Connection
 	processedSSIDs := make(map[string]bool)
 
-	activeConnections, err := b.Nm.GetPropertyActiveConnections()
+	activeConnections, err := b.NM.GetPropertyActiveConnections()
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +222,7 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return fmt.Errorf("access point not found for %s", ssid)
 	}
 
-	devices, err := b.Nm.GetDevices()
+	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return err
 	}
@@ -241,7 +241,7 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return fmt.Errorf("no wireless device found")
 	}
 
-	_, err = b.Nm.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	_, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
 	return err
 }
 
@@ -259,7 +259,7 @@ func (b *Backend) JoinNetwork(ssid string, password string) error {
 		return fmt.Errorf("access point not found for %s", ssid)
 	}
 
-	devices, err := b.Nm.GetDevices()
+	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return err
 	}
@@ -289,7 +289,7 @@ func (b *Backend) JoinNetwork(ssid string, password string) error {
 	connection["connection"]["uuid"] = uuid.New().String()
 	connection["connection"]["type"] = "802-11-wireless"
 
-	_, err = b.Nm.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
+	_, err = b.NM.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
 	return err
 }
 
