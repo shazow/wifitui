@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -37,10 +38,16 @@ func formatConnection(c backend.Connection) string {
 	return strings.Join(parts, ", ")
 }
 
-func runList(w io.Writer, verbose bool, b backend.Backend) error {
+func runList(w io.Writer, jsonOut bool, b backend.Backend) error {
 	connections, err := b.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
+	}
+
+	if jsonOut {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(connections)
 	}
 
 	for _, c := range connections {
@@ -50,7 +57,7 @@ func runList(w io.Writer, verbose bool, b backend.Backend) error {
 	return nil
 }
 
-func runShow(w io.Writer, verbose bool, ssid string, b backend.Backend) error {
+func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 	connections, err := b.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
@@ -67,6 +74,22 @@ func runShow(w io.Writer, verbose bool, ssid string, b backend.Backend) error {
 				}
 				secret = "" // No secret available
 			}
+
+			if jsonOut {
+				// We need a custom struct to include the passphrase
+				type connectionWithSecret struct {
+					backend.Connection
+					Passphrase string `json:"passphrase,omitempty"`
+				}
+				data := connectionWithSecret{
+					Connection: c,
+					Passphrase: secret,
+				}
+				enc := json.NewEncoder(w)
+				enc.SetIndent("", "  ")
+				return enc.Encode(data)
+			}
+
 			fmt.Fprintf(w, "SSID: %s\n", c.SSID)
 			fmt.Fprintf(w, "Passphrase: %s\n", secret)
 			fmt.Fprintf(w, "Active: %t\n", c.IsActive)
@@ -83,4 +106,14 @@ func runShow(w io.Writer, verbose bool, ssid string, b backend.Backend) error {
 	}
 
 	return fmt.Errorf("network not found: %s", ssid)
+}
+
+func runConnect(w io.Writer, ssid string, passphrase string, b backend.Backend) error {
+	if passphrase != "" {
+		fmt.Fprintf(w, "Joining network %q with a passphrase...\n", ssid)
+		return b.JoinNetwork(ssid, passphrase)
+	}
+
+	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
+	return b.ActivateConnection(ssid)
 }

@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
+	"github.com/shazow/wifitui/backend"
 	"github.com/shazow/wifitui/backend/mock"
 )
 
@@ -73,5 +75,141 @@ func TestRunShow(t *testing.T) {
 		if !strings.Contains(err.Error(), "network not found: " + doesNotExist) {
 			t.Errorf("runShow() with not found network gave wrong error. got=%q", err)
 		}
+	}
+}
+
+func TestRunListJSON(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	if err := runList(&buf, true, mockBackend); err != nil {
+		t.Fatalf("runList() failed: %v", err)
+	}
+
+	var connections []backend.Connection
+	if err := json.Unmarshal(buf.Bytes(), &connections); err != nil {
+		t.Fatalf("runList() output is not valid JSON: %v. got=%q", err, buf.String())
+	}
+
+	if len(connections) == 0 {
+		t.Fatalf("runList() output is empty")
+	}
+
+	// Just check for one of the SSIDs
+	found := false
+	for _, c := range connections {
+		if c.SSID == "HideYoKidsHideYoWiFi" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("runList() JSON output missing expected network. got=%q", buf.String())
+	}
+}
+
+func TestRunShowJSON(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	// Test case: network found and known
+	if err := runShow(&buf, true, "Password is password", mockBackend); err != nil {
+		t.Fatalf("runShow() with found network failed: %v", err)
+	}
+
+	type connectionWithSecret struct {
+		backend.Connection
+		Passphrase string `json:"passphrase,omitempty"`
+	}
+
+	var connWithSecretData connectionWithSecret
+	if err := json.Unmarshal(buf.Bytes(), &connWithSecretData); err != nil {
+		t.Fatalf("runShow() output is not valid JSON: %v. got=%q", err, buf.String())
+	}
+
+	if connWithSecretData.SSID != "Password is password" {
+		t.Errorf("runShow() JSON output has wrong SSID. got=%q", connWithSecretData.SSID)
+	}
+	if connWithSecretData.Passphrase != "password" {
+		t.Errorf("runShow() JSON output has wrong passphrase. got=%q", connWithSecretData.Passphrase)
+	}
+
+	// Test case: network found, but not known (no secret)
+	buf.Reset()
+	if err := runShow(&buf, true, "GET off my LAN", mockBackend); err != nil {
+		// This should not fail, just return no secret.
+		t.Fatalf("runShow() with network without secret failed: %v", err)
+	}
+
+	// Re-initialize the struct to avoid carrying over the passphrase
+	connWithSecretData = connectionWithSecret{}
+	if err := json.Unmarshal(buf.Bytes(), &connWithSecretData); err != nil {
+		t.Fatalf("runShow() output is not valid JSON: %v. got=%q", err, buf.String())
+	}
+
+	if connWithSecretData.SSID != "GET off my LAN" {
+		t.Errorf("runShow() JSON output has wrong SSID. got=%q", connWithSecretData.SSID)
+	}
+	if connWithSecretData.Passphrase != "" {
+		t.Errorf("runShow() JSON output should have empty passphrase. got=%q", connWithSecretData.Passphrase)
+	}
+}
+
+func TestRunConnect(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	// Test case: connect to a new network with a passphrase
+	if err := runConnect(&buf, "new-network", "new-password", mockBackend); err != nil {
+		t.Fatalf("runConnect() with passphrase failed: %v", err)
+	}
+
+	// Check if the network was added
+	networks, err := mockBackend.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("failed to get network list: %v", err)
+	}
+	found := false
+	for _, n := range networks {
+		if n.SSID == "new-network" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("runConnect() did not add the new network")
+	}
+
+	// Test case: connect to a known network without a passphrase
+	buf.Reset()
+	if err := runConnect(&buf, "Password is password", "", mockBackend); err != nil {
+		t.Fatalf("runConnect() without passphrase failed: %v", err)
+	}
+
+	// Check if the network is active
+	networks, err = mockBackend.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("failed to get network list: %v", err)
+	}
+	found = false
+	for _, n := range networks {
+		if n.SSID == "Password is password" {
+			if n.IsActive {
+				found = true
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("runConnect() did not activate the existing network")
 	}
 }

@@ -66,7 +66,22 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 }
 
 func (m *MockBackend) ActivateConnection(ssid string) error {
-	return m.ActivateError
+	if m.ActivateError != nil {
+		return m.ActivateError
+	}
+	found := false
+	for i := range m.Connections {
+		if m.Connections[i].SSID == ssid {
+			m.Connections[i].IsActive = true
+			found = true
+		} else {
+			m.Connections[i].IsActive = false
+		}
+	}
+	if !found {
+		return fmt.Errorf("network not found: %s", ssid)
+	}
+	return nil
 }
 
 func (m *MockBackend) ForgetNetwork(ssid string) error {
@@ -74,7 +89,25 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 }
 
 func (m *MockBackend) JoinNetwork(ssid string, password string) error {
-	return m.JoinError
+	if m.JoinError != nil {
+		return m.JoinError
+	}
+	// Deactivate all other networks
+	for i := range m.Connections {
+		m.Connections[i].IsActive = false
+	}
+	m.Connections = append(m.Connections, backend.Connection{
+		SSID:     ssid,
+		IsActive: true,
+		IsKnown:  true,
+	})
+	if password != "" {
+		if m.Secrets == nil {
+			m.Secrets = make(map[string]string)
+		}
+		m.Secrets[ssid] = password
+	}
+	return nil
 }
 
 func (m *MockBackend) GetSecrets(ssid string) (string, error) {
