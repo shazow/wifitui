@@ -14,7 +14,8 @@
           pname = "wifitui";
           version = "0.0.0"; # TODO: Add some tags lol
           src = ./.;
-          vendorHash = "sha256-qUOYYUCBrfGwjUPWfy8GBEZZvY2fvz5SlFFw8kBS1jQ=";
+          #vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # Replace with the actual hash
+          vendorHash = "sha256-ydOkl6MiXQVJXMElqPpulWk7cKrZk8Pp+eCPpQdAv4A=";
           ldflags = [ "-s" "-w" ];
         };
 
