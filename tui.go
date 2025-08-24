@@ -27,6 +27,11 @@ var (
 	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
 	dialogBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("205"))
+
+	// Signal strength colors
+	signalGoodStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("46"))  // Over 70%
+	signalMediumStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220")) // Over 40%
+	signalWeakStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("94"))  // Under 40%
 )
 
 // viewState represents the current screen of the TUI
@@ -89,10 +94,6 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Get plain title and description
 	title := i.Title()
-	desc := i.Description()
-	if i.IsActive {
-		desc += " (Connected)"
-	}
 
 	// Define column width for SSID
 	ssidColumnWidth := 30
@@ -116,13 +117,42 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		title = unknownNetworkStyle.Render(title)
 	}
 
-	// Now apply selection styling
+	// Prepare description parts
+	strengthPart := i.Description()
+	connectedPart := ""
+	if i.IsActive {
+		connectedPart = " (Connected)"
+	}
+
+	var desc string
+	var descStyle lipgloss.Style
+
+	// Determine base styles
 	if index == m.Index() {
 		title = "▶" + d.Styles.SelectedTitle.Render(title)
-		desc = d.Styles.SelectedDesc.Render(desc)
+		descStyle = d.Styles.SelectedDesc
 	} else {
 		title = d.Styles.NormalTitle.MarginLeft(1).Render(title)
-		desc = d.Styles.NormalDesc.Render(desc)
+		descStyle = d.Styles.NormalDesc
+	}
+
+	// Now construct the description string with styles
+	if i.Strength > 0 {
+		var signalStyle lipgloss.Style
+		switch {
+		case i.Strength > 70:
+			signalStyle = signalGoodStyle
+		case i.Strength > 40:
+			signalStyle = signalMediumStyle
+		default:
+			signalStyle = signalWeakStyle
+		}
+		// Combine base desc style with our signal color
+		finalSignalStyle := descStyle.Copy().Inherit(signalStyle)
+		desc = finalSignalStyle.Render(strengthPart) + descStyle.Render(connectedPart)
+	} else {
+		// No strength, just use the base desc style
+		desc = descStyle.Render(strengthPart + connectedPart)
 	}
 
 	// Render with padding to create columns
