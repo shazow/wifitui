@@ -26,6 +26,7 @@ var (
 	unknownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
+	dialogBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("205"))
 )
 
 // viewState represents the current screen of the TUI
@@ -148,6 +149,7 @@ type model struct {
 	statusMessage string
 	errorMessage  string
 	selectedItem  connectionItem
+	width, height int
 }
 
 // initialModel creates the starting state of our application
@@ -222,6 +224,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Account for title and status bar
 		extraVerticalSpace := 4
 		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
+		m.width = msg.Width
+		m.height = msg.Height
 
 	// Custom messages from our backend commands
 	case connectionsLoadedMsg:
@@ -280,6 +284,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedItem = selected
 						m.state = stateForgetView
 						m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
+						m.errorMessage = ""
 					}
 				}
 			case "c":
@@ -369,10 +374,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "y":
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Forgetting '%s'...", m.selectedItem.SSID)
+				m.errorMessage = ""
 				cmds = append(cmds, forgetNetwork(m.backend, m.selectedItem.SSID))
 			case "n", "q", "esc":
 				m.state = stateListView
 				m.statusMessage = ""
+				m.errorMessage = ""
 			}
 		}
 	}
@@ -401,20 +408,22 @@ func (m model) View() string {
 	}
 
 	var s strings.Builder
+	var mainContent string
+
+	// Base view
+	var viewBuilder strings.Builder
+	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
+
+	// Custom status bar
+	statusText := ""
+	if len(m.list.Items()) > 0 {
+		statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
+	}
+	viewBuilder.WriteString("\n")
+	viewBuilder.WriteString(statusText)
+	mainContent = docStyle.Render(viewBuilder.String())
 
 	switch m.state {
-	case stateListView:
-		var viewBuilder strings.Builder
-		viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
-
-		// Custom status bar
-		statusText := ""
-		if len(m.list.Items()) > 0 {
-			statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
-		}
-		viewBuilder.WriteString("\n")
-		viewBuilder.WriteString(statusText)
-		s.WriteString(docStyle.Render(viewBuilder.String()))
 	case stateEditView:
 		s.WriteString(fmt.Sprintf("\nEditing Wi-Fi Connection: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
@@ -429,22 +438,38 @@ func (m model) View() string {
 				s.WriteString(qrCodeString)
 			}
 		}
+		mainContent = s.String()
+
 	case stateJoinView:
 		s.WriteString(fmt.Sprintf("\nJoining Wi-Fi Network: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
 		s.WriteString("\n\n(press enter to join, esc to cancel)")
-	case stateForgetView:
-		// The status message is used as the prompt
-		s.WriteString(m.list.View())
+		mainContent = s.String()
 	}
 
+	// Loading indicator and status message at the bottom
+	loadingStatus := ""
 	if m.loading {
-		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), statusStyle(m.statusMessage)))
+		loadingStatus = fmt.Sprintf("\n\n%s %s", m.spinner.View(), statusStyle(m.statusMessage))
 	} else if m.statusMessage != "" {
-		s.WriteString(fmt.Sprintf("\n\n%s", statusStyle(m.statusMessage)))
+		// For the forget view, the status message is the prompt, so we don't want to show it at the bottom.
+		if m.state != stateForgetView {
+			loadingStatus = fmt.Sprintf("\n\n%s", statusStyle(m.statusMessage))
+		}
 	}
 
-	return s.String()
+	// If we're in the forget view, render the dialog on top of the main content
+	if m.state == stateForgetView {
+		question := lipgloss.NewStyle().Width(50).Align(lipgloss.Center).Render(m.statusMessage)
+		dialog := dialogBoxStyle.Render(question)
+
+		// Place the dialog in the center of the screen, over the main content
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+			lipgloss.JoinVertical(lipgloss.Center, mainContent, dialog),
+		)
+	}
+
+	return mainContent + loadingStatus
 }
 
 // --- Commands that interact with the backend ---
