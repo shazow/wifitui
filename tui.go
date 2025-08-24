@@ -29,9 +29,9 @@ var (
 	dialogBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("205"))
 
 	// Signal strength colors
-	signalGoodStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("46"))  // Over 70%
-	signalMediumStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("220")) // Over 40%
-	signalWeakStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("94"))  // Under 40%
+	signalGoodColor   = lipgloss.Color("46")  // Over 70%
+	signalMediumColor = lipgloss.Color("220") // Over 40%
+	signalWeakColor   = lipgloss.Color("94")  // Under 40%
 )
 
 // viewState represents the current screen of the TUI
@@ -138,17 +138,17 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Now construct the description string with styles
 	if i.Strength > 0 {
-		var signalStyle lipgloss.Style
+		var signalColor lipgloss.Color
 		switch {
 		case i.Strength > 70:
-			signalStyle = signalGoodStyle
+			signalColor = signalGoodColor
 		case i.Strength > 40:
-			signalStyle = signalMediumStyle
+			signalColor = signalMediumColor
 		default:
-			signalStyle = signalWeakStyle
+			signalColor = signalWeakColor
 		}
 		// Combine base desc style with our signal color
-		finalSignalStyle := descStyle.Copy().Inherit(signalStyle)
+		finalSignalStyle := descStyle.Copy().Foreground(signalColor)
 		desc = finalSignalStyle.Render(strengthPart) + descStyle.Render(connectedPart)
 	} else {
 		// No strength, just use the base desc style
