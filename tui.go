@@ -25,6 +25,7 @@ var (
 	knownNetworkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("40"))
 	unknownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
 )
 
 // viewState represents the current screen of the TUI
@@ -170,7 +171,7 @@ func initialModel(b backend.Backend) (model, error) {
 	delegate.Styles = defaultDel.Styles
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-31s %s", "SSID", "SIGNAL/LAST SEEN")
-	l.SetShowStatusBar(true)
+	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
@@ -217,7 +218,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+		bh, bv := listBorderStyle.GetFrameSize()
+		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv)
 
 	// Custom messages from our backend commands
 	case connectionsLoadedMsg:
@@ -400,7 +402,20 @@ func (m model) View() string {
 
 	switch m.state {
 	case stateListView:
-		s.WriteString(docStyle.Render(m.list.View()))
+		var viewBuilder strings.Builder
+		title := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("Wi-Fi Networks")
+		viewBuilder.WriteString(title)
+		viewBuilder.WriteString("\n")
+		viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
+
+		// Custom status bar
+		statusText := ""
+		if len(m.list.Items()) > 0 {
+			statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
+		}
+		viewBuilder.WriteString("\n")
+		viewBuilder.WriteString(statusText)
+		s.WriteString(docStyle.Render(viewBuilder.String()))
 	case stateEditView:
 		s.WriteString(fmt.Sprintf("\nEditing Wi-Fi Connection: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
