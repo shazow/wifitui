@@ -25,6 +25,7 @@ var (
 	knownNetworkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("40"))
 	unknownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
 )
 
 // viewState represents the current screen of the TUI
@@ -42,20 +43,8 @@ type connectionItem struct {
 	backend.Connection
 }
 
-func (i connectionItem) Title() string       { return i.plainTitle() }
+func (i connectionItem) Title() string { return i.SSID }
 func (i connectionItem) Description() string {
-	if (i.IsActive) {
-		return i.plainDescription() + " (Connected)"
-	}
-	return i.plainDescription()
-}
-func (i connectionItem) FilterValue() string { return i.plainTitle() }
-
-// plainTitle returns the title of the connection item without any styling
-func (i connectionItem) plainTitle() string { return i.SSID }
-
-// plainDescription returns the description of the connection item without any styling
-func (i connectionItem) plainDescription() string {
 	if i.Strength > 0 {
 		return fmt.Sprintf("%d%%", i.Strength)
 	}
@@ -64,6 +53,7 @@ func (i connectionItem) plainDescription() string {
 	}
 	return ""
 }
+func (i connectionItem) FilterValue() string { return i.Title() }
 
 // formatDuration takes a time and returns a human-readable string like "2 hours ago"
 func formatDuration(t time.Time) string {
@@ -99,6 +89,20 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	// Get plain title and description
 	title := i.Title()
 	desc := i.Description()
+	if i.IsActive {
+		desc += " (Connected)"
+	}
+
+	// Define column width for SSID
+	ssidColumnWidth := 30
+	titleLen := len(title)
+
+	// Truncate title if it's too long
+	if titleLen > ssidColumnWidth {
+		title = title[:ssidColumnWidth-3] + "…"
+		titleLen = ssidColumnWidth
+	}
+	padding := strings.Repeat(" ", ssidColumnWidth-titleLen)
 
 	// Apply custom styling based on connection state
 	if !i.IsVisible {
@@ -120,10 +124,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		desc = d.Styles.NormalDesc.Render(desc)
 	}
 
-	// The DefaultDelegate joins title and description with a separator.
-	// Let's just put a space for now.
-	// NOTE: This doesn't account for all the delegate's options.
-	fmt.Fprintf(w, "%s %s", title, desc)
+	// Render with padding to create columns
+	fmt.Fprintf(w, "%s%s %s", title, padding, desc)
 }
 
 // Bubbletea messages are used to communicate between the main loop and commands
@@ -168,8 +170,8 @@ func initialModel(b backend.Backend) (model, error) {
 	defaultDel := list.NewDefaultDelegate()
 	delegate.Styles = defaultDel.Styles
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = "Wi-Fi Networks"
-	l.SetShowStatusBar(true)
+	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
+	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
@@ -216,7 +218,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+		bh, bv := listBorderStyle.GetFrameSize()
+		// Account for title and status bar
+		extraVerticalSpace := 4
+		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
 
 	// Custom messages from our backend commands
 	case connectionsLoadedMsg:
@@ -399,7 +404,17 @@ func (m model) View() string {
 
 	switch m.state {
 	case stateListView:
-		s.WriteString(docStyle.Render(m.list.View()))
+		var viewBuilder strings.Builder
+		viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
+
+		// Custom status bar
+		statusText := ""
+		if len(m.list.Items()) > 0 {
+			statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
+		}
+		viewBuilder.WriteString("\n")
+		viewBuilder.WriteString(statusText)
+		s.WriteString(docStyle.Render(viewBuilder.String()))
 	case stateEditView:
 		s.WriteString(fmt.Sprintf("\nEditing Wi-Fi Connection: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
