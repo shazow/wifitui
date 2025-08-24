@@ -26,7 +26,11 @@ func main() {
 		Name:      "list",
 		ShortHelp: "List wifi networks",
 		Exec: func(ctx context.Context, args []string) error {
-			return runList(os.Stdout, *verbose)
+			backend, err := NewBackend()
+			if err != nil {
+				return fmt.Errorf("failed to initialize backend: %w", err)
+			}
+			return runList(os.Stdout, *verbose, backend)
 		},
 	}
 
@@ -37,7 +41,11 @@ func main() {
 			if len(args) == 0 {
 				return fmt.Errorf("show requires an ssid")
 			}
-			return runShow(os.Stdout, *verbose, args[0])
+			backend, err := NewBackend()
+			if err != nil {
+				return fmt.Errorf("failed to initialize backend: %w", err)
+			}
+			return runShow(os.Stdout, *verbose, args[0], backend)
 		},
 	}
 

@@ -3,10 +3,10 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
-
 
 func runTUI() error {
 	m, err := initialModel()
@@ -20,43 +20,55 @@ func runTUI() error {
 	return nil
 }
 
-func runList(w io.Writer, verbose bool) error {
-	backend, err := NewBackend()
-	if err != nil {
-		return fmt.Errorf("failed to initialize backend: %w", err)
+func formatConnection(c Connection) string {
+	var parts []string
+	if c.IsVisible {
+		parts = append(parts, fmt.Sprintf("%d%%", c.Strength))
+		parts = append(parts, "visible")
+	}
+	if c.IsSecure {
+		parts = append(parts, "secure")
+	}
+	if c.IsKnown {
+		parts = append(parts, "known")
+	}
+	if c.IsActive {
+		parts = append(parts, "active")
 	}
 
+	return strings.Join(parts, ", ")
+}
+
+func runList(w io.Writer, verbose bool, backend Backend) error {
 	connections, err := backend.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
 
 	for _, c := range connections {
-		item := connectionItem{Connection: c}
-		fmt.Fprintf(w, "%s\t%s\n", item.Title(), item.Description())
+		fmt.Fprintf(w, "%s\t%s\n", c.SSID, formatConnection(c))
 	}
 
 	return nil
 }
 
-func runShow(w io.Writer, verbose bool, ssid string) error {
-	backend, err := NewBackend()
-	if err != nil {
-		return fmt.Errorf("failed to initialize backend: %w", err)
-	}
-
+func runShow(w io.Writer, verbose bool, ssid string, backend Backend) error {
 	connections, err := backend.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
 
-	secret, err := backend.GetSecrets(ssid)
-	if err != nil {
-		return fmt.Errorf("failed to get network secret: %w", err)
-	}
-
 	for _, c := range connections {
 		if c.SSID == ssid {
+			secret, err := backend.GetSecrets(ssid)
+			if err != nil {
+				// If we can't get a secret for a known network, that's an error.
+				// But for a visible-only network, it's expected.
+				if c.IsKnown {
+					return fmt.Errorf("failed to get network secret: %w", err)
+				}
+				secret = "" // No secret available
+			}
 			fmt.Fprintf(w, "SSID: %s\n", c.SSID)
 			fmt.Fprintf(w, "Passphrase: %s\n", secret)
 			fmt.Fprintf(w, "Active: %t\n", c.IsActive)
