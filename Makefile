@@ -11,6 +11,9 @@ $(BINARY): *.go
 
 build: $(BINARY)
 
+mock:
+	go build -tags mock .
+
 clean:
 	rm $(BINARY)
 

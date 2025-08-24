@@ -1,11 +1,11 @@
-//go:build darwin && !mock
+//go:build mock
 package main
 
 import (
 	"github.com/shazow/wifitui/backend"
-	"github.com/shazow/wifitui/backend/darwin"
+	mockBackend "github.com/shazow/wifitui/backend/mock"
 )
 
 func GetBackend() (backend.Backend, error) {
-	return darwin.New()
+	return mockBackend.New()
 }

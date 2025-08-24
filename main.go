@@ -8,7 +8,6 @@ import (
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/shazow/wifitui/backend"
-	"github.com/shazow/wifitui/backend/mock"
 )
 
 var (
@@ -22,26 +21,10 @@ func main() {
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
 		verbose     = rootFlagSet.Bool("v", false, "verbose output")
 		version     = rootFlagSet.Bool("version", false, "display version")
-		mockBackend = rootFlagSet.Bool("mock", false, "") // Hidden flag
 	)
 
 	var b backend.Backend
 	var err error
-
-	if *version {
-		fmt.Println(Version)
-		os.Exit(0)
-	}
-
-	if *mockBackend {
-		b = mock.New()
-	} else {
-		b, err = GetBackend()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
-	}
 
 	listCmd := &ffcli.Command{
 		Name:      "list",
@@ -72,6 +55,17 @@ func main() {
 	}
 
 	if err := root.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if *version {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
+
+	b, err = GetBackend()
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

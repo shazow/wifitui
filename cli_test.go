@@ -9,11 +9,13 @@ import (
 )
 
 func TestRunList(t *testing.T) {
-	mockBackend := mock.NewBackend()
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
 	var buf bytes.Buffer
 
-	err := runList(&buf, false, mockBackend)
-	if err != nil {
+	if err := runList(&buf, false, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
@@ -27,12 +29,14 @@ func TestRunList(t *testing.T) {
 }
 
 func TestRunShow(t *testing.T) {
-	mockBackend := mock.NewBackend()
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
 	var buf bytes.Buffer
 
 	// Test case: network found and known
-	err := runShow(&buf, false, "Password is password", mockBackend)
-	if err != nil {
+	if err := runShow(&buf, false, "Password is password", mockBackend); err != nil {
 		t.Fatalf("runShow() with found network failed: %v", err)
 	}
 
@@ -46,8 +50,7 @@ func TestRunShow(t *testing.T) {
 
 	// Test case: network found, but not known (no secret)
 	buf.Reset()
-	err = runShow(&buf, false, "GET off my LAN", mockBackend)
-	if err != nil {
+	if err := runShow(&buf, false, "GET off my LAN", mockBackend); err != nil {
 		// This should not fail, just return no secret.
 		t.Fatalf("runShow() with network without secret failed: %v", err)
 	}
@@ -61,11 +64,14 @@ func TestRunShow(t *testing.T) {
 
 	// Test case: network not found
 	buf.Reset()
-	err = runShow(&buf, false, "NotFound", mockBackend)
-	if err == nil {
-		t.Fatalf("runShow() with not found network should have failed, but did not")
-	}
-	if !strings.Contains(err.Error(), "network not found: NotFound") {
-		t.Errorf("runShow() with not found network gave wrong error. got=%q", err)
+	{
+		const doesNotExist = "_DOES NOT EXIST_"
+		err := runShow(&buf, false, doesNotExist, mockBackend)
+		if err == nil {
+			t.Fatalf("runShow() with not found network should have failed, but did not")
+		}
+		if !strings.Contains(err.Error(), "network not found: " + doesNotExist) {
+			t.Errorf("runShow() with not found network gave wrong error. got=%q", err)
+		}
 	}
 }

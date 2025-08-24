@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && !mock
 package main
 
 import (
