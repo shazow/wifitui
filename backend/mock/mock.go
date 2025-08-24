@@ -1,13 +1,15 @@
-package main
+package mock
 
 import (
 	"fmt"
 	"time"
+
+	"github.com/shazow/wifitui/backend"
 )
 
-// MockBackend is a mock implementation of the Backend interface for testing.
-type MockBackend struct {
-	Connections     []Connection
+// Backend is a mock implementation of the backend.Backend interface for testing.
+type Backend struct {
+	Connections     []backend.Connection
 	Secrets         map[string]string
 	ActivateError   error
 	ForgetError     error
@@ -16,12 +18,12 @@ type MockBackend struct {
 	UpdateSecretError error
 }
 
-// NewMockBackend creates a new MockBackend with some default data.
-func NewMockBackend() *MockBackend {
+// New creates a new mock.Backend with some default data.
+func New() *Backend {
 	now := time.Now()
 	yesterday := now.Add(-24 * time.Hour)
-	return &MockBackend{
-		Connections: []Connection{
+	return &Backend{
+		Connections: []backend.Connection{
 			{SSID: "TestNet 1", IsVisible: true, Strength: 80},
 			{SSID: "TestNet 2", IsVisible: true, Strength: 50, IsSecure: true},
 			{SSID: "TestNet 3", IsVisible: false, IsKnown: true, LastConnected: &now},
@@ -36,23 +38,23 @@ func NewMockBackend() *MockBackend {
 	}
 }
 
-func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
+func (m *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
 	return m.Connections, nil
 }
 
-func (m *MockBackend) ActivateConnection(ssid string) error {
+func (m *Backend) ActivateConnection(ssid string) error {
 	return m.ActivateError
 }
 
-func (m *MockBackend) ForgetNetwork(ssid string) error {
+func (m *Backend) ForgetNetwork(ssid string) error {
 	return m.ForgetError
 }
 
-func (m *MockBackend) JoinNetwork(ssid string, password string) error {
+func (m *Backend) JoinNetwork(ssid string, password string) error {
 	return m.JoinError
 }
 
-func (m *MockBackend) GetSecrets(ssid string) (string, error) {
+func (m *Backend) GetSecrets(ssid string) (string, error) {
 	if m.GetSecretsError != nil {
 		return "", m.GetSecretsError
 	}
@@ -63,6 +65,6 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 	return secret, nil
 }
 
-func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
+func (m *Backend) UpdateSecret(ssid string, newPassword string) error {
 	return m.UpdateSecretError
 }

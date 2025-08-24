@@ -1,4 +1,6 @@
-package main
+//go:build linux
+
+package dbus
 
 import (
 	"fmt"
@@ -6,18 +8,19 @@ import (
 
 	"github.com/Wifx/gonetworkmanager"
 	"github.com/google/uuid"
+	"github.com/shazow/wifitui/backend"
 )
 
-// DBusBackend implements the Backend interface using D-Bus to communicate with NetworkManager.
-type DBusBackend struct {
-	nm           gonetworkmanager.NetworkManager
-	settings     gonetworkmanager.Settings
-	connections  map[string]gonetworkmanager.Connection
-	accessPoints map[string]gonetworkmanager.AccessPoint
+// Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
+type Backend struct {
+	Nm           gonetworkmanager.NetworkManager
+	Settings     gonetworkmanager.Settings
+	Connections  map[string]gonetworkmanager.Connection
+	AccessPoints map[string]gonetworkmanager.AccessPoint
 }
 
-// NewDBusBackend creates a new DBusBackend.
-func NewDBusBackend() (Backend, error) {
+// New creates a new dbus.Backend.
+func New() (backend.Backend, error) {
 	nm, err := gonetworkmanager.NewNetworkManager()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network manager client: %w", err)
@@ -28,20 +31,20 @@ func NewDBusBackend() (Backend, error) {
 		return nil, fmt.Errorf("failed to get settings: %w", err)
 	}
 
-	return &DBusBackend{
-		nm:           nm,
-		settings:     settings,
-		connections:  make(map[string]gonetworkmanager.Connection),
-		accessPoints: make(map[string]gonetworkmanager.AccessPoint),
+	return &Backend{
+		Nm:           nm,
+		Settings:     settings,
+		Connections:  make(map[string]gonetworkmanager.Connection),
+		AccessPoints: make(map[string]gonetworkmanager.AccessPoint),
 	}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
-	b.connections = make(map[string]gonetworkmanager.Connection)
-	b.accessPoints = make(map[string]gonetworkmanager.AccessPoint)
+func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
+	b.Connections = make(map[string]gonetworkmanager.Connection)
+	b.AccessPoints = make(map[string]gonetworkmanager.AccessPoint)
 
-	devices, err := b.nm.GetDevices()
+	devices, err := b.Nm.GetDevices()
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +67,7 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		}
 	}
 
-	knownConnections, err := b.settings.ListConnections()
+	knownConnections, err := b.Settings.ListConnections()
 	if err != nil {
 		return nil, err
 	}
@@ -74,10 +77,10 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		return nil, err
 	}
 
-	var conns []Connection
+	var conns []backend.Connection
 	processedSSIDs := make(map[string]bool)
 
-	activeConnections, err := b.nm.GetPropertyActiveConnections()
+	activeConnections, err := b.Nm.GetPropertyActiveConnections()
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +108,7 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		}
 
 		strength, _ := ap.GetPropertyStrength()
-		if existing, exists := b.accessPoints[ssid]; exists {
+		if existing, exists := b.AccessPoints[ssid]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
 			if strength <= exStrength {
 				continue
@@ -113,12 +116,12 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		}
 
 		processedSSIDs[ssid] = true
-		b.accessPoints[ssid] = ap
+		b.AccessPoints[ssid] = ap
 
 		flags, _ := ap.GetPropertyFlags()
 		isSecure := uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0
 
-		var connInfo Connection
+		var connInfo backend.Connection
 		var knownConn gonetworkmanager.Connection
 		for _, kc := range knownConnections {
 			s, err := kc.GetSettings()
@@ -136,7 +139,7 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		}
 
 		if knownConn != nil {
-			b.connections[ssid] = knownConn
+			b.Connections[ssid] = knownConn
 			s, _ := knownConn.GetSettings()
 			var id string
 			var lastConnected *time.Time
@@ -149,7 +152,7 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 					lastConnected = &t
 				}
 			}
-			connInfo = Connection{
+			connInfo = backend.Connection{
 				SSID:          ssid,
 				IsActive:      activeConnectionID != "" && id == activeConnectionID,
 				IsKnown:       true,
@@ -159,7 +162,7 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 				LastConnected: lastConnected,
 			}
 		} else {
-			connInfo = Connection{
+			connInfo = backend.Connection{
 				SSID:      ssid,
 				IsKnown:   false,
 				IsSecure:  isSecure,
@@ -192,7 +195,7 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		}
 
 		if _, processed := processedSSIDs[ssid]; !processed {
-			b.connections[ssid] = knownConn
+			b.Connections[ssid] = knownConn
 			var lastConnected *time.Time
 			if c, ok := s["connection"]; ok {
 				if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
@@ -200,26 +203,26 @@ func (b *DBusBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 					lastConnected = &t
 				}
 			}
-			conns = append(conns, Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
+			conns = append(conns, backend.Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
 		}
 	}
 
-	sortConnections(conns)
+	backend.SortConnections(conns)
 	return conns, nil
 }
 
-func (b *DBusBackend) ActivateConnection(ssid string) error {
-	conn, ok := b.connections[ssid]
+func (b *Backend) ActivateConnection(ssid string) error {
+	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s", ssid)
 	}
 
-	ap, apOK := b.accessPoints[ssid]
+	ap, apOK := b.AccessPoints[ssid]
 	if !apOK {
 		return fmt.Errorf("access point not found for %s", ssid)
 	}
 
-	devices, err := b.nm.GetDevices()
+	devices, err := b.Nm.GetDevices()
 	if err != nil {
 		return err
 	}
@@ -238,25 +241,25 @@ func (b *DBusBackend) ActivateConnection(ssid string) error {
 		return fmt.Errorf("no wireless device found")
 	}
 
-	_, err = b.nm.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	_, err = b.Nm.ActivateWirelessConnection(conn, wirelessDevice, ap)
 	return err
 }
 
-func (b *DBusBackend) ForgetNetwork(ssid string) error {
-	conn, ok := b.connections[ssid]
+func (b *Backend) ForgetNetwork(ssid string) error {
+	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s", ssid)
 	}
 	return conn.Delete()
 }
 
-func (b *DBusBackend) JoinNetwork(ssid string, password string) error {
-	ap, ok := b.accessPoints[ssid]
+func (b *Backend) JoinNetwork(ssid string, password string) error {
+	ap, ok := b.AccessPoints[ssid]
 	if !ok {
 		return fmt.Errorf("access point not found for %s", ssid)
 	}
 
-	devices, err := b.nm.GetDevices()
+	devices, err := b.Nm.GetDevices()
 	if err != nil {
 		return err
 	}
@@ -286,12 +289,12 @@ func (b *DBusBackend) JoinNetwork(ssid string, password string) error {
 	connection["connection"]["uuid"] = uuid.New().String()
 	connection["connection"]["type"] = "802-11-wireless"
 
-	_, err = b.nm.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
+	_, err = b.Nm.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
 	return err
 }
 
-func (b *DBusBackend) GetSecrets(ssid string) (string, error) {
-	conn, ok := b.connections[ssid]
+func (b *Backend) GetSecrets(ssid string) (string, error) {
+	conn, ok := b.Connections[ssid]
 	if !ok {
 		return "", fmt.Errorf("connection not found for %s", ssid)
 	}
@@ -312,8 +315,8 @@ func (b *DBusBackend) GetSecrets(ssid string) (string, error) {
 	return "", nil
 }
 
-func (b *DBusBackend) UpdateSecret(ssid string, newPassword string) error {
-	conn, ok := b.connections[ssid]
+func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
+	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s", ssid)
 	}

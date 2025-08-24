@@ -1,7 +1,7 @@
 //go:build darwin
 // WARNING: This implementation is untested.
 
-package main
+package darwin
 
 import (
 	"bufio"
@@ -10,15 +10,17 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/shazow/wifitui/backend"
 )
 
-// MacOSBackend implements the Backend interface for macOS.
-type MacOSBackend struct {
-	wifiInterface string
+// Backend implements the backend.Backend interface for macOS.
+type Backend struct {
+	WifiInterface string
 }
 
-// NewMacOSBackend creates a new MacOSBackend.
-func NewMacOSBackend() (Backend, error) {
+// New creates a new darwin.Backend.
+func New() (backend.Backend, error) {
 	// Find the Wi-Fi interface name (e.g., en0)
 	cmd := exec.Command("networksetup", "-listallhardwareports")
 	out, err := cmd.Output()
@@ -36,22 +38,17 @@ func NewMacOSBackend() (Backend, error) {
 			device = strings.TrimPrefix(line, "Device: ")
 		}
 		if (strings.Contains(hardwarePort, "Wi-Fi") || strings.Contains(hardwarePort, "AirPort")) && device != "" {
-			return &MacOSBackend{wifiInterface: device}, nil
+			return &Backend{WifiInterface: device}, nil
 		}
 	}
 
 	return nil, fmt.Errorf("no Wi-Fi interface found")
 }
 
-// NewBackend is the entry point for creating a backend on macOS.
-func NewBackend() (Backend, error) {
-	return NewMacOSBackend()
-}
-
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *MacOSBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
+func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
 	// Get current network
-	cmd := exec.Command("networksetup", "-getairportnetwork", b.wifiInterface)
+	cmd := exec.Command("networksetup", "-getairportnetwork", b.WifiInterface)
 	out, err := cmd.Output()
 	var currentSSID string
 	if err == nil {
@@ -63,7 +60,7 @@ func (b *MacOSBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 	}
 
 	// Get known networks
-	cmd = exec.Command("networksetup", "-listpreferredwirelessnetworks", b.wifiInterface)
+	cmd = exec.Command("networksetup", "-listpreferredwirelessnetworks", b.WifiInterface)
 	out, err = cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list preferred networks: %w", err)
@@ -84,7 +81,7 @@ func (b *MacOSBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		return nil, fmt.Errorf("failed to scan for networks: %w", err)
 	}
 
-	var conns []Connection
+	var conns []backend.Connection
 	processedSSIDs := make(map[string]bool)
 	scanner = bufio.NewScanner(strings.NewReader(string(out)))
 	// The regex is to parse the output of the airport command.
@@ -116,7 +113,7 @@ func (b *MacOSBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 				strength = 100
 			}
 
-			conns = append(conns, Connection{
+			conns = append(conns, backend.Connection{
 				SSID:      ssid,
 				IsActive:  ssid == currentSSID,
 				IsKnown:   knownSSIDs[ssid],
@@ -130,49 +127,49 @@ func (b *MacOSBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 	// Add known networks that are not visible
 	for ssid := range knownSSIDs {
 		if _, processed := processedSSIDs[ssid]; !processed {
-			conns = append(conns, Connection{
+			conns = append(conns, backend.Connection{
 				SSID:    ssid,
 				IsKnown: true,
 			})
 		}
 	}
 
-	sortConnections(conns)
+	backend.SortConnections(conns)
 	return conns, nil
 }
 
 // ActivateConnection activates a known network.
-func (b *MacOSBackend) ActivateConnection(ssid string) error {
+func (b *Backend) ActivateConnection(ssid string) error {
 	password, err := b.GetSecrets(ssid)
 	if err != nil {
 		// This will fail for open networks, but that's ok
 		password = ""
 	}
 
-	cmd := exec.Command("networksetup", "-setairportnetwork", b.wifiInterface, ssid, password)
+	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
 	return cmd.Run()
 }
 
 // ForgetNetwork removes a known network configuration.
-func (b *MacOSBackend) ForgetNetwork(ssid string) error {
-	cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.wifiInterface, ssid)
+func (b *Backend) ForgetNetwork(ssid string) error {
+	cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.WifiInterface, ssid)
 	return cmd.Run()
 }
 
 // JoinNetwork connects to a new network, potentially creating a new configuration.
-func (b *MacOSBackend) JoinNetwork(ssid string, password string) error {
-	cmd := exec.Command("networksetup", "-setairportnetwork", b.wifiInterface, ssid, password)
+func (b *Backend) JoinNetwork(ssid string, password string) error {
+	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 	// Add to preferred networks so it becomes "known"
 	// The security type is not always WPA2E, but this is the best guess.
-	cmd = exec.Command("networksetup", "-addpreferredwirelessnetworkatindex", b.wifiInterface, ssid, "0", "WPA2E")
+	cmd = exec.Command("networksetup", "-addpreferredwirelessnetworkatindex", b.WifiInterface, ssid, "0", "WPA2E")
 	return cmd.Run()
 }
 
 // GetSecrets retrieves the password for a known connection.
-func (b *MacOSBackend) GetSecrets(ssid string) (string, error) {
+func (b *Backend) GetSecrets(ssid string) (string, error) {
 	cmd := exec.Command("security", "find-generic-password", "-wa", ssid)
 	out, err := cmd.Output()
 	if err != nil {
@@ -182,7 +179,7 @@ func (b *MacOSBackend) GetSecrets(ssid string) (string, error) {
 }
 
 // UpdateSecret changes the password for a known connection.
-func (b *MacOSBackend) UpdateSecret(ssid string, newPassword string) error {
+func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	// In macOS, we need to delete the old password and add a new one.
 	// The -U flag in add-generic-password updates the item if it exists,
 	// but it's safer to delete and add.

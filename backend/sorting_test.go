@@ -1,4 +1,4 @@
-package main
+package backend
 
 import (
 	"reflect"
@@ -94,9 +94,9 @@ func TestSortConnections(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sortConnections(tt.connections)
+			SortConnections(tt.connections)
 			if !reflect.DeepEqual(tt.connections, tt.expected) {
-				t.Errorf("sortConnections() got = %v, want %v", tt.connections, tt.expected)
+				t.Errorf("SortConnections() got = %v, want %v", tt.connections, tt.expected)
 			}
 		})
 	}
