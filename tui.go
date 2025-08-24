@@ -219,7 +219,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		bh, bv := listBorderStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv)
+		// Account for title and status bar
+		extraVerticalSpace := 4
+		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
 
 	// Custom messages from our backend commands
 	case connectionsLoadedMsg:
