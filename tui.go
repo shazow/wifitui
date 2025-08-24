@@ -26,6 +26,7 @@ var (
 	unknownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
+	dialogBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("205"))
 )
 
 // viewState represents the current screen of the TUI
@@ -148,6 +149,7 @@ type model struct {
 	statusMessage string
 	errorMessage  string
 	selectedItem  connectionItem
+	width, height int
 }
 
 // initialModel creates the starting state of our application
@@ -222,6 +224,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Account for title and status bar
 		extraVerticalSpace := 4
 		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
+		m.width = msg.Width
+		m.height = msg.Height
 
 	// Custom messages from our backend commands
 	case connectionsLoadedMsg:
@@ -280,6 +284,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.selectedItem = selected
 						m.state = stateForgetView
 						m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
+						m.errorMessage = ""
 					}
 				}
 			case "c":
@@ -369,10 +374,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "y":
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Forgetting '%s'...", m.selectedItem.SSID)
+				m.errorMessage = ""
 				cmds = append(cmds, forgetNetwork(m.backend, m.selectedItem.SSID))
 			case "n", "q", "esc":
 				m.state = stateListView
 				m.statusMessage = ""
+				m.errorMessage = ""
 			}
 		}
 	}
@@ -398,6 +405,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	if m.errorMessage != "" {
 		return docStyle.Render(fmt.Sprintf("Error: %s\n\nPress 'q' to quit.", errorStyle(m.errorMessage)))
+	}
+
+	if m.state == stateForgetView {
+		question := lipgloss.NewStyle().Width(50).Align(lipgloss.Center).Render(m.statusMessage)
+		dialog := dialogBoxStyle.Render(question)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
 	}
 
 	var s strings.Builder
@@ -433,9 +446,6 @@ func (m model) View() string {
 		s.WriteString(fmt.Sprintf("\nJoining Wi-Fi Network: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
 		s.WriteString("\n\n(press enter to join, esc to cancel)")
-	case stateForgetView:
-		// The status message is used as the prompt
-		s.WriteString(m.list.View())
 	}
 
 	if m.loading {
