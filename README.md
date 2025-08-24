@@ -13,10 +13,10 @@ A replacement for `nmtui`.
 - [x] Initiate a scan (`s` key)
 - [x] QR code for sharing a known network
 - [x] Multiple backends (experimental `iwd` support, untested)
+- [x] Non-interactive modes (`list` `show` `connect` commands)
 
 More things I'd like to do:
 - [ ] macOS support maybe for fun?
-- [ ] Non-interactive modes
 - [ ] More stats about the current network
 - [ ] Maybe a better name?
 
