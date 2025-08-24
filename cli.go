@@ -30,9 +30,6 @@ func formatConnection(c backend.Connection) string {
 	if c.IsSecure {
 		parts = append(parts, "secure")
 	}
-	if c.IsKnown {
-		parts = append(parts, "known")
-	}
 	if c.IsActive {
 		parts = append(parts, "active")
 	}
