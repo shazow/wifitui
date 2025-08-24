@@ -94,36 +94,39 @@ type itemDelegate struct {
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
 	i, ok := listItem.(connectionItem)
 	if !ok {
+		// Fallback to default render for any other item types
+		d.DefaultDelegate.Render(w, m, index, listItem)
 		return
 	}
 
-	var styledSSID, styledDesc string
-	if i.IsVisible {
-		if i.IsKnown {
-			styledSSID = knownNetworkStyle.Render(i.SSID)
-		} else {
-			styledSSID = unknownNetworkStyle.Render(i.SSID)
-		}
-		if i.IsActive {
-			styledSSID = activeStyle.Render("* " + i.SSID)
-		}
+	// Get plain title and description
+	title := i.Title()
+	desc := i.Description()
+
+	// Apply custom styling based on connection state
+	if !i.IsVisible {
+		title = disabledStyle.Render(title)
+	} else if i.IsActive {
+		title = activeStyle.Render(title)
+	} else if i.IsKnown {
+		title = knownNetworkStyle.Render(title)
 	} else {
-		styledSSID = disabledStyle.Render(i.SSID)
+		title = unknownNetworkStyle.Render(title)
 	}
 
-	if i.Strength > 0 {
-		styledDesc = fmt.Sprintf("%d%%", i.Strength)
-	} else if !i.IsVisible && i.LastConnected != nil {
-		styledDesc = formatDuration(*i.LastConnected)
-	}
-
-	fn := d.Styles.NormalTitle.Render
+	// Now apply selection styling
 	if index == m.Index() {
-		fn = func(s ...string) string {
-			return d.Styles.SelectedTitle.Render(strings.Join(s, " "))
-		}
+		title = d.Styles.SelectedTitle.Render(title)
+		desc = d.Styles.SelectedDesc.Render(desc)
+	} else {
+		title = d.Styles.NormalTitle.Render(title)
+		desc = d.Styles.NormalDesc.Render(desc)
 	}
-	fmt.Fprint(w, fn(styledSSID, styledDesc))
+
+	// The DefaultDelegate joins title and description with a separator.
+	// Let's just put a space for now.
+	// NOTE: This doesn't account for all the delegate's options.
+	fmt.Fprintf(w, "%s %s", title, desc)
 }
 
 // Bubbletea messages are used to communicate between the main loop and commands
@@ -165,6 +168,8 @@ func initialModel(b backend.Backend) (model, error) {
 
 	// Configure the list
 	delegate := itemDelegate{}
+	defaultDel := list.NewDefaultDelegate()
+	delegate.Styles = defaultDel.Styles
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = "Wi-Fi Networks"
 	l.SetShowStatusBar(true)
