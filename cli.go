@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/shazow/wifitui/backend"
 )
 
 func runTUI() error {
@@ -20,7 +21,7 @@ func runTUI() error {
 	return nil
 }
 
-func formatConnection(c Connection) string {
+func formatConnection(c backend.Connection) string {
 	var parts []string
 	if c.IsVisible {
 		parts = append(parts, fmt.Sprintf("%d%%", c.Strength))
@@ -39,8 +40,8 @@ func formatConnection(c Connection) string {
 	return strings.Join(parts, ", ")
 }
 
-func runList(w io.Writer, verbose bool, backend Backend) error {
-	connections, err := backend.BuildNetworkList(true)
+func runList(w io.Writer, verbose bool, b backend.Backend) error {
+	connections, err := b.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
@@ -52,15 +53,15 @@ func runList(w io.Writer, verbose bool, backend Backend) error {
 	return nil
 }
 
-func runShow(w io.Writer, verbose bool, ssid string, backend Backend) error {
-	connections, err := backend.BuildNetworkList(true)
+func runShow(w io.Writer, verbose bool, ssid string, b backend.Backend) error {
+	connections, err := b.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
 
 	for _, c := range connections {
 		if c.SSID == ssid {
-			secret, err := backend.GetSecrets(ssid)
+			secret, err := b.GetSecrets(ssid)
 			if err != nil {
 				// If we can't get a secret for a known network, that's an error.
 				// But for a visible-only network, it's expected.

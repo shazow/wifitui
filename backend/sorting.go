@@ -1,14 +1,14 @@
-package main
+package backend
 
 import "sort"
 
-// sortConnections sorts a slice of Connection structs in place.
+// SortConnections sorts a slice of Connection structs in place.
 // The sorting order is:
 // 1. Active connection first.
 // 2. Visible networks, sorted by signal strength (strongest first).
 // 3. Non-visible known networks, sorted by LastConnected timestamp (most recent first).
 // 4. Fallback to SSID alphabetically.
-func sortConnections(connections []Connection) {
+func SortConnections(connections []Connection) {
 	sort.SliceStable(connections, func(i, j int) bool {
 		a := connections[i]
 		b := connections[j]

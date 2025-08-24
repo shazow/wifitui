@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/shazow/wifitui/backend/mock"
 )
 
 func TestRunList(t *testing.T) {
-	mockBackend := NewMockBackend()
+	mockBackend := mock.New()
 	var buf bytes.Buffer
 
 	err := runList(&buf, false, mockBackend)
@@ -40,7 +42,7 @@ func TestRunList(t *testing.T) {
 }
 
 func TestRunShow(t *testing.T) {
-	mockBackend := NewMockBackend()
+	mockBackend := mock.New()
 	var buf bytes.Buffer
 
 	// Test case: network found and known

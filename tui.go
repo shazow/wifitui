@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/shazow/wifitui/backend"
 )
 
 
@@ -37,7 +38,7 @@ const (
 
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
-	Connection
+	backend.Connection
 }
 
 // Implement the list.Item interface for our connectionItem
@@ -109,10 +110,10 @@ func formatDuration(t time.Time) string {
 
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
-	connectionsLoadedMsg []Connection // Sent when connections are fetched
-	scanFinishedMsg      []Connection // Sent when a scan is finished
-	secretsLoadedMsg     string       // Sent when a password is fetched
-	connectionSavedMsg   struct{}     // Sent when a password is saved
+	connectionsLoadedMsg []backend.Connection // Sent when connections are fetched
+	scanFinishedMsg      []backend.Connection // Sent when a scan is finished
+	secretsLoadedMsg     string               // Sent when a password is fetched
+	connectionSavedMsg   struct{}             // Sent when a password is saved
 	errorMsg             struct{ err error }
 )
 
@@ -122,7 +123,7 @@ type model struct {
 	list          list.Model
 	passwordInput textinput.Model
 	spinner       spinner.Model
-	backend       Backend
+	backend       backend.Backend
 	loading       bool
 	statusMessage string
 	errorMessage  string
@@ -131,7 +132,7 @@ type model struct {
 
 // initialModel creates the starting state of our application
 func initialModel() (model, error) {
-	backend, err := NewBackend()
+	be, err := NewBackend()
 	if err != nil {
 		return model{}, fmt.Errorf("failed to initialize backend: %w", err)
 	}
@@ -179,7 +180,7 @@ func initialModel() (model, error) {
 		list:          l,
 		passwordInput: ti,
 		spinner:       s,
-		backend:       backend,
+		backend:       be,
 		loading:       true,
 		statusMessage: "Loading connections...",
 	}, nil
@@ -416,7 +417,7 @@ func (m model) View() string {
 
 // --- Commands that interact with the backend ---
 
-func scanNetworks(b Backend) tea.Cmd {
+func scanNetworks(b backend.Backend) tea.Cmd {
 	return func() tea.Msg {
 		connections, err := b.BuildNetworkList(true)
 		if err != nil {
@@ -426,7 +427,7 @@ func scanNetworks(b Backend) tea.Cmd {
 	}
 }
 
-func refreshNetworks(b Backend) tea.Cmd {
+func refreshNetworks(b backend.Backend) tea.Cmd {
 	return func() tea.Msg {
 		connections, err := b.BuildNetworkList(false)
 		if err != nil {
@@ -436,7 +437,7 @@ func refreshNetworks(b Backend) tea.Cmd {
 	}
 }
 
-func activateConnection(b Backend, ssid string) tea.Cmd {
+func activateConnection(b backend.Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
 		err := b.ActivateConnection(ssid)
 		if err != nil {
@@ -446,7 +447,7 @@ func activateConnection(b Backend, ssid string) tea.Cmd {
 	}
 }
 
-func forgetNetwork(b Backend, ssid string) tea.Cmd {
+func forgetNetwork(b backend.Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
 		err := b.ForgetNetwork(ssid)
 		if err != nil {
@@ -456,7 +457,7 @@ func forgetNetwork(b Backend, ssid string) tea.Cmd {
 	}
 }
 
-func joinNetwork(b Backend, ssid string, password string) tea.Cmd {
+func joinNetwork(b backend.Backend, ssid string, password string) tea.Cmd {
 	return func() tea.Msg {
 		err := b.JoinNetwork(ssid, password)
 		if err != nil {
@@ -466,7 +467,7 @@ func joinNetwork(b Backend, ssid string, password string) tea.Cmd {
 	}
 }
 
-func getSecrets(b Backend, ssid string) tea.Cmd {
+func getSecrets(b backend.Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
 		secret, err := b.GetSecrets(ssid)
 		if err != nil {
@@ -476,7 +477,7 @@ func getSecrets(b Backend, ssid string) tea.Cmd {
 	}
 }
 
-func updateSecret(b Backend, ssid string, newPassword string) tea.Cmd {
+func updateSecret(b backend.Backend, ssid string, newPassword string) tea.Cmd {
 	return func() tea.Msg {
 		err := b.UpdateSecret(ssid, newPassword)
 		if err != nil {
@@ -485,4 +486,3 @@ func updateSecret(b Backend, ssid string, newPassword string) tea.Cmd {
 		return connectionSavedMsg{}
 	}
 }
-

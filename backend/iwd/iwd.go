@@ -1,10 +1,13 @@
+//go:build linux
+
 // WARNING: This implementation is untested.
-package main
+package iwd
 
 import (
 	"fmt"
 
 	"github.com/godbus/dbus/v5"
+	"github.com/shazow/wifitui/backend"
 )
 
 // IWD constants
@@ -18,14 +21,14 @@ const (
 	iwdKnownNetworkIface = "net.connman.iwd.KnownNetwork"
 )
 
-// IwdBackend implements the Backend interface using iwd.
-type IwdBackend struct {
+// Backend implements the backend.Backend interface using iwd.
+type Backend struct {
 	// connectionDetails stores D-Bus specific info needed for operations.
 	// We won't use this for iwd for now.
 }
 
-// NewIwdBackend creates a new IwdBackend.
-func NewIwdBackend() (Backend, error) {
+// New creates a new iwd.Backend.
+func New() (backend.Backend, error) {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return nil, err
@@ -42,11 +45,11 @@ func NewIwdBackend() (Backend, error) {
 		return nil, fmt.Errorf("iwd is not available: %w", err)
 	}
 
-	return &IwdBackend{}, nil
+	return &Backend{}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
+func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return nil, err
@@ -65,8 +68,8 @@ func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		return nil, err
 	}
 
-	var connections []Connection
-	visibleNetworks := make(map[string]Connection)
+	var connections []backend.Connection
+	visibleNetworks := make(map[string]backend.Connection)
 
 	for _, devicePath := range devices {
 		deviceObj := conn.Object(iwdDest, devicePath)
@@ -92,7 +95,7 @@ func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 
 			if existing, exists := visibleNetworks[ssid]; exists {
 				if strength > existing.Strength {
-					visibleNetworks[ssid] = Connection{
+					visibleNetworks[ssid] = backend.Connection{
 						SSID:      ssid,
 						IsActive:  isActive,
 						IsSecure:  isSecure,
@@ -101,7 +104,7 @@ func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 					}
 				}
 			} else {
-				visibleNetworks[ssid] = Connection{
+				visibleNetworks[ssid] = backend.Connection{
 					SSID:      ssid,
 					IsActive:  isActive,
 					IsSecure:  isSecure,
@@ -136,7 +139,7 @@ func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 				visibleNetworks[ssid] = c
 			} else {
 				// Add non-visible known network
-				connections = append(connections, Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
+				connections = append(connections, backend.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
 			}
 		}
 	}
@@ -145,12 +148,12 @@ func (b *IwdBackend) BuildNetworkList(shouldScan bool) ([]Connection, error) {
 		connections = append(connections, conn)
 	}
 
-	sortConnections(connections)
+	backend.SortConnections(connections)
 
 	return connections, nil
 }
 
-func (b *IwdBackend) ActivateConnection(ssid string) error {
+func (b *Backend) ActivateConnection(ssid string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -162,7 +165,7 @@ func (b *IwdBackend) ActivateConnection(ssid string) error {
 	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid).Store()
 }
 
-func (b *IwdBackend) ForgetNetwork(ssid string) error {
+func (b *Backend) ForgetNetwork(ssid string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -177,7 +180,7 @@ func (b *IwdBackend) ForgetNetwork(ssid string) error {
 	return conn.Object(iwdDest, iwdPath).Call(iwdIface+".ForgetNetwork", 0, path).Store()
 }
 
-func (b *IwdBackend) JoinNetwork(ssid string, password string) error {
+func (b *Backend) JoinNetwork(ssid string, password string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -189,13 +192,13 @@ func (b *IwdBackend) JoinNetwork(ssid string, password string) error {
 	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
 }
 
-func (b *IwdBackend) GetSecrets(ssid string) (string, error) {
+func (b *Backend) GetSecrets(ssid string) (string, error) {
 	// The iwd API doesn't seem to expose a way to get the PSK directly for security reasons.
 	// We can't implement this feature for iwd.
 	return "", fmt.Errorf("getting secrets is not supported by the iwd backend")
 }
 
-func (b *IwdBackend) UpdateSecret(ssid string, newPassword string) error {
+func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	// To "update" a secret, we have to forget the network and then re-join it.
 	err := b.ForgetNetwork(ssid)
 	if err != nil {
@@ -209,14 +212,14 @@ func (b *IwdBackend) UpdateSecret(ssid string, newPassword string) error {
 
 // --- iwd Helper Functions ---
 
-func (b *IwdBackend) getDevices(conn *dbus.Conn) ([]dbus.ObjectPath, error) {
+func (b *Backend) getDevices(conn *dbus.Conn) ([]dbus.ObjectPath, error) {
 	var devices []dbus.ObjectPath
 	obj := conn.Object(iwdDest, iwdPath)
 	err := obj.Call(iwdIface+".GetDevices", 0).Store(&devices)
 	return devices, err
 }
 
-func (b *IwdBackend) getStationDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
+func (b *Backend) getStationDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
 	devices, err := b.getDevices(conn)
 	if err != nil {
 		return "", err
@@ -234,14 +237,14 @@ func (b *IwdBackend) getStationDevice(conn *dbus.Conn) (dbus.ObjectPath, error) 
 	return "", fmt.Errorf("no station device found")
 }
 
-func (b *IwdBackend) getKnownNetworks(conn *dbus.Conn) ([]dbus.ObjectPath, error) {
+func (b *Backend) getKnownNetworks(conn *dbus.Conn) ([]dbus.ObjectPath, error) {
 	var networks []dbus.ObjectPath
 	obj := conn.Object(iwdDest, iwdPath)
 	err := obj.Call(iwdIface+".GetKnownNetworks", 0).Store(&networks)
 	return networks, err
 }
 
-func (b *IwdBackend) findKnownNetworkPath(conn *dbus.Conn, ssid string) (dbus.ObjectPath, error) {
+func (b *Backend) findKnownNetworkPath(conn *dbus.Conn, ssid string) (dbus.ObjectPath, error) {
 	paths, err := b.getKnownNetworks(conn)
 	if err != nil {
 		return "", err
