@@ -42,24 +42,21 @@ type connectionItem struct {
 	backend.Connection
 }
 
-// Implement the list.Item interface for our connectionItem
-// Implement the list.Item interface for our connectionItem
 func (i connectionItem) Title() string       { return i.plainTitle() }
-func (i connectionItem) Description() string { return i.plainDescription() }
+func (i connectionItem) Description() string {
+	if (i.IsActive) {
+		return i.plainDescription() + " (Connected)"
+	}
+	return i.plainDescription()
+}
 func (i connectionItem) FilterValue() string { return i.plainTitle() }
 
 // plainTitle returns the title of the connection item without any styling
-func (i connectionItem) plainTitle() string {
-	if i.IsActive {
-		return "* " + i.SSID
-	}
-	return i.SSID
-}
+func (i connectionItem) plainTitle() string { return i.SSID }
 
 // plainDescription returns the description of the connection item without any styling
 func (i connectionItem) plainDescription() string {
 	if i.Strength > 0 {
-		// return fmt.Sprintf("%d%% %s", i.Strength, strings.Repeat("█", int(i.Strength/10)))
 		return fmt.Sprintf("%d%%", i.Strength)
 	}
 	if !i.IsVisible && i.LastConnected != nil {
@@ -116,10 +113,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Now apply selection styling
 	if index == m.Index() {
-		title = d.Styles.SelectedTitle.Render(title)
+		title = "▶" + d.Styles.SelectedTitle.Render(title)
 		desc = d.Styles.SelectedDesc.Render(desc)
 	} else {
-		title = d.Styles.NormalTitle.Render(title)
+		title = d.Styles.NormalTitle.MarginLeft(1).Render(title)
 		desc = d.Styles.NormalDesc.Render(desc)
 	}
 
