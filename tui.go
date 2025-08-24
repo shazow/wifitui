@@ -42,20 +42,8 @@ type connectionItem struct {
 	backend.Connection
 }
 
-func (i connectionItem) Title() string       { return i.plainTitle() }
+func (i connectionItem) Title() string { return i.SSID }
 func (i connectionItem) Description() string {
-	if (i.IsActive) {
-		return i.plainDescription() + " (Connected)"
-	}
-	return i.plainDescription()
-}
-func (i connectionItem) FilterValue() string { return i.plainTitle() }
-
-// plainTitle returns the title of the connection item without any styling
-func (i connectionItem) plainTitle() string { return i.SSID }
-
-// plainDescription returns the description of the connection item without any styling
-func (i connectionItem) plainDescription() string {
 	if i.Strength > 0 {
 		return fmt.Sprintf("%d%%", i.Strength)
 	}
@@ -64,6 +52,7 @@ func (i connectionItem) plainDescription() string {
 	}
 	return ""
 }
+func (i connectionItem) FilterValue() string { return i.Title() }
 
 // formatDuration takes a time and returns a human-readable string like "2 hours ago"
 func formatDuration(t time.Time) string {
@@ -99,6 +88,20 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	// Get plain title and description
 	title := i.Title()
 	desc := i.Description()
+	if i.IsActive {
+		desc += " (Connected)"
+	}
+
+	// Define column width for SSID
+	ssidColumnWidth := 30
+	titleLen := len(title)
+
+	// Truncate title if it's too long
+	if titleLen > ssidColumnWidth {
+		title = title[:ssidColumnWidth-3] + "..."
+		titleLen = ssidColumnWidth
+	}
+	padding := strings.Repeat(" ", ssidColumnWidth-titleLen)
 
 	// Apply custom styling based on connection state
 	if !i.IsVisible {
@@ -120,10 +123,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		desc = d.Styles.NormalDesc.Render(desc)
 	}
 
-	// The DefaultDelegate joins title and description with a separator.
-	// Let's just put a space for now.
-	// NOTE: This doesn't account for all the delegate's options.
-	fmt.Fprintf(w, "%s %s", title, desc)
+	// Render with padding to create columns
+	fmt.Fprintf(w, "%s%s %s", title, padding, desc)
 }
 
 // Bubbletea messages are used to communicate between the main loop and commands
@@ -168,7 +169,7 @@ func initialModel(b backend.Backend) (model, error) {
 	defaultDel := list.NewDefaultDelegate()
 	delegate.Styles = defaultDel.Styles
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = "Wi-Fi Networks"
+	l.Title = fmt.Sprintf("%-31s %s", "SSID", "SIGNAL/LAST SEEN")
 	l.SetShowStatusBar(true)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
