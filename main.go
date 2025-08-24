@@ -11,7 +11,7 @@ import (
 
 var (
 	// Version is the version of the application. It is set at build time.
-	Version string
+	Version string = "dev"
 )
 
 // main is the entry point of the application
