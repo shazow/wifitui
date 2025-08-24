@@ -1,0 +1,15 @@
+name: tests
+on:
+  pull_request:
+    branches:
+      - main
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '1.25'
+      - name: Run tests
+        run: go test -race -test.timeout 5s ./...
