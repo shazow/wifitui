@@ -19,36 +19,55 @@ var (
 func main() {
 	var (
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
-		verbose     = rootFlagSet.Bool("v", false, "verbose output")
 		version     = rootFlagSet.Bool("version", false, "display version")
 	)
 
 	var b backend.Backend
 	var err error
 
+	listFlagSet := flag.NewFlagSet("list", flag.ExitOnError)
+	listJSON := listFlagSet.Bool("json", false, "output in JSON format")
 	listCmd := &ffcli.Command{
 		Name:      "list",
 		ShortHelp: "List wifi networks",
+		FlagSet:   listFlagSet,
 		Exec: func(ctx context.Context, args []string) error {
-			return runList(os.Stdout, *verbose, b)
+			return runList(os.Stdout, *listJSON, b)
 		},
 	}
 
+	showFlagSet := flag.NewFlagSet("show", flag.ExitOnError)
+	showJSON := showFlagSet.Bool("json", false, "output in JSON format")
 	showCmd := &ffcli.Command{
 		Name:      "show",
 		ShortHelp: "Show a wifi network",
+		FlagSet:   showFlagSet,
 		Exec: func(ctx context.Context, args []string) error {
 			if len(args) == 0 {
 				return fmt.Errorf("show requires an ssid")
 			}
-			return runShow(os.Stdout, *verbose, args[0], b)
+			return runShow(os.Stdout, *showJSON, args[0], b)
+		},
+	}
+
+	connectFlagSet := flag.NewFlagSet("connect", flag.ExitOnError)
+	connectPassphrase := connectFlagSet.String("passphrase", "", "passphrase for the network")
+	connectCmd := &ffcli.Command{
+		Name:      "connect",
+		ShortHelp: "Connect to a wifi network",
+		FlagSet:   connectFlagSet,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf("connect requires an ssid")
+			}
+			return runConnect(os.Stdout, args[0], *connectPassphrase, b)
 		},
 	}
 
 	root := &ffcli.Command{
 		ShortUsage:  "wifitui [flags] <subcommand> [args...]",
 		FlagSet:     rootFlagSet,
-		Subcommands: []*ffcli.Command{listCmd, showCmd},
+		Subcommands: []*ffcli.Command{listCmd, showCmd, connectCmd},
 		Exec: func(ctx context.Context, args []string) error {
 			return runTUI(b)
 		},
