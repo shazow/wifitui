@@ -1,6 +1,6 @@
 //go:build linux
 
-package dbus
+package networkmanager
 
 import (
 	"fmt"

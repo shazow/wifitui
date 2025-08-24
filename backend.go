@@ -1,9 +1,13 @@
+//go:build !linux && !darwin
 package main
 
-import "github.com/shazow/wifitui/backend"
+import (
+	"fmt"
+	"github.com/shazow/wifitui/backend"
+)
 
-// NewBackend is a factory function that is defined in build-specific files.
-func NewBackend() (backend.Backend, error) {
+// GetBackend picks a backend based on the system's environment and build flags.
+func GetBackend() (backend.Backend, error) {
 	// This is a placeholder and should be implemented in build-specific files.
-	return nil, nil
+	return nil, fmt.Errorf("no supported backend")
 }

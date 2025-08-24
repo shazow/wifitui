@@ -28,6 +28,21 @@ func main() {
 	var b backend.Backend
 	var err error
 
+	if *version {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
+
+	if *mockBackend {
+		b = mock.New()
+	} else {
+		b, err = GetBackend()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	listCmd := &ffcli.Command{
 		Name:      "list",
 		ShortHelp: "List wifi networks",
@@ -59,21 +74,6 @@ func main() {
 	if err := root.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
-	}
-
-	if *version {
-		fmt.Println(Version)
-		os.Exit(0)
-	}
-
-	if *mockBackend {
-		b = mock.NewBackend()
-	} else {
-		b, err = NewBackend()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
 	}
 
 	if err := root.Run(context.Background()); err != nil {

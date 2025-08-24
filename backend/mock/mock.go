@@ -20,7 +20,7 @@ type Backend struct {
 }
 
 // NewBackend creates a new mock.Backend with a list of fun wifi networks.
-func NewBackend() backend.Backend {
+func New() backend.Backend {
 	networks := []string{
 		"HideYoKidsHideYoWiFi",
 		"GET off my LAN",
