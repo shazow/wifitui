@@ -407,23 +407,27 @@ func (m model) View() string {
 		return docStyle.Render(fmt.Sprintf("Error: %s\n\nPress 'q' to quit.", errorStyle(m.errorMessage)))
 	}
 
-	var s strings.Builder
-	var mainContent string
-
-	// Base view
-	var viewBuilder strings.Builder
-	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
-
-	// Custom status bar
-	statusText := ""
-	if len(m.list.Items()) > 0 {
-		statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
+	if m.state == stateForgetView {
+		question := lipgloss.NewStyle().Width(50).Align(lipgloss.Center).Render(m.statusMessage)
+		dialog := dialogBoxStyle.Render(question)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
 	}
-	viewBuilder.WriteString("\n")
-	viewBuilder.WriteString(statusText)
-	mainContent = docStyle.Render(viewBuilder.String())
+
+	var s strings.Builder
 
 	switch m.state {
+	case stateListView:
+		var viewBuilder strings.Builder
+		viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
+
+		// Custom status bar
+		statusText := ""
+		if len(m.list.Items()) > 0 {
+			statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
+		}
+		viewBuilder.WriteString("\n")
+		viewBuilder.WriteString(statusText)
+		s.WriteString(docStyle.Render(viewBuilder.String()))
 	case stateEditView:
 		s.WriteString(fmt.Sprintf("\nEditing Wi-Fi Connection: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
@@ -438,38 +442,19 @@ func (m model) View() string {
 				s.WriteString(qrCodeString)
 			}
 		}
-		mainContent = s.String()
-
 	case stateJoinView:
 		s.WriteString(fmt.Sprintf("\nJoining Wi-Fi Network: %s\n\n", m.selectedItem.SSID))
 		s.WriteString(m.passwordInput.View())
 		s.WriteString("\n\n(press enter to join, esc to cancel)")
-		mainContent = s.String()
 	}
 
-	// Loading indicator and status message at the bottom
-	loadingStatus := ""
 	if m.loading {
-		loadingStatus = fmt.Sprintf("\n\n%s %s", m.spinner.View(), statusStyle(m.statusMessage))
+		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), statusStyle(m.statusMessage)))
 	} else if m.statusMessage != "" {
-		// For the forget view, the status message is the prompt, so we don't want to show it at the bottom.
-		if m.state != stateForgetView {
-			loadingStatus = fmt.Sprintf("\n\n%s", statusStyle(m.statusMessage))
-		}
+		s.WriteString(fmt.Sprintf("\n\n%s", statusStyle(m.statusMessage)))
 	}
 
-	// If we're in the forget view, render the dialog on top of the main content
-	if m.state == stateForgetView {
-		question := lipgloss.NewStyle().Width(50).Align(lipgloss.Center).Render(m.statusMessage)
-		dialog := dialogBoxStyle.Render(question)
-
-		// Place the dialog in the center of the screen, over the main content
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
-			lipgloss.JoinVertical(lipgloss.Center, mainContent, dialog),
-		)
-	}
-
-	return mainContent + loadingStatus
+	return s.String()
 }
 
 // --- Commands that interact with the backend ---
