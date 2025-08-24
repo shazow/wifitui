@@ -99,7 +99,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Truncate title if it's too long
 	if titleLen > ssidColumnWidth {
-		title = title[:ssidColumnWidth-3] + "..."
+		title = title[:ssidColumnWidth-3] + "…"
 		titleLen = ssidColumnWidth
 	}
 	padding := strings.Repeat(" ", ssidColumnWidth-titleLen)
@@ -170,7 +170,7 @@ func initialModel(b backend.Backend) (model, error) {
 	defaultDel := list.NewDefaultDelegate()
 	delegate.Styles = defaultDel.Styles
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = fmt.Sprintf("%-31s %s", "SSID", "SIGNAL/LAST SEEN")
+	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
@@ -405,9 +405,6 @@ func (m model) View() string {
 	switch m.state {
 	case stateListView:
 		var viewBuilder strings.Builder
-		title := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true).Render("Wi-Fi Networks")
-		viewBuilder.WriteString(title)
-		viewBuilder.WriteString("\n")
 		viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
 
 		// Custom status bar
