@@ -47,6 +47,11 @@ const (
 	stateForgetView
 )
 
+const (
+	focusInput = iota
+	focusButtons
+)
+
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
 	backend.Connection
@@ -170,16 +175,18 @@ type (
 
 // The main model for our TUI application
 type model struct {
-	state         viewState
-	list          list.Model
-	passwordInput textinput.Model
-	spinner       spinner.Model
-	backend       backend.Backend
-	loading       bool
-	statusMessage string
-	errorMessage  string
-	selectedItem  connectionItem
-	width, height int
+	state              viewState
+	list               list.Model
+	passwordInput      textinput.Model
+	spinner            spinner.Model
+	backend            backend.Backend
+	loading            bool
+	statusMessage      string
+	errorMessage       string
+	selectedItem       connectionItem
+	width, height      int
+	editFocus          int
+	editSelectedButton int
 }
 
 // initialModel creates the starting state of our application
@@ -227,13 +234,15 @@ func initialModel(b backend.Backend) (model, error) {
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	return model{
-		state:         stateListView,
-		list:          l,
-		passwordInput: ti,
-		spinner:       s,
-		backend:       b,
-		loading:       true,
-		statusMessage: "Loading connections...",
+		state:              stateListView,
+		list:               l,
+		passwordInput:      ti,
+		spinner:            s,
+		backend:            b,
+		loading:            true,
+		statusMessage:      "Loading connections...",
+		editFocus:          focusInput,
+		editSelectedButton: 0,
 	}, nil
 }
 
@@ -357,6 +366,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.errorMessage = ""
 						m.passwordInput.SetValue("")
 						m.passwordInput.Focus()
+						m.editFocus = focusInput
+						m.editSelectedButton = 0
 						cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 					} else {
 						if selected.IsSecure {
@@ -375,21 +386,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case stateEditView:
-			// Handle quit, escape, and enter in edit view
+			// Handle key presses for the edit view
 			switch msg.String() {
-			case "c":
-				m.loading = true
-				m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
-				cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
-			case "q", "esc":
+			case "tab":
+				if m.editFocus == focusInput {
+					m.editFocus = focusButtons
+					m.passwordInput.Blur()
+				} else {
+					m.editFocus = focusInput
+					m.passwordInput.Focus()
+				}
+			case "esc":
 				m.state = stateListView
 				m.statusMessage = ""
 				m.errorMessage = ""
-			case "enter":
-				m.loading = true
-				m.statusMessage = fmt.Sprintf("Saving password for %s...", m.selectedItem.SSID)
-				m.errorMessage = ""
-				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+
+			default:
+				if m.editFocus == focusInput {
+					// Pass all other key presses to the input field
+					m.passwordInput, cmd = m.passwordInput.Update(msg)
+					cmds = append(cmds, cmd)
+				} else { // m.editFocus == focusButtons
+					switch msg.String() {
+					case "right":
+						m.editSelectedButton = (m.editSelectedButton + 1) % 3
+					case "left":
+						m.editSelectedButton = (m.editSelectedButton - 1 + 3) % 3
+					case "enter":
+						switch m.editSelectedButton {
+						case 0: // Connect
+							m.loading = true
+							m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
+							cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
+						case 1: // Save
+							m.loading = true
+							m.statusMessage = fmt.Sprintf("Saving password for %s...", m.selectedItem.SSID)
+							m.errorMessage = ""
+							cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+						case 2: // Cancel
+							m.state = stateListView
+							m.statusMessage = ""
+							m.errorMessage = ""
+						}
+					}
+				}
 			}
 		case stateJoinView:
 			switch msg.String() {
@@ -423,7 +463,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateListView:
 		m.list, cmd = m.list.Update(msg)
 		cmds = append(cmds, cmd)
-	case stateEditView, stateJoinView:
+	case stateJoinView:
 		m.passwordInput, cmd = m.passwordInput.Update(msg)
 		cmds = append(cmds, cmd)
 	}
@@ -480,7 +520,25 @@ func (m model) View() string {
 		s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
 		s.WriteString("\n")
 		s.WriteString(m.passwordInput.View())
-		s.WriteString("\n\n(c)onnect, enter to (s)ave, esc to cancel")
+
+		// --- Button rendering ---
+		var buttonRow strings.Builder
+		buttons := []string{"Connect", "Save", "Cancel"}
+		focusedButtonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
+		normalButtonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
+		for i, label := range buttons {
+			style := normalButtonStyle
+			if m.editFocus == focusButtons && i == m.editSelectedButton {
+				style = focusedButtonStyle
+			}
+			buttonRow.WriteString(style.Render(fmt.Sprintf("[ %s ]", label)))
+			buttonRow.WriteString("  ")
+		}
+
+		s.WriteString("\n\n")
+		s.WriteString(buttonRow.String())
+		s.WriteString("\n\n(tab to switch fields, arrows to navigate, enter to select)")
 
 		// Add QR code if we have a password
 		password := m.passwordInput.Value()
