@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	qrcode "github.com/skip2/go-qrcode"
+	"github.com/shazow/wifitui/backend"
 )
 
 // EscapeWifiString handles the special character escaping for SSID and Password.
@@ -21,7 +21,7 @@ func EscapeWifiString(s string) string {
 }
 
 // GenerateWifiQRCode builds the correctly formatted Wi-Fi connection string and returns the TUI-friendly QR code string.
-func GenerateWifiQRCode(ssid, password string, isSecure, isHidden bool) (string, error) {
+func GenerateWifiQRCode(ssid, password string, security backend.SecurityType, isHidden bool) (string, error) {
 	var b strings.Builder
 
 	// Start with the required prefix and SSID
@@ -30,17 +30,19 @@ func GenerateWifiQRCode(ssid, password string, isSecure, isHidden bool) (string,
 	b.WriteString(";")
 
 	// Set Authentication Type and Password
-	if isSecure {
-		if password != "" {
-			b.WriteString("T:WPA;P:")
-			b.WriteString(EscapeWifiString(password))
-			b.WriteString(";")
-		} else {
-			// Handle case where it's secure but no password is provided yet
-			return "", fmt.Errorf("secure network requires a password")
-		}
-	} else {
+	switch security {
+	case backend.SecurityWPA:
+		b.WriteString("T:WPA;P:")
+		b.WriteString(EscapeWifiString(password))
+		b.WriteString(";")
+	case backend.SecurityWEP:
+		b.WriteString("T:WEP;P:")
+		b.WriteString(EscapeWifiString(password))
+		b.WriteString(";")
+	case backend.SecurityOpen:
 		b.WriteString("T:nopass;")
+	default:
+		// Don't set T if security is unknown, most readers will assume WPA.
 	}
 
 	// Add hidden flag if necessary

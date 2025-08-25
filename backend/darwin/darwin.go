@@ -125,9 +125,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				SSID:      ssid,
 				IsActive:  ssid == currentSSID,
 				IsKnown:   knownSSIDs[ssid],
+				IsOpen:    security == backend.SecurityOpen,
 				IsVisible: true,
 				Strength:  strength,
-				IsSecure:  security != backend.SecurityOpen,
 				Security:  security,
 			})
 		}
@@ -138,21 +138,23 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		if _, processed := processedSSIDs[ssid]; !processed {
 			// For non-visible known networks, we have to infer security
 			// by checking for a password in the keychain.
-			password, err := b.GetSecrets(ssid)
-			isSecure := err == nil && password != ""
+			_, securityType, err := b.GetSecrets(ssid)
 			var security backend.SecurityType
-			if isSecure {
-				// Assume WPA for any secured network, as it's the most common.
-				// We can't easily distinguish WEP/WPA for non-visible networks.
-				security = backend.SecurityWPA
-			} else {
-				security = backend.SecurityOpen
+			if err == nil {
+				if strings.Contains(securityType, "WPA") {
+					security = backend.SecurityWPA
+				} else if strings.Contains(securityType, "WEP") {
+					security = backend.SecurityWEP
+				} else if securityType == "" {
+					// No security type in keychain, assume open
+					security = backend.SecurityOpen
+				}
 			}
 
 			conns = append(conns, backend.Connection{
 				SSID:     ssid,
 				IsKnown:  true,
-				IsSecure: isSecure,
+				IsOpen:   security == backend.SecurityOpen,
 				Security: security,
 			})
 		}
@@ -163,7 +165,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 
 // ActivateConnection activates a known network.
 func (b *Backend) ActivateConnection(ssid string) error {
-	password, err := b.GetSecrets(ssid)
+	password, _, err := b.GetSecrets(ssid)
 	if err != nil {
 		// This will fail for open networks, but that's ok
 		password = ""
@@ -199,14 +201,31 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 	return cmd.Run()
 }
 
-// GetSecrets retrieves the password for a known connection.
-func (b *Backend) GetSecrets(ssid string) (string, error) {
-	cmd := exec.Command("security", "find-generic-password", "-wa", ssid)
+// GetSecrets retrieves the password and security type for a known connection.
+func (b *Backend) GetSecrets(ssid string) (string, string, error) {
+	cmd := exec.Command("security", "find-generic-password", "-g", "-s", ssid)
 	out, err := cmd.Output()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return strings.TrimSpace(string(out)), nil
+
+	output := string(out)
+	passwordRe := regexp.MustCompile(`password: "(.+)"`)
+	genaRe := regexp.MustCompile(`"gena"<blob>="(.+)"`)
+
+	var password, securityType string
+
+	passwordMatches := passwordRe.FindStringSubmatch(output)
+	if len(passwordMatches) > 1 {
+		password = passwordMatches[1]
+	}
+
+	genaMatches := genaRe.FindStringSubmatch(output)
+	if len(genaMatches) > 1 {
+		securityType = genaMatches[1]
+	}
+
+	return password, securityType, nil
 }
 
 // UpdateSecret changes the password for a known connection.

@@ -135,7 +135,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 						cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 					} else {
 						// For unknown networks, 'connect' is the same as 'join'
-						if selected.IsSecure {
+						if selected.Security != backend.SecurityOpen && selected.Security != backend.SecurityUnknown {
 							m.state = stateEditView
 							m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
 							m.errorMessage = ""
@@ -166,7 +166,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pendingEditItem = &m.selectedItem
 					cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 				} else {
-					if selected.IsSecure {
+					if selected.Security != backend.SecurityOpen && selected.Security != backend.SecurityUnknown {
 						m.state = stateEditView
 						m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
 						m.errorMessage = ""

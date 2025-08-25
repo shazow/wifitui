@@ -56,56 +56,32 @@ type connectionItem struct {
 
 func (i connectionItem) Title() string { return i.SSID }
 func (i connectionItem) Description() string {
-	if !i.IsVisible {
-		// For non-visible networks, show security status, then last connected time
-		var desc string
-		if i.IsSecure {
-			desc = "Security: " + i.SecurityString()
-		} else {
-			desc = "Security: Open"
-		}
-		if i.LastConnected != nil {
-			desc += ", Last connected: " + formatDuration(*i.LastConnected)
-		}
-		return desc
+	parts := []string{}
+	if i.IsOpen {
+		parts = append(parts, "Open")
+	} else {
+		parts = append(parts, "Secure")
 	}
-
 	if i.Strength > 0 {
-		if i.IsSecure {
-			return fmt.Sprintf("%d%%, Security: %s", i.Strength, i.SecurityString())
-		}
-		return fmt.Sprintf("%d%%, Security: Open", i.Strength)
+		parts = append(parts, fmt.Sprintf("%d%%", i.Strength))
 	}
-
-	if i.LastConnected != nil {
-		// This case is probably for known, non-visible networks that somehow bypass the first block.
-		// Or active connections without strength?
-		return "Last connected: " + formatDuration(*i.LastConnected)
+	if !i.IsVisible && i.LastConnected != nil {
+		parts = append(parts, formatDuration(*i.LastConnected))
 	}
-
-	return "Not available"
+	return strings.Join(parts, ", ")
 }
-
-func (i connectionItem) SecurityString() string {
-	switch i.Security {
-	case backend.SecurityWEP:
-		return "WEP"
-	case backend.SecurityWPA:
-		return "WPA"
-	default:
-		return "Unknown"
-	}
-}
-
 func (i connectionItem) FilterValue() string { return i.Title() }
 
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
 	connectionsLoadedMsg []backend.Connection // Sent when connections are fetched
 	scanFinishedMsg      []backend.Connection // Sent when a scan is finished
-	secretsLoadedMsg     string               // Sent when a password is fetched
-	connectionSavedMsg   struct{}             // Sent when a password is saved
-	errorMsg             struct{ err error }
+	secretsLoadedMsg     struct {
+		Passphrase   string
+		SecurityType string
+	} // Sent when a password is fetched
+	connectionSavedMsg struct{} // Sent when a password is saved
+	errorMsg           struct{ err error }
 )
 
 // The main model for our TUI application
@@ -153,7 +129,7 @@ func initialModel(b backend.Backend) (model, error) {
 	defaultDel := list.NewDefaultDelegate()
 	delegate.Styles = defaultDel.Styles
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal/Security")
+	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
@@ -234,9 +210,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedItem = *m.pendingEditItem
 			m.pendingEditItem = nil
 		}
-		m.passwordInput.SetValue(string(msg))
+		m.passwordInput.SetValue(msg.Passphrase)
 		m.passwordInput.CursorEnd()
-		if string(msg) != "" {
+		if msg.Passphrase != "" {
 			m.passwordInput.EchoMode = textinput.EchoPassword
 			m.passwordInput.Placeholder = "(press * to reveal)"
 			m.editFocus = focusButtons
@@ -363,11 +339,14 @@ func joinNetwork(b backend.Backend, ssid string, password string, security backe
 
 func getSecrets(b backend.Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
-		secret, err := b.GetSecrets(ssid)
+		passphrase, securityType, err := b.GetSecrets(ssid)
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to get secrets: %w", err)}
 		}
-		return secretsLoadedMsg(secret)
+		return secretsLoadedMsg{
+			Passphrase:   passphrase,
+			SecurityType: securityType,
+		}
 	}
 }
 

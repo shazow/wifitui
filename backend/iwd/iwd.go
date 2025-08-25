@@ -107,7 +107,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 					visibleNetworks[ssid] = backend.Connection{
 						SSID:      ssid,
 						IsActive:  isActive,
-						IsSecure:  security != backend.SecurityOpen,
+						IsOpen:    security == backend.SecurityOpen,
 						Security:  security,
 						IsVisible: true,
 						Strength:  strength,
@@ -117,7 +117,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				visibleNetworks[ssid] = backend.Connection{
 					SSID:      ssid,
 					IsActive:  isActive,
-					IsSecure:  security != backend.SecurityOpen,
+					IsOpen:    security == backend.SecurityOpen,
 					Security:  security,
 					IsVisible: true,
 					Strength:  strength,
@@ -163,11 +163,11 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				}
 
 				connections = append(connections, backend.Connection{
-					SSID:      ssid,
-					IsKnown:   true,
-					IsHidden:  isHidden,
-					IsSecure:  security != backend.SecurityOpen,
-					Security:  security,
+					SSID:     ssid,
+					IsKnown:  true,
+					IsHidden: isHidden,
+					IsOpen:   security == backend.SecurityOpen,
+					Security: security,
 				})
 			}
 		}
@@ -233,10 +233,10 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
 }
 
-func (b *Backend) GetSecrets(ssid string) (string, error) {
+func (b *Backend) GetSecrets(ssid string) (string, string, error) {
 	// The iwd API doesn't seem to expose a way to get the PSK directly for security reasons.
 	// We can't implement this feature for iwd.
-	return "", fmt.Errorf("getting secrets is not supported by the iwd backend")
+	return "", "", fmt.Errorf("getting secrets is not supported by the iwd backend")
 }
 
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {

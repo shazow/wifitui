@@ -28,7 +28,7 @@ func formatConnection(c backend.Connection) string {
 		parts = append(parts, fmt.Sprintf("%d%%", c.Strength))
 		parts = append(parts, "visible")
 	}
-	if c.IsSecure {
+	if !c.IsOpen {
 		parts = append(parts, "secure")
 	}
 	if c.IsActive {
@@ -65,7 +65,7 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 
 	for _, c := range connections {
 		if c.SSID == ssid {
-			secret, err := b.GetSecrets(ssid)
+			secret, securityType, err := b.GetSecrets(ssid)
 			if err != nil {
 				// If we can't get a secret for a known network, that's an error.
 				// But for a visible-only network, it's expected.
@@ -79,11 +79,13 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 				// We need a custom struct to include the passphrase
 				type connectionWithSecret struct {
 					backend.Connection
-					Passphrase string `json:"passphrase,omitempty"`
+					Passphrase   string `json:"passphrase,omitempty"`
+					SecurityType string `json:"security_type,omitempty"`
 				}
 				data := connectionWithSecret{
-					Connection: c,
-					Passphrase: secret,
+					Connection:   c,
+					Passphrase:   secret,
+					SecurityType: securityType,
 				}
 				enc := json.NewEncoder(w)
 				enc.SetIndent("", "  ")
@@ -92,9 +94,10 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 
 			fmt.Fprintf(w, "SSID: %s\n", c.SSID)
 			fmt.Fprintf(w, "Passphrase: %s\n", secret)
+			fmt.Fprintf(w, "Security Type: %s\n", securityType)
 			fmt.Fprintf(w, "Active: %t\n", c.IsActive)
 			fmt.Fprintf(w, "Known: %t\n", c.IsKnown)
-			fmt.Fprintf(w, "Secure: %t\n", c.IsSecure)
+			fmt.Fprintf(w, "Open: %t\n", c.IsOpen)
 			fmt.Fprintf(w, "Visible: %t\n", c.IsVisible)
 			fmt.Fprintf(w, "Hidden: %t\n", c.IsHidden)
 			fmt.Fprintf(w, "Strength: %d%%\n", c.Strength)

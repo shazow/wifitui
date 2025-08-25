@@ -121,11 +121,10 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		flags, _ := ap.GetPropertyFlags()
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
 		rsnFlags, _ := ap.GetPropertyRSNFlags()
-		isSecure := (uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0) || (wpaFlags > 0) || (rsnFlags > 0)
 		var security backend.SecurityType
 		if wpaFlags > 0 || rsnFlags > 0 {
 			security = backend.SecurityWPA
-		} else if isSecure {
+		} else if (uint32(flags) & uint32(gonetworkmanager.Nm80211APFlagsPrivacy)) != 0 {
 			security = backend.SecurityWEP
 		} else {
 			security = backend.SecurityOpen
@@ -166,7 +165,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				SSID:          ssid,
 				IsActive:      activeConnectionID != "" && id == activeConnectionID,
 				IsKnown:       true,
-				IsSecure:      isSecure,
+				IsOpen:        security == backend.SecurityOpen,
 				IsVisible:     true,
 				Strength:      strength,
 				Security:      security,
@@ -176,7 +175,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 			connInfo = backend.Connection{
 				SSID:      ssid,
 				IsKnown:   false,
-				IsSecure:  isSecure,
+				IsOpen:    security == backend.SecurityOpen,
 				IsVisible: true,
 				Strength:  strength,
 				Security:  security,
@@ -215,16 +214,13 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 					lastConnected = &t
 				}
 			}
-			var isSecure bool
 			var security backend.SecurityType
 			if sec, ok := s["802-11-wireless-security"]; ok {
 				if keyMgmt, ok := sec["key-mgmt"].(string); ok {
 					switch keyMgmt {
 					case "wpa-psk", "wpa-eap":
-						isSecure = true
 						security = backend.SecurityWPA
 					case "wep-psk", "wep-eap":
-						isSecure = true
 						security = backend.SecurityWEP
 					}
 				}
@@ -232,7 +228,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 			conns = append(conns, backend.Connection{
 				SSID:          ssid,
 				IsKnown:       true,
-				IsSecure:      isSecure,
+				IsOpen:        security == backend.SecurityOpen,
 				Security:      security,
 				LastConnected: lastConnected,
 			})
@@ -350,26 +346,38 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 	return err
 }
 
-func (b *Backend) GetSecrets(ssid string) (string, error) {
+func (b *Backend) GetSecrets(ssid string) (string, string, error) {
 	conn, ok := b.Connections[ssid]
 	if !ok {
-		return "", fmt.Errorf("connection not found for %s", ssid)
+		return "", "", fmt.Errorf("connection not found for %s", ssid)
 	}
 
-	settings, err := conn.GetSecrets("802-11-wireless-security")
+	settings, err := conn.GetSettings()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	if s, ok := settings["802-11-wireless-security"]; ok {
+	var securityType string
+	if sec, ok := settings["802-11-wireless-security"]; ok {
+		if keyMgmt, ok := sec["key-mgmt"].(string); ok {
+			securityType = keyMgmt
+		}
+	}
+
+	secrets, err := conn.GetSecrets("802-11-wireless-security")
+	if err != nil {
+		return "", securityType, err
+	}
+
+	if s, ok := secrets["802-11-wireless-security"]; ok {
 		if psk, ok := s["psk"]; ok {
 			if p, ok := psk.(string); ok {
-				return p, nil
+				return p, securityType, nil
 			}
 		}
 	}
 
-	return "", nil
+	return "", securityType, nil
 }
 
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {

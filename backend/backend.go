@@ -6,7 +6,8 @@ import "time"
 type SecurityType int
 
 const (
-	SecurityOpen SecurityType = iota
+	SecurityUnknown SecurityType = iota
+	SecurityOpen
 	SecurityWEP
 	SecurityWPA
 )
@@ -16,7 +17,7 @@ type Connection struct {
 	SSID          string
 	IsActive      bool
 	IsKnown       bool
-	IsSecure      bool
+	IsOpen        bool
 	IsVisible     bool
 	IsHidden      bool
 	Strength      uint8 // 0-100
@@ -34,8 +35,8 @@ type Backend interface {
 	ForgetNetwork(ssid string) error
 	// JoinNetwork connects to a new network, potentially creating a new configuration.
 	JoinNetwork(ssid string, password string, security SecurityType, isHidden bool) error
-	// GetSecrets retrieves the password for a known connection.
-	GetSecrets(ssid string) (string, error)
+	// GetSecrets retrieves the password and security type for a known connection.
+	GetSecrets(ssid string) (string, string, error)
 	// UpdateSecret changes the password for a known connection.
 	UpdateSecret(ssid string, newPassword string) error
 }

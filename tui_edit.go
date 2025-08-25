@@ -42,17 +42,13 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.editFocus == focusInput {
 					m.editFocus = focusButtons
 					m.passwordInput.Blur()
-					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
-						m.passwordRevealed = false
-						m.passwordInput.EchoMode = textinput.EchoPassword
-					}
+					m.passwordRevealed = false
+					m.passwordInput.EchoMode = textinput.EchoPassword
 				} else {
 					m.editFocus = focusInput
 					m.passwordInput.Focus()
-					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
-						m.passwordRevealed = true
-						m.passwordInput.EchoMode = textinput.EchoNormal
-					}
+					m.passwordRevealed = true
+					m.passwordInput.EchoMode = textinput.EchoNormal
 				}
 			}
 		case "esc":
@@ -65,7 +61,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.passwordRevealed = false
 		case "*":
 			// Allow revealing password only for known networks with a password
-			if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+			if m.selectedItem.IsKnown && m.passwordInput.Value() != "" && m.selectedItem.Security != backend.SecurityOpen {
 				m.passwordRevealed = !m.passwordRevealed
 				if m.passwordRevealed {
 					m.passwordInput.EchoMode = textinput.EchoNormal
@@ -114,7 +110,9 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							ssid := m.ssidInput.Value()
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", ssid)
 							m.errorMessage = ""
-							cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordInput.Value(), backend.SecurityType(m.editSecuritySelection), true))
+							securityMap := []backend.SecurityType{backend.SecurityOpen, backend.SecurityWEP, backend.SecurityWPA}
+							security := securityMap[m.editSecuritySelection]
+							cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordInput.Value(), security, true))
 						case 1: // Cancel
 							m.state = stateListView
 							m.statusMessage = ""
@@ -208,11 +206,7 @@ func (m model) viewEditView() string {
 		case backend.SecurityWPA:
 			security = "WPA/WPA2"
 		default:
-			if m.selectedItem.IsSecure {
-				security = "Secure"
-			} else {
-				security = "Open"
-			}
+			security = "Unknown"
 		}
 		details.WriteString(fmt.Sprintf("Security: %s\n", security))
 		if m.selectedItem.Strength > 0 {
@@ -286,7 +280,7 @@ func (m model) viewEditView() string {
 	if m.selectedItem.IsKnown {
 		password := m.passwordInput.Value()
 		if m.passwordRevealed && password != "" {
-			qrCodeString, err := GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
+			qrCodeString, err := GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.Security, m.selectedItem.IsHidden)
 			if err == nil {
 				s.WriteString("\n\n")
 				s.WriteString(qrCodeString)
