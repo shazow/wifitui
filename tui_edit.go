@@ -151,13 +151,37 @@ func (m model) viewEditView() string {
 	isNew := m.selectedItem.SSID == ""
 	if isNew {
 		s.WriteString("SSID:\n")
-		s.WriteString(m.ssidInput.View())
+		var ssidInputView string
+		if m.editFocus == focusSSID {
+			ssidInputView = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder(), true).
+				BorderForeground(lipgloss.Color("205")).
+				Padding(0, 1).
+				Render(m.ssidInput.View())
+		} else {
+			ssidInputView = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder(), true).
+				Padding(0, 1).
+				Render(m.ssidInput.View())
+		}
+		s.WriteString(ssidInputView)
 		s.WriteString("\n\n")
 	} else {
 		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
-		security := "Open"
-		if m.selectedItem.IsSecure {
-			security = "Secure"
+		var security string
+		switch m.selectedItem.Security {
+		case backend.SecurityOpen:
+			security = "Open"
+		case backend.SecurityWEP:
+			security = "WEP"
+		case backend.SecurityWPA:
+			security = "WPA/WPA2"
+		default:
+			if m.selectedItem.IsSecure {
+				security = "Secure"
+			} else {
+				security = "Open"
+			}
 		}
 		details.WriteString(fmt.Sprintf("Security: %s\n", security))
 		if m.selectedItem.Strength > 0 {
