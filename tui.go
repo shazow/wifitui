@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 	"github.com/shazow/wifitui/backend"
 )
 
@@ -28,10 +29,13 @@ var (
 	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
 	dialogBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("205"))
 
-	// Signal strength colors
-	signalGoodColor   = lipgloss.Color("46")  // Over 70%
-	signalMediumColor = lipgloss.Color("220") // Over 40%
-	signalWeakColor   = lipgloss.Color("94")  // Under 40%
+	// Signal strength colors are now defined as hex constants
+)
+
+const (
+	colorBrown  = "#8B4513"
+	colorYellow = "#FFFF00"
+	colorGreen  = "#00FF00"
 )
 
 // viewState represents the current screen of the TUI
@@ -139,14 +143,23 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	// Now construct the description string with styles
 	if i.Strength > 0 {
 		var signalColor lipgloss.Color
-		switch {
-		case i.Strength > 70:
-			signalColor = signalGoodColor
-		case i.Strength > 40:
-			signalColor = signalMediumColor
-		default:
-			signalColor = signalWeakColor
+		// Use a two-part gradient for the signal strength
+		if i.Strength <= 40 {
+			// From brown to yellow
+			start, _ := colorful.Hex(colorBrown)
+			end, _ := colorful.Hex(colorYellow)
+			p := float64(i.Strength) / 40.0
+			blend := start.BlendRgb(end, p)
+			signalColor = lipgloss.Color(blend.Hex())
+		} else {
+			// From yellow to green
+			start, _ := colorful.Hex(colorYellow)
+			end, _ := colorful.Hex(colorGreen)
+			p := (float64(i.Strength) - 40) / (100.0 - 40.0)
+			blend := start.BlendRgb(end, p)
+			signalColor = lipgloss.Color(blend.Hex())
 		}
+
 		// Combine base desc style with our signal color
 		finalSignalStyle := descStyle.Copy().Foreground(signalColor)
 		desc = finalSignalStyle.Render(strengthPart) + descStyle.Render(connectedPart)
