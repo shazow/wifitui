@@ -45,6 +45,10 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					m.editFocus = focusInput
 					m.passwordInput.Focus()
+					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+						m.passwordRevealed = true
+						m.passwordInput.EchoMode = textinput.EchoNormal
+					}
 				}
 			}
 		case "esc":
