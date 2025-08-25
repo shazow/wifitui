@@ -43,7 +43,6 @@ type viewState int
 const (
 	stateListView viewState = iota
 	stateEditView
-	stateJoinView
 	stateForgetView
 )
 
@@ -338,11 +337,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						} else {
 							// For unknown networks, 'connect' is the same as 'join'
 							if selected.IsSecure {
-								m.state = stateJoinView
+								m.state = stateEditView
 								m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
 								m.errorMessage = ""
 								m.passwordInput.SetValue("")
 								m.passwordInput.Focus()
+								m.editFocus = focusInput
+								m.editSelectedButton = 0
 							} else {
 								m.loading = true
 								m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
@@ -371,11 +372,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 					} else {
 						if selected.IsSecure {
-							m.state = stateJoinView
+							m.state = stateEditView
 							m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
 							m.errorMessage = ""
 							m.passwordInput.SetValue("")
 							m.passwordInput.Focus()
+							m.editFocus = focusInput
+							m.editSelectedButton = 0
 						} else {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
@@ -407,41 +410,50 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.passwordInput, cmd = m.passwordInput.Update(msg)
 					cmds = append(cmds, cmd)
 				} else { // m.editFocus == focusButtons
+					numButtons := 2
+					if m.selectedItem.IsKnown {
+						numButtons = 3
+					}
+
 					switch msg.String() {
 					case "right":
-						m.editSelectedButton = (m.editSelectedButton + 1) % 3
+						m.editSelectedButton = (m.editSelectedButton + 1) % numButtons
 					case "left":
-						m.editSelectedButton = (m.editSelectedButton - 1 + 3) % 3
+						m.editSelectedButton = (m.editSelectedButton - 1 + numButtons) % numButtons
 					case "enter":
-						switch m.editSelectedButton {
-						case 0: // Connect
-							m.loading = true
-							m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
-							cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
-						case 1: // Save
-							m.loading = true
-							m.statusMessage = fmt.Sprintf("Saving password for %s...", m.selectedItem.SSID)
-							m.errorMessage = ""
-							cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
-						case 2: // Cancel
-							m.state = stateListView
-							m.statusMessage = ""
-							m.errorMessage = ""
+						if m.selectedItem.IsKnown {
+							// Known network buttons: Connect, Save, Cancel
+							switch m.editSelectedButton {
+							case 0: // Connect
+								m.loading = true
+								m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
+								cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
+							case 1: // Save
+								m.loading = true
+								m.statusMessage = fmt.Sprintf("Saving password for %s...", m.selectedItem.SSID)
+								m.errorMessage = ""
+								cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+							case 2: // Cancel
+								m.state = stateListView
+								m.statusMessage = ""
+								m.errorMessage = ""
+							}
+						} else {
+							// Unknown network buttons: Join, Cancel
+							switch m.editSelectedButton {
+							case 0: // Join
+								m.loading = true
+								m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
+								m.errorMessage = ""
+								cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+							case 1: // Cancel
+								m.state = stateListView
+								m.statusMessage = ""
+								m.errorMessage = ""
+							}
 						}
 					}
 				}
-			}
-		case stateJoinView:
-			switch msg.String() {
-			case "q", "esc":
-				m.state = stateListView
-				m.statusMessage = ""
-				m.errorMessage = ""
-			case "enter":
-				m.loading = true
-				m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-				m.errorMessage = ""
-				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
 			}
 		case stateForgetView:
 			switch msg.String() {
@@ -462,9 +474,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateListView:
 		m.list, cmd = m.list.Update(msg)
-		cmds = append(cmds, cmd)
-	case stateJoinView:
-		m.passwordInput, cmd = m.passwordInput.Update(msg)
 		cmds = append(cmds, cmd)
 	}
 
@@ -503,6 +512,14 @@ func (m model) View() string {
 		viewBuilder.WriteString(statusText)
 		s.WriteString(docStyle.Render(viewBuilder.String()))
 	case stateEditView:
+		// --- Title ---
+		title := "Edit Wi-Fi Connection"
+		if !m.selectedItem.IsKnown {
+			title = "Join Wi-Fi Network"
+		}
+		s.WriteString(fmt.Sprintf("\n%s\n\n", title))
+
+		// --- Details Box ---
 		var details strings.Builder
 		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
 		security := "Open"
@@ -513,7 +530,7 @@ func (m model) View() string {
 		if m.selectedItem.Strength > 0 {
 			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
 		}
-		if m.selectedItem.LastConnected != nil {
+		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
 			details.WriteString(fmt.Sprintf("Last connected: %s\n", formatDuration(*m.selectedItem.LastConnected)))
 		}
 
@@ -523,7 +540,12 @@ func (m model) View() string {
 
 		// --- Button rendering ---
 		var buttonRow strings.Builder
-		buttons := []string{"Connect", "Save", "Cancel"}
+		var buttons []string
+		if m.selectedItem.IsKnown {
+			buttons = []string{"Connect", "Save", "Cancel"}
+		} else {
+			buttons = []string{"Join", "Cancel"}
+		}
 		focusedButtonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
 		normalButtonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 
@@ -540,31 +562,17 @@ func (m model) View() string {
 		s.WriteString(buttonRow.String())
 		s.WriteString("\n\n(tab to switch fields, arrows to navigate, enter to select)")
 
-		// Add QR code if we have a password
-		password := m.passwordInput.Value()
-		if password != "" {
-			qrCodeString, err := GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
-			if err == nil {
-				s.WriteString("\n\n")
-				s.WriteString(qrCodeString)
+		// --- QR Code ---
+		if m.selectedItem.IsKnown {
+			password := m.passwordInput.Value()
+			if password != "" {
+				qrCodeString, err := GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
+				if err == nil {
+					s.WriteString("\n\n")
+					s.WriteString(qrCodeString)
+				}
 			}
 		}
-	case stateJoinView:
-		var details strings.Builder
-		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
-		security := "Open"
-		if m.selectedItem.IsSecure {
-			security = "Secure"
-		}
-		details.WriteString(fmt.Sprintf("Security: %s\n", security))
-		if m.selectedItem.Strength > 0 {
-			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
-		}
-
-		s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
-		s.WriteString("\n")
-		s.WriteString(m.passwordInput.View())
-		s.WriteString("\n\n(press enter to join, esc to cancel)")
 	}
 
 	if m.loading {
