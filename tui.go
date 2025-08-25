@@ -92,6 +92,7 @@ type model struct {
 	editSelectedButton    int
 	editSecuritySelection int
 	passwordRevealed      bool
+	pendingEditItem       *connectionItem
 }
 
 // initialModel creates the starting state of our application
@@ -106,8 +107,7 @@ func initialModel(b backend.Backend) (model, error) {
 	ti.Focus()
 	ti.CharLimit = 64
 	ti.Width = 30
-	ti.EchoMode = textinput.EchoPassword // Hide password
-	ti.Placeholder = "(press * to reveal)"
+	ti.EchoMode = textinput.EchoNormal // Show password visibly
 
 	// Configure the SSID input field
 	si := textinput.New()
@@ -153,6 +153,7 @@ func initialModel(b backend.Backend) (model, error) {
 		editSelectedButton:    0,
 		editSecuritySelection: 0, // Default to first security option
 		passwordRevealed:      false,
+		pendingEditItem:       nil,
 	}, nil
 }
 
@@ -196,13 +197,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
+		if m.pendingEditItem != nil {
+			m.selectedItem = *m.pendingEditItem
+			m.pendingEditItem = nil
+		}
 		m.passwordInput.SetValue(string(msg))
 		m.passwordInput.CursorEnd()
 		if string(msg) != "" {
+			m.passwordInput.EchoMode = textinput.EchoPassword
+			m.passwordInput.Placeholder = "(press * to reveal)"
 			m.editFocus = focusButtons
 			m.editSelectedButton = 0 // "Connect"
 			m.passwordInput.Blur()
+		} else {
+			m.passwordInput.EchoMode = textinput.EchoNormal
+			m.passwordInput.Placeholder = ""
 		}
+		m.state = stateEditView
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = fmt.Sprintf("Successfully updated '%s'. Refreshing list...", m.selectedItem.SSID)
