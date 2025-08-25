@@ -219,13 +219,8 @@ func initialModel(b backend.Backend) (model, error) {
 	}
 	// Make 'q' the only quit key
 	l.KeyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
-	l.AdditionalFullHelpKeys = func() []key.Binding {
-		return []key.Binding{
-			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
-			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
-			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
-		}
-	}
+	l.AdditionalFullHelpKeys = l.AdditionalShortHelpKeys
+
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
