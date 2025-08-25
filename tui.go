@@ -98,7 +98,6 @@ func initialModel(b backend.Backend) (model, error) {
 
 	// Configure the password input field
 	ti := textinput.New()
-	ti.Placeholder = "Passphrase"
 	ti.Focus()
 	ti.CharLimit = 64
 	ti.Width = 30

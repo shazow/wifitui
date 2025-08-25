@@ -107,9 +107,10 @@ func (m model) viewEditView() string {
 	}
 
 	s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
-	s.WriteString("\n")
+	s.WriteString("\n\n")
 
 	// --- Input field ---
+	s.WriteString("Passphrase:\n")
 	var inputView string
 	if m.editFocus == focusInput {
 		inputView = lipgloss.NewStyle().
