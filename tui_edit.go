@@ -42,6 +42,10 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.editFocus == focusInput {
 					m.editFocus = focusButtons
 					m.passwordInput.Blur()
+					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+						m.passwordRevealed = false
+						m.passwordInput.EchoMode = textinput.EchoPassword
+					}
 				} else {
 					m.editFocus = focusInput
 					m.passwordInput.Focus()
@@ -58,6 +62,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Reset password input to default state
 			m.passwordInput.EchoMode = textinput.EchoNormal
 			m.passwordInput.Placeholder = ""
+			m.passwordRevealed = false
 		case "*":
 			// Allow revealing password only for known networks with a password
 			if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
@@ -116,6 +121,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.errorMessage = ""
 							m.passwordInput.EchoMode = textinput.EchoNormal
 							m.passwordInput.Placeholder = ""
+							m.passwordRevealed = false
 						}
 					} else if m.selectedItem.IsKnown {
 						// Known network buttons: Connect, Save, Cancel
@@ -135,6 +141,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.errorMessage = ""
 							m.passwordInput.EchoMode = textinput.EchoNormal
 							m.passwordInput.Placeholder = ""
+							m.passwordRevealed = false
 						}
 					} else {
 						// Unknown network buttons: Join, Cancel
@@ -150,6 +157,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.errorMessage = ""
 							m.passwordInput.EchoMode = textinput.EchoNormal
 							m.passwordInput.Placeholder = ""
+							m.passwordRevealed = false
 						}
 					}
 				}
