@@ -18,6 +18,7 @@ A replacement for `nmtui`.
 More things I'd like to do:
 - [ ] macOS support maybe for fun?
 - [ ] More stats about the current network
+- [ ] Join hidden network
 - [ ] Maybe a better name?
 
 
