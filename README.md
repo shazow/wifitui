@@ -16,6 +16,7 @@ A replacement for `nmtui`.
 - [x] Non-interactive modes (`list` `show` `connect` commands)
 
 More things I'd like to do:
+- [ ] Bring your own color scheme
 - [ ] macOS support maybe for fun?
 - [ ] More stats about the current network
 - [ ] Join hidden network
