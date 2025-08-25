@@ -159,8 +159,6 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		connections = append(connections, conn)
 	}
 
-	backend.SortConnections(connections)
-
 	return connections, nil
 }
 

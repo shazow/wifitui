@@ -60,7 +60,10 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 	s := rand.NewSource(time.Now().Unix())
 	r := rand.New(s)
 	for i := range m.Connections {
-		m.Connections[i].Strength = uint8(r.Intn(70) + 30)
+		if (m.Connections[i].Strength > 0) {
+			// Only randomize if we have a strength already
+			m.Connections[i].Strength = uint8(r.Intn(70) + 30)
+		}
 	}
 	return m.Connections, nil
 }

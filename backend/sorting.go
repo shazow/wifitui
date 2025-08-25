@@ -25,10 +25,8 @@ func SortConnections(connections []Connection) {
 
 		// If both are visible, sort by strength.
 		// If both are not visible, sort by timestamp.
-		if a.IsVisible {
-			if a.Strength != b.Strength {
-				return a.Strength > b.Strength
-			}
+		if a.IsVisible || (a.Strength != b.Strength) {
+			return a.Strength > b.Strength
 		} else {
 			// Sort by LastConnected, most recent first.
 			// A non-nil time is considered more recent than a nil time.

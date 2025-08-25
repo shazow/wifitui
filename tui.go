@@ -282,6 +282,7 @@ func scanNetworks(b backend.Backend) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
+		backend.SortConnections(connections)
 		return scanFinishedMsg(connections)
 	}
 }
@@ -292,6 +293,7 @@ func refreshNetworks(b backend.Backend) tea.Cmd {
 		if err != nil {
 			return errorMsg{err}
 		}
+		backend.SortConnections(connections)
 		return connectionsLoadedMsg(connections)
 	}
 }

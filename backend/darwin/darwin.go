@@ -143,7 +143,6 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		}
 	}
 
-	backend.SortConnections(conns)
 	return conns, nil
 }
 
