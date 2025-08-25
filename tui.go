@@ -191,7 +191,7 @@ func initialModel(b backend.Backend) (model, error) {
 
 	// Configure the password input field
 	ti := textinput.New()
-	ti.Placeholder = "Password"
+	ti.Placeholder = "Passphrase"
 	ti.Focus()
 	ti.CharLimit = 64
 	ti.Width = 30
@@ -492,7 +492,19 @@ func (m model) View() string {
 			}
 		}
 	case stateJoinView:
-		s.WriteString(fmt.Sprintf("\nJoining Wi-Fi Network: %s\n\n", m.selectedItem.SSID))
+		var details strings.Builder
+		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
+		security := "Open"
+		if m.selectedItem.IsSecure {
+			security = "Secure"
+		}
+		details.WriteString(fmt.Sprintf("Security: %s\n", security))
+		if m.selectedItem.Strength > 0 {
+			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
+		}
+
+		s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
+		s.WriteString("\n")
 		s.WriteString(m.passwordInput.View())
 		s.WriteString("\n\n(press enter to join, esc to cancel)")
 	}
