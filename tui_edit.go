@@ -108,7 +108,22 @@ func (m model) viewEditView() string {
 
 	s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
 	s.WriteString("\n")
-	s.WriteString(m.passwordInput.View())
+
+	// --- Input field ---
+	var inputView string
+	if m.editFocus == focusInput {
+		inputView = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder(), true).
+			BorderForeground(lipgloss.Color("205")).
+			Padding(0, 1).
+			Render(m.passwordInput.View())
+	} else {
+		inputView = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder(), true).
+			Padding(0, 1).
+			Render(m.passwordInput.View())
+	}
+	s.WriteString(inputView)
 
 	// --- Button rendering ---
 	var buttonRow strings.Builder

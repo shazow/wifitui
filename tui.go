@@ -183,6 +183,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		m.passwordInput.SetValue(string(msg))
 		m.passwordInput.CursorEnd()
+		if string(msg) != "" {
+			m.editFocus = focusButtons
+			m.editSelectedButton = 0 // "Connect"
+			m.passwordInput.Blur()
+		}
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = fmt.Sprintf("Successfully updated '%s'. Refreshing list...", m.selectedItem.SSID)
