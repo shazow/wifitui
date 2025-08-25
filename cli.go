@@ -108,10 +108,10 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 	return fmt.Errorf("network not found: %s", ssid)
 }
 
-func runConnect(w io.Writer, ssid string, passphrase string, b backend.Backend) error {
-	if passphrase != "" {
-		fmt.Fprintf(w, "Joining network %q with a passphrase...\n", ssid)
-		return b.JoinNetwork(ssid, passphrase)
+func runConnect(w io.Writer, ssid string, passphrase string, security backend.SecurityType, isHidden bool, b backend.Backend) error {
+	if passphrase != "" || isHidden {
+		fmt.Fprintf(w, "Joining network %q...\n", ssid)
+		return b.JoinNetwork(ssid, passphrase, security, isHidden)
 	}
 
 	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)

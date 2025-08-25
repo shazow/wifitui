@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
+	"github.com/shazow/wifitui/backend"
 )
 
 // itemDelegate is our custom list delegate
@@ -99,6 +100,16 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.list.FilterState() != list.Filtering {
 				return m, tea.Quit
 			}
+		case "n":
+			m.state = stateEditView
+			m.statusMessage = "Enter details for new network"
+			m.errorMessage = ""
+			m.selectedItem = connectionItem{}
+			m.passwordInput.SetValue("")
+			m.ssidInput.SetValue("")
+			m.ssidInput.Focus()
+			m.editFocus = focusSSID
+			m.editSelectedButton = 0
 		case "s":
 			m.loading = true
 			m.statusMessage = "Scanning for networks..."
@@ -136,7 +147,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
 							m.errorMessage = ""
-							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, ""))
+							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, "", backend.SecurityOpen, false))
 						}
 					}
 				}
@@ -171,7 +182,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.loading = true
 						m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
 						m.errorMessage = ""
-						cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, ""))
+						cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, "", backend.SecurityOpen, false))
 					}
 				}
 			}
