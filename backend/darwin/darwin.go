@@ -113,13 +113,22 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				strength = 100
 			}
 
+			var security backend.SecurityType
+			if strings.Contains(line, "WPA") || strings.Contains(line, "WPA2") {
+				security = backend.SecurityWPA
+			} else if strings.Contains(line, "WEP") {
+				security = backend.SecurityWEP
+			} else {
+				security = backend.SecurityOpen
+			}
 			conns = append(conns, backend.Connection{
 				SSID:      ssid,
 				IsActive:  ssid == currentSSID,
 				IsKnown:   knownSSIDs[ssid],
 				IsVisible: true,
 				Strength:  strength,
-				IsSecure:  strings.Contains(line, "WPA") || strings.Contains(line, "WEP"),
+				IsSecure:  security != backend.SecurityOpen,
+				Security:  security,
 			})
 		}
 	}
@@ -157,14 +166,22 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 }
 
 // JoinNetwork connects to a new network, potentially creating a new configuration.
-func (b *Backend) JoinNetwork(ssid string, password string) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
 	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 	// Add to preferred networks so it becomes "known"
-	// The security type is not always WPA2E, but this is the best guess.
-	cmd = exec.Command("networksetup", "-addpreferredwirelessnetworkatindex", b.WifiInterface, ssid, "0", "WPA2E")
+	var securityType string
+	switch security {
+	case backend.SecurityOpen:
+		securityType = "OPEN"
+	case backend.SecurityWEP:
+		securityType = "WEP"
+	default:
+		securityType = "WPA2" // Default to WPA2 for WPA/WPA2
+	}
+	cmd = exec.Command("networksetup", "-addpreferredwirelessnetworkatindex", b.WifiInterface, ssid, "0", securityType)
 	return cmd.Run()
 }
 

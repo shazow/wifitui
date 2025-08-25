@@ -88,7 +88,16 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 			strength := strengthVar.Value().(byte)
 
 			typeVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Type")
-			isSecure := typeVar.Value().(string) != "open"
+			securityType := typeVar.Value().(string)
+			var security backend.SecurityType
+			switch securityType {
+			case "wpa-psk", "wpa2-psk", "wpa-eap", "wpa2-eap":
+				security = backend.SecurityWPA
+			case "wep":
+				security = backend.SecurityWEP
+			default:
+				security = backend.SecurityOpen
+			}
 
 			connectedVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Connected")
 			isActive := connectedVar.Value().(bool)
@@ -98,7 +107,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 					visibleNetworks[ssid] = backend.Connection{
 						SSID:      ssid,
 						IsActive:  isActive,
-						IsSecure:  isSecure,
+						IsSecure:  security != backend.SecurityOpen,
+						Security:  security,
 						IsVisible: true,
 						Strength:  strength,
 					}
@@ -107,7 +117,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				visibleNetworks[ssid] = backend.Connection{
 					SSID:      ssid,
 					IsActive:  isActive,
-					IsSecure:  isSecure,
+					IsSecure:  security != backend.SecurityOpen,
+					Security:  security,
 					IsVisible: true,
 					Strength:  strength,
 				}
@@ -180,7 +191,7 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Object(iwdDest, iwdPath).Call(iwdIface+".ForgetNetwork", 0, path).Store()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -189,6 +200,20 @@ func (b *Backend) JoinNetwork(ssid string, password string) error {
 	if err != nil {
 		return err
 	}
+
+	if isHidden {
+		var securityType string
+		switch security {
+		case backend.SecurityOpen:
+			securityType = "open"
+		case backend.SecurityWEP:
+			securityType = "wep"
+		default:
+			securityType = "psk" // Default to WPA/WPA2 PSK
+		}
+		return conn.Object(iwdDest, station).Call(iwdStationIface+".ConnectHidden", 0, ssid, securityType, password).Store()
+	}
+
 	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
 }
 

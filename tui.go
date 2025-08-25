@@ -43,7 +43,9 @@ const (
 )
 
 const (
-	focusInput = iota
+	focusSSID = iota
+	focusInput
+	focusSecurity
 	focusButtons
 )
 
@@ -75,18 +77,20 @@ type (
 
 // The main model for our TUI application
 type model struct {
-	state              viewState
-	list               list.Model
-	passwordInput      textinput.Model
-	spinner            spinner.Model
-	backend            backend.Backend
-	loading            bool
-	statusMessage      string
-	errorMessage       string
-	selectedItem       connectionItem
-	width, height      int
-	editFocus          int
-	editSelectedButton int
+	state                 viewState
+	list                  list.Model
+	passwordInput         textinput.Model
+	ssidInput             textinput.Model
+	spinner               spinner.Model
+	backend               backend.Backend
+	loading               bool
+	statusMessage         string
+	errorMessage          string
+	selectedItem          connectionItem
+	width, height         int
+	editFocus             int
+	editSelectedButton    int
+	editSecuritySelection int
 }
 
 // initialModel creates the starting state of our application
@@ -103,6 +107,12 @@ func initialModel(b backend.Backend) (model, error) {
 	ti.Width = 30
 	ti.EchoMode = textinput.EchoNormal // Show password visibly
 
+	// Configure the SSID input field
+	si := textinput.New()
+	si.Focus()
+	si.CharLimit = 32
+	si.Width = 30
+
 	// Configure the list
 	delegate := itemDelegate{}
 	defaultDel := list.NewDefaultDelegate()
@@ -113,6 +123,7 @@ func initialModel(b backend.Backend) (model, error) {
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
+			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
 		}
@@ -128,15 +139,17 @@ func initialModel(b backend.Backend) (model, error) {
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	return model{
-		state:              stateListView,
-		list:               l,
-		passwordInput:      ti,
-		spinner:            s,
-		backend:            b,
-		loading:            true,
-		statusMessage:      "Loading connections...",
-		editFocus:          focusInput,
-		editSelectedButton: 0,
+		state:                 stateListView,
+		list:                  l,
+		passwordInput:         ti,
+		ssidInput:             si,
+		spinner:               s,
+		backend:               b,
+		loading:               true,
+		statusMessage:         "Loading connections...",
+		editFocus:             focusInput,
+		editSelectedButton:    0,
+		editSecuritySelection: 0, // Default to first security option
 	}, nil
 }
 
@@ -289,9 +302,9 @@ func forgetNetwork(b backend.Backend, ssid string) tea.Cmd {
 	}
 }
 
-func joinNetwork(b backend.Backend, ssid string, password string) tea.Cmd {
+func joinNetwork(b backend.Backend, ssid string, password string, security backend.SecurityType, isHidden bool) tea.Cmd {
 	return func() tea.Msg {
-		err := b.JoinNetwork(ssid, password)
+		err := b.JoinNetwork(ssid, password, security, isHidden)
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 		}

@@ -88,7 +88,7 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 	return m.ForgetError
 }
 
-func (m *MockBackend) JoinNetwork(ssid string, password string) error {
+func (m *MockBackend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
 	if m.JoinError != nil {
 		return m.JoinError
 	}

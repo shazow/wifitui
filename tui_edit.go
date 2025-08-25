@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/shazow/wifitui/backend"
 )
 
 func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -18,12 +19,32 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle key presses for the edit view
 		switch msg.String() {
 		case "tab":
-			if m.editFocus == focusInput {
-				m.editFocus = focusButtons
-				m.passwordInput.Blur()
+			isNew := m.selectedItem.SSID == ""
+			if isNew {
+				// Cycle through SSID, password, security, and buttons
+				switch m.editFocus {
+				case focusSSID:
+					m.editFocus = focusInput
+					m.ssidInput.Blur()
+					m.passwordInput.Focus()
+				case focusInput:
+					m.editFocus = focusSecurity
+					m.passwordInput.Blur()
+				case focusSecurity:
+					m.editFocus = focusButtons
+				case focusButtons:
+					m.editFocus = focusSSID
+					m.ssidInput.Focus()
+				}
 			} else {
-				m.editFocus = focusInput
-				m.passwordInput.Focus()
+				// Cycle through password and buttons
+				if m.editFocus == focusInput {
+					m.editFocus = focusButtons
+					m.passwordInput.Blur()
+				} else {
+					m.editFocus = focusInput
+					m.passwordInput.Focus()
+				}
 			}
 		case "esc":
 			m.state = stateListView
@@ -31,14 +52,29 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorMessage = ""
 
 		default:
-			if m.editFocus == focusInput {
-				// Pass all other key presses to the input field
+			switch m.editFocus {
+			case focusSSID:
+				m.ssidInput, cmd = m.ssidInput.Update(msg)
+				cmds = append(cmds, cmd)
+			case focusInput:
 				m.passwordInput, cmd = m.passwordInput.Update(msg)
 				cmds = append(cmds, cmd)
-			} else { // m.editFocus == focusButtons
-				numButtons := 2
-				if m.selectedItem.IsKnown {
-					numButtons = 3
+			case focusSecurity:
+				numOptions := 3 // Open, WEP, WPA/WPA2
+				switch msg.String() {
+				case "right":
+					m.editSecuritySelection = (m.editSecuritySelection + 1) % numOptions
+				case "left":
+					m.editSecuritySelection = (m.editSecuritySelection - 1 + numOptions) % numOptions
+				}
+			case focusButtons:
+				var numButtons int
+				if m.selectedItem.SSID == "" {
+					numButtons = 2 // Join, Cancel
+				} else if m.selectedItem.IsKnown {
+					numButtons = 3 // Connect, Save, Cancel
+				} else {
+					numButtons = 2 // Join, Cancel
 				}
 
 				switch msg.String() {
@@ -47,7 +83,22 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "left":
 					m.editSelectedButton = (m.editSelectedButton - 1 + numButtons) % numButtons
 				case "enter":
-					if m.selectedItem.IsKnown {
+					isNew := m.selectedItem.SSID == ""
+					if isNew {
+						// New network buttons: Join, Cancel
+						switch m.editSelectedButton {
+						case 0: // Join
+							m.loading = true
+							ssid := m.ssidInput.Value()
+							m.statusMessage = fmt.Sprintf("Joining '%s'...", ssid)
+							m.errorMessage = ""
+							cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordInput.Value(), backend.SecurityType(m.editSecuritySelection), true))
+						case 1: // Cancel
+							m.state = stateListView
+							m.statusMessage = ""
+							m.errorMessage = ""
+						}
+					} else if m.selectedItem.IsKnown {
 						// Known network buttons: Connect, Save, Cancel
 						switch m.editSelectedButton {
 						case 0: // Connect
@@ -71,7 +122,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
 							m.errorMessage = ""
-							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value(), m.selectedItem.Security, m.selectedItem.IsHidden))
 						case 1: // Cancel
 							m.state = stateListView
 							m.statusMessage = ""
@@ -91,26 +142,36 @@ func (m model) viewEditView() string {
 	title := "Wi-Fi Connection"
 	s.WriteString(fmt.Sprintf("\n%s\n\n", title))
 
+	// --- Styles ---
+	focusedButtonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
+	normalButtonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+
 	// --- Details Box ---
 	var details strings.Builder
-	details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
-	security := "Open"
-	if m.selectedItem.IsSecure {
-		security = "Secure"
+	isNew := m.selectedItem.SSID == ""
+	if isNew {
+		s.WriteString("SSID:\n")
+		s.WriteString(m.ssidInput.View())
+		s.WriteString("\n\n")
+	} else {
+		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
+		security := "Open"
+		if m.selectedItem.IsSecure {
+			security = "Secure"
+		}
+		details.WriteString(fmt.Sprintf("Security: %s\n", security))
+		if m.selectedItem.Strength > 0 {
+			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
+		}
+		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
+			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), formatDuration(*m.selectedItem.LastConnected)))
+		}
+		s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
+		s.WriteString("\n\n")
 	}
-	details.WriteString(fmt.Sprintf("Security: %s\n", security))
-	if m.selectedItem.Strength > 0 {
-		details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
-	}
-	if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
-		details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), formatDuration(*m.selectedItem.LastConnected)))
-	}
-
-	s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
-	s.WriteString("\n\n")
 
 	// --- Input field ---
-	s.WriteString("Passphrase:\n")
+	s.WriteString("Passphrase (optional for open networks):\n")
 	var inputView string
 	if m.editFocus == focusInput {
 		inputView = lipgloss.NewStyle().
@@ -126,16 +187,32 @@ func (m model) viewEditView() string {
 	}
 	s.WriteString(inputView)
 
+	// --- Security Selection ---
+	if m.selectedItem.SSID == "" {
+		s.WriteString("\n\nSecurity:\n")
+		securityOptions := []string{"Open", "WEP", "WPA/WPA2"}
+		var securityRow strings.Builder
+		for i, label := range securityOptions {
+			style := normalButtonStyle
+			if m.editFocus == focusSecurity && i == m.editSecuritySelection {
+				style = focusedButtonStyle
+			}
+			securityRow.WriteString(style.Render(fmt.Sprintf("[ %s ]", label)))
+			securityRow.WriteString("  ")
+		}
+		s.WriteString(securityRow.String())
+	}
+
 	// --- Button rendering ---
 	var buttonRow strings.Builder
 	var buttons []string
-	if m.selectedItem.IsKnown {
+	if m.selectedItem.SSID == "" {
+		buttons = []string{"Join", "Cancel"}
+	} else if m.selectedItem.IsKnown {
 		buttons = []string{"Connect", "Save", "Cancel"}
 	} else {
 		buttons = []string{"Join", "Cancel"}
 	}
-	focusedButtonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
-	normalButtonStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 
 	for i, label := range buttons {
 		style := normalButtonStyle

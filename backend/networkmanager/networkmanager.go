@@ -122,6 +122,14 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
 		rsnFlags, _ := ap.GetPropertyRSNFlags()
 		isSecure := (uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0) || (wpaFlags > 0) || (rsnFlags > 0)
+		var security backend.SecurityType
+		if wpaFlags > 0 || rsnFlags > 0 {
+			security = backend.SecurityWPA
+		} else if isSecure {
+			security = backend.SecurityWEP
+		} else {
+			security = backend.SecurityOpen
+		}
 
 		var connInfo backend.Connection
 		var knownConn gonetworkmanager.Connection
@@ -161,6 +169,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				IsSecure:      isSecure,
 				IsVisible:     true,
 				Strength:      strength,
+				Security:      security,
 				LastConnected: lastConnected,
 			}
 		} else {
@@ -170,6 +179,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				IsSecure:  isSecure,
 				IsVisible: true,
 				Strength:  strength,
+				Security:  security,
 			}
 		}
 		conns = append(conns, connInfo)
@@ -255,43 +265,68 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Delete()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string) error {
-	ap, ok := b.AccessPoints[ssid]
-	if !ok {
-		return fmt.Errorf("access point not found for %s", ssid)
-	}
-
+func (b *Backend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
 	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return err
 	}
-	var wirelessDevice gonetworkmanager.Device
+	var wirelessDevice gonetworkmanager.DeviceWireless
 	for _, device := range devices {
-		deviceType, err := device.GetPropertyDeviceType()
-		if err != nil {
-			continue
-		}
-		if deviceType == gonetworkmanager.NmDeviceTypeWifi {
-			wirelessDevice = device
+		if dev, ok := device.(gonetworkmanager.DeviceWireless); ok {
+			wirelessDevice = dev
 			break
 		}
 	}
 	if wirelessDevice == nil {
 		return fmt.Errorf("no wireless device found")
 	}
+	deviceInterface, _ := wirelessDevice.GetPropertyInterface()
 
-	connection := make(map[string]map[string]interface{})
-	connection["802-11-wireless"] = make(map[string]interface{})
-	connection["802-11-wireless"]["security"] = "802-11-wireless-security"
-	connection["802-11-wireless-security"] = make(map[string]interface{})
-	connection["802-11-wireless-security"]["key-mgmt"] = "wpa-psk"
-	connection["802-11-wireless-security"]["psk"] = password
-	connection["connection"] = make(map[string]interface{})
-	connection["connection"]["id"] = ssid
-	connection["connection"]["uuid"] = uuid.New().String()
-	connection["connection"]["type"] = "802-11-wireless"
+	connection := map[string]map[string]interface{}{
+		"connection": {
+			"id":               ssid,
+			"uuid":             uuid.New().String(),
+			"type":             "802-11-wireless",
+			"interface-name":   deviceInterface,
+			"autoconnect":      false,
+		},
+		"802-11-wireless": {
+			"mode": "infrastructure",
+			"ssid": []byte(ssid),
+		},
+		"ipv4": {"method": "auto"},
+		"ipv6": {"method": "auto"},
+	}
+	if isHidden {
+		connection["802-11-wireless"]["hidden"] = true
+	}
 
-	_, err = b.NM.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
+	switch security {
+	case backend.SecurityOpen:
+		// No security settings needed
+	case backend.SecurityWEP:
+		connection["802-11-wireless"]["security"] = "802-11-wireless-security"
+		connection["802-11-wireless-security"] = map[string]interface{}{
+			"key-mgmt": "none",
+			"wep-key0": password,
+		}
+	default: // WPA/WPA2
+		connection["802-11-wireless"]["security"] = "802-11-wireless-security"
+		connection["802-11-wireless-security"] = map[string]interface{}{
+			"key-mgmt": "wpa-psk",
+			"psk":      password,
+		}
+	}
+
+	if isHidden {
+		_, err = b.NM.AddAndActivateConnection(connection, wirelessDevice)
+	} else {
+		ap, ok := b.AccessPoints[ssid]
+		if !ok {
+			return fmt.Errorf("access point not found for %s", ssid)
+		}
+		_, err = b.NM.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
+	}
 	return err
 }
 

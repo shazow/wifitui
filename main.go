@@ -52,6 +52,8 @@ func main() {
 
 	connectFlagSet := flag.NewFlagSet("connect", flag.ExitOnError)
 	connectPassphrase := connectFlagSet.String("passphrase", "", "passphrase for the network")
+	connectSecurity := connectFlagSet.String("security", "wpa", "security type (open, wep, wpa)")
+	connectHidden := connectFlagSet.Bool("hidden", false, "network is hidden")
 	connectCmd := &ffcli.Command{
 		Name:      "connect",
 		ShortHelp: "Connect to a wifi network",
@@ -60,7 +62,18 @@ func main() {
 			if len(args) == 0 {
 				return fmt.Errorf("connect requires an ssid")
 			}
-			return runConnect(os.Stdout, args[0], *connectPassphrase, b)
+			var security backend.SecurityType
+			switch *connectSecurity {
+			case "open":
+				security = backend.SecurityOpen
+			case "wep":
+				security = backend.SecurityWEP
+			case "wpa":
+				security = backend.SecurityWPA
+			default:
+				return fmt.Errorf("invalid security type: %s", *connectSecurity)
+			}
+			return runConnect(os.Stdout, args[0], *connectPassphrase, security, *connectHidden, b)
 		},
 	}
 

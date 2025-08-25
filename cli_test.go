@@ -169,7 +169,7 @@ func TestRunConnect(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Test case: connect to a new network with a passphrase
-	if err := runConnect(&buf, "new-network", "new-password", mockBackend); err != nil {
+	if err := runConnect(&buf, "new-network", "new-password", backend.SecurityWPA, false, mockBackend); err != nil {
 		t.Fatalf("runConnect() with passphrase failed: %v", err)
 	}
 
@@ -191,7 +191,7 @@ func TestRunConnect(t *testing.T) {
 
 	// Test case: connect to a known network without a passphrase
 	buf.Reset()
-	if err := runConnect(&buf, "Password is password", "", mockBackend); err != nil {
+	if err := runConnect(&buf, "Password is password", "", backend.SecurityWPA, false, mockBackend); err != nil {
 		t.Fatalf("runConnect() without passphrase failed: %v", err)
 	}
 
