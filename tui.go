@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -488,10 +489,7 @@ func (m model) View() string {
 		s.WriteString(docStyle.Render(viewBuilder.String()))
 	case stateEditView:
 		// --- Title ---
-		title := "Edit Wi-Fi Connection"
-		if !m.selectedItem.IsKnown {
-			title = "Join Wi-Fi Network"
-		}
+		title := "Wi-Fi Connection"
 		s.WriteString(fmt.Sprintf("\n%s\n\n", title))
 
 		// --- Details Box ---
@@ -506,7 +504,7 @@ func (m model) View() string {
 			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
 		}
 		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
-			details.WriteString(fmt.Sprintf("Last connected: %s\n", formatDuration(*m.selectedItem.LastConnected)))
+			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), formatDuration(*m.selectedItem.LastConnected)))
 		}
 
 		s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
