@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/uuid v1.6.0
+	github.com/lucasb-eyer/go-colorful v1.2.0
 	github.com/peterbourgon/ff/v3 v3.4.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 )
@@ -21,7 +22,6 @@ require (
 	github.com/charmbracelet/x/cellbuf v0.0.13 // indirect
 	github.com/charmbracelet/x/term v0.2.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
-	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect

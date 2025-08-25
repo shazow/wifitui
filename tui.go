@@ -33,9 +33,8 @@ var (
 )
 
 const (
-	colorBrown  = "#8B4513"
-	colorYellow = "#FFFF00"
-	colorGreen  = "#00FF00"
+	colorSignalLow = "#BC3C00"
+	colorSignalHigh  = "#00FF00"
 )
 
 // viewState represents the current screen of the TUI
@@ -142,26 +141,14 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Now construct the description string with styles
 	if i.Strength > 0 {
-		var signalColor lipgloss.Color
-		// Use a two-part gradient for the signal strength
-		if i.Strength <= 40 {
-			// From brown to yellow
-			start, _ := colorful.Hex(colorBrown)
-			end, _ := colorful.Hex(colorYellow)
-			p := float64(i.Strength) / 40.0
-			blend := start.BlendRgb(end, p)
-			signalColor = lipgloss.Color(blend.Hex())
-		} else {
-			// From yellow to green
-			start, _ := colorful.Hex(colorYellow)
-			end, _ := colorful.Hex(colorGreen)
-			p := (float64(i.Strength) - 40) / (100.0 - 40.0)
-			blend := start.BlendRgb(end, p)
-			signalColor = lipgloss.Color(blend.Hex())
-		}
+		start, _ := colorful.Hex(colorSignalLow)
+		end, _ := colorful.Hex(colorSignalHigh)
+		p := float64(i.Strength) / 100.0
+		blend := start.BlendRgb(end, p)
+		signalColor := lipgloss.Color(blend.Hex())
 
 		// Combine base desc style with our signal color
-		finalSignalStyle := descStyle.Copy().Foreground(signalColor)
+		finalSignalStyle := descStyle.Foreground(signalColor)
 		desc = finalSignalStyle.Render(strengthPart) + descStyle.Render(connectedPart)
 	} else {
 		// No strength, just use the base desc style
