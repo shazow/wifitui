@@ -336,9 +336,18 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 		return "", fmt.Errorf("connection not found for %s", ssid)
 	}
 
+	s, err := conn.GetSettings()
+	if err != nil {
+		return "", fmt.Errorf("failed to get settings: %w", err)
+	}
+
+	if _, ok := s["802-11-wireless-security"]; !ok {
+		return "", nil
+	}
+
 	settings, err := conn.GetSecrets("802-11-wireless-security")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get secrets: %w", err)
 	}
 
 	if s, ok := settings["802-11-wireless-security"]; ok {
