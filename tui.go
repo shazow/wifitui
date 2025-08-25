@@ -44,8 +44,7 @@ type viewState int
 
 const (
 	stateListView viewState = iota
-	stateEditView
-	stateJoinView
+	stateDetailView
 	stateForgetView
 )
 
@@ -182,8 +181,7 @@ type model struct {
 	errorMessage  string
 	selectedItem  connectionItem
 	width, height int
-	editFocus     int // 0: password, 1: connect, 2: save, 3: cancel
-	joinFocus     int // 0: password/join, 1: back
+	detailFocus   int // Manages focus in the detail view.
 }
 
 // initialModel creates the starting state of our application
@@ -331,18 +329,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
 							cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 						} else {
-							// For unknown networks, 'connect' is the same as 'join'
-							m.state = stateJoinView
+							// For unknown networks, go to the detail view to join
+							m.state = stateDetailView
 							m.statusMessage = fmt.Sprintf("Enter details for %s", m.selectedItem.SSID)
 							m.errorMessage = ""
 							m.passwordInput.SetValue("")
+							m.detailFocus = 0
 
 							if selected.IsSecure {
 								m.passwordInput.Focus()
-								m.joinFocus = 0 // 0=password
 							} else {
 								m.passwordInput.Blur()
-								m.joinFocus = 0 // 0=join button
+								m.detailFocus = 1 // Skip password, focus first button
 							}
 						}
 					}
@@ -354,101 +352,35 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 					m.selectedItem = selected
+					m.state = stateDetailView
+					m.statusMessage = ""
+					m.errorMessage = ""
+					m.passwordInput.SetValue("")
+					m.detailFocus = 0
+
 					if selected.IsKnown {
-						m.state = stateEditView
 						m.loading = true
 						m.statusMessage = fmt.Sprintf("Fetching secret for %s...", m.selectedItem.SSID)
-						m.errorMessage = ""
-						m.passwordInput.SetValue("")
 						m.passwordInput.Focus()
-						m.editFocus = 0 // Reset focus to password input
 						cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 					} else {
-						m.state = stateJoinView
-						m.statusMessage = fmt.Sprintf("Enter details for %s", m.selectedItem.SSID)
-						m.errorMessage = ""
-						m.passwordInput.SetValue("")
-
+						// This is an unknown network
 						if selected.IsSecure {
 							m.passwordInput.Focus()
-							m.joinFocus = 0 // 0=password
 						} else {
 							m.passwordInput.Blur()
-							m.joinFocus = 0 // 0=join button
+							// If not secure, no password field, so focus the first button
+							m.detailFocus = 1
 						}
 					}
 				}
 			}
-		case stateEditView:
-			// Handle key presses for the edit view.
-			// We handle tab, shift+tab, arrows, enter, and esc.
-			// Other keys are passed to the password input.
-			switch key := msg.String(); key {
-			case "tab":
-				m.editFocus = (m.editFocus + 1) % 4
-				if m.editFocus == 0 {
-					m.passwordInput.Focus()
-				} else {
-					m.passwordInput.Blur()
-				}
-				return m, nil // Key handled
+		case stateDetailView:
+			item := m.selectedItem
+			isKnown := item.IsKnown
+			// Password field is shown for all known networks, and for secure unknown ones.
+			hasPasswordField := isKnown || item.IsSecure
 
-			case "shift+tab":
-				m.editFocus--
-				if m.editFocus < 0 {
-					m.editFocus = 3
-				}
-				if m.editFocus == 0 {
-					m.passwordInput.Focus()
-				} else {
-					m.passwordInput.Blur()
-				}
-				return m, nil // Key handled
-
-			case "right", "left":
-				if m.editFocus > 0 { // A button is focused
-					if key == "right" {
-						m.editFocus++
-						if m.editFocus > 3 {
-							m.editFocus = 1
-						}
-					} else { // left
-						m.editFocus--
-						if m.editFocus < 1 {
-							m.editFocus = 3
-						}
-					}
-					return m, nil // Key handled
-				}
-
-			case "enter":
-				if m.editFocus > 0 { // A button is focused
-					switch m.editFocus {
-					case 1: // Connect
-						m.loading = true
-						m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
-						cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
-					case 2: // Save
-						m.loading = true
-						m.statusMessage = fmt.Sprintf("Saving password for %s...", m.selectedItem.SSID)
-						m.errorMessage = ""
-						cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
-					case 3: // Back
-						m.state = stateListView
-						m.statusMessage = ""
-						m.errorMessage = ""
-					}
-					return m, tea.Batch(cmds...) // Action taken
-				}
-
-			case "q", "esc":
-				m.state = stateListView
-				m.statusMessage = ""
-				m.errorMessage = ""
-				return m, nil // Key handled
-			}
-		case stateJoinView:
-			isSecure := m.selectedItem.IsSecure
 			switch key := msg.String(); key {
 			case "q", "esc":
 				m.state = stateListView
@@ -457,25 +389,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case "tab", "shift+tab", "right", "left":
-				// Determine the number of focusable elements
-				numFocusable := 2 // Join, Back
-				if isSecure {
-					numFocusable = 3 // Password, Join, Back
+				numButtons := 2
+				if isKnown {
+					numButtons = 3
+				}
+				numFocusable := numButtons
+				if hasPasswordField {
+					numFocusable++
 				}
 
 				// Move focus
 				if key == "shift+tab" || key == "left" {
-					m.joinFocus--
-					if m.joinFocus < 0 {
-						m.joinFocus = numFocusable - 1
+					m.detailFocus--
+					if m.detailFocus < 0 {
+						m.detailFocus = numFocusable - 1
 					}
 				} else {
-					m.joinFocus++
-					m.joinFocus %= numFocusable
+					m.detailFocus++
+					m.detailFocus %= numFocusable
 				}
 
 				// Set focus on password input or blur it
-				if isSecure && m.joinFocus == 0 {
+				if hasPasswordField && m.detailFocus == 0 {
 					m.passwordInput.Focus()
 				} else {
 					m.passwordInput.Blur()
@@ -483,27 +418,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 
 			case "enter":
-				// If password field is focused, do nothing on enter.
 				if m.passwordInput.Focused() {
-					return m, nil
+					return m, nil // Do nothing on enter in password field
 				}
 
-				// Determine which button is pressed based on focus
-				buttonIndex := m.joinFocus
-				if isSecure {
-					buttonIndex-- // Buttons are at index 1 and 2 if password exists
+				buttonIndex := m.detailFocus
+				if hasPasswordField {
+					buttonIndex-- // Buttons are offset by 1 if password field is there
 				}
 
-				switch buttonIndex {
-				case 0: // Join button
-					m.loading = true
-					m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-					m.errorMessage = ""
-					cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
-				case 1: // Back button
-					m.state = stateListView
-					m.statusMessage = ""
-					m.errorMessage = ""
+				if isKnown {
+					switch buttonIndex {
+					case 0: // Connect
+						m.loading = true
+						m.statusMessage = fmt.Sprintf("Connecting to '%s'...", item.SSID)
+						cmds = append(cmds, activateConnection(m.backend, item.SSID))
+					case 1: // Save
+						m.loading = true
+						m.statusMessage = fmt.Sprintf("Saving password for %s...", item.SSID)
+						m.errorMessage = ""
+						cmds = append(cmds, updateSecret(m.backend, item.SSID, m.passwordInput.Value()))
+					case 2: // Back
+						m.state = stateListView
+						m.statusMessage = ""
+						m.errorMessage = ""
+					}
+				} else {
+					// Unknown network buttons
+					switch buttonIndex {
+					case 0: // Join
+						m.loading = true
+						m.statusMessage = fmt.Sprintf("Joining '%s'...", item.SSID)
+						m.errorMessage = ""
+						cmds = append(cmds, joinNetwork(m.backend, item.SSID, m.passwordInput.Value()))
+					case 1: // Back
+						m.state = stateListView
+						m.statusMessage = ""
+						m.errorMessage = ""
+					}
 				}
 				return m, tea.Batch(cmds...)
 			}
@@ -527,10 +479,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateListView:
 		m.list, cmd = m.list.Update(msg)
 		cmds = append(cmds, cmd)
-	case stateJoinView:
-		m.passwordInput, cmd = m.passwordInput.Update(msg)
-		cmds = append(cmds, cmd)
-	case stateEditView:
+	case stateDetailView:
 		// All key handling is now done above, including passing to passwordInput.
 		// We just need to update the password input with the message.
 		m.passwordInput, cmd = m.passwordInput.Update(msg)
@@ -571,119 +520,73 @@ func (m model) View() string {
 		viewBuilder.WriteString("\n")
 		viewBuilder.WriteString(statusText)
 		s.WriteString(docStyle.Render(viewBuilder.String()))
-	case stateEditView:
+	case stateDetailView:
 		var viewContent strings.Builder
 		item := m.selectedItem
 
 		// Title
 		titleStyle := lipgloss.NewStyle().Bold(true).MarginBottom(1)
-		viewContent.WriteString(titleStyle.Render(fmt.Sprintf("Details for %s", item.SSID)))
+		title := fmt.Sprintf("Details for %s", item.SSID)
+		if !item.IsKnown {
+			title = fmt.Sprintf("Join Network %s", item.SSID)
+		}
+		viewContent.WriteString(titleStyle.Render(title))
 		viewContent.WriteString("\n")
 
 		// Details section
 		var details strings.Builder
 		keyStyle := lipgloss.NewStyle().Width(18).Align(lipgloss.Right).PaddingRight(2).Foreground(lipgloss.Color("240"))
 
-		status := "Not Connected"
-		style := unknownNetworkStyle
-		if item.IsActive {
-			status = "Connected"
-			style = activeStyle
-		} else if item.IsKnown {
-			status = "Known"
-			style = knownNetworkStyle
+		if item.IsKnown {
+			// Show full details for known networks
+			status := "Not Connected"
+			style := unknownNetworkStyle
+			if item.IsActive {
+				status = "Connected"
+				style = activeStyle
+			} else if item.IsKnown {
+				status = "Known"
+				style = knownNetworkStyle
+			}
+			details.WriteString(keyStyle.Render("Status:") + style.Render(status) + "\n")
 		}
 
 		security := "Open"
 		if item.IsSecure {
 			security = "Password Protected"
 		}
-
-		details.WriteString(keyStyle.Render("Status:") + style.Render(status) + "\n")
 		details.WriteString(keyStyle.Render("Security:") + lipgloss.NewStyle().Render(security) + "\n")
+
 		if item.Strength > 0 {
 			details.WriteString(keyStyle.Render("Signal Strength:") + lipgloss.NewStyle().Render(fmt.Sprintf("%d%%", item.Strength)) + "\n")
 		}
-		if item.LastConnected != nil {
+		if item.IsKnown && item.LastConnected != nil {
 			details.WriteString(keyStyle.Render("Last Connected:") + lipgloss.NewStyle().Render(formatDuration(*item.LastConnected)) + "\n")
 		}
 		details.WriteString("\n")
-
 		viewContent.WriteString(details.String())
 
-		// Password input
-		viewContent.WriteString("Password:\n")
-		viewContent.WriteString(m.passwordInput.View())
-		viewContent.WriteString("\n\n")
-
-		// Buttons
-		buttonNames := []string{"Connect", "Save Password", "Back"}
-		var renderedButtons []string
-		for i, name := range buttonNames {
-			if m.editFocus == i+1 {
-				renderedButtons = append(renderedButtons, focusedButtonStyle.Render(name))
-			} else {
-				renderedButtons = append(renderedButtons, buttonStyle.Render(name))
-			}
-		}
-		viewContent.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, renderedButtons...))
-
-		// Combine details and QR code
-		detailsPane := dialogBoxStyle.Render(viewContent.String())
-
-		// QR code pane
-		var qrPane string
-		password := m.passwordInput.Value()
-		if password != "" {
-			qrCode, err := GenerateWifiQRCode(item.SSID, password, item.IsSecure, item.IsHidden)
-			if err == nil {
-				// Place the QR code to the side of the details pane
-				qrPane = lipgloss.NewStyle().MarginLeft(2).Render(qrCode)
-			}
-		}
-
-		s.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, detailsPane, qrPane))
-	case stateJoinView:
-		var viewContent strings.Builder
-		item := m.selectedItem
-
-		// Title
-		titleStyle := lipgloss.NewStyle().Bold(true).MarginBottom(1)
-		viewContent.WriteString(titleStyle.Render(fmt.Sprintf("Join Network %s", item.SSID)))
-		viewContent.WriteString("\n")
-
-		// Details section
-		var details strings.Builder
-		keyStyle := lipgloss.NewStyle().Width(18).Align(lipgloss.Right).PaddingRight(2).Foreground(lipgloss.Color("240"))
-
-		security := "Open"
-		if item.IsSecure {
-			security = "Password Protected"
-		}
-
-		details.WriteString(keyStyle.Render("Security:") + lipgloss.NewStyle().Render(security) + "\n")
-		if item.Strength > 0 {
-			details.WriteString(keyStyle.Render("Signal Strength:") + lipgloss.NewStyle().Render(fmt.Sprintf("%d%%", item.Strength)) + "\n")
-		}
-		details.WriteString("\n")
-
-		viewContent.WriteString(details.String())
-
-		// Password input
-		if item.IsSecure {
+		// Password input (only for secure networks, or all known networks)
+		if item.IsSecure || item.IsKnown {
 			viewContent.WriteString("Password:\n")
 			viewContent.WriteString(m.passwordInput.View())
 			viewContent.WriteString("\n\n")
 		}
 
 		// Buttons
-		buttonNames := []string{"Join", "Back"}
+		var buttonNames []string
+		if item.IsKnown {
+			buttonNames = []string{"Connect", "Save Password", "Back"}
+		} else {
+			buttonNames = []string{"Join", "Back"}
+		}
+
 		var renderedButtons []string
 		for i, name := range buttonNames {
 			// Adjust focus index based on whether password field is present
-			focusIndex := m.joinFocus
-			if item.IsSecure {
-				focusIndex-- // When password field is present, buttons are at index 1 and 2
+			focusIndex := m.detailFocus
+			if item.IsSecure || item.IsKnown {
+				focusIndex-- // When password field is present, buttons start at index 1
 			}
 
 			if focusIndex == i {
@@ -694,7 +597,23 @@ func (m model) View() string {
 		}
 		viewContent.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, renderedButtons...))
 
-		s.WriteString(dialogBoxStyle.Render(viewContent.String()))
+		// Combine details and QR code
+		detailsPane := dialogBoxStyle.Render(viewContent.String())
+
+		// QR code pane (only for known networks with a password)
+		var qrPane string
+		if item.IsKnown {
+			password := m.passwordInput.Value()
+			if password != "" {
+				qrCode, err := GenerateWifiQRCode(item.SSID, password, item.IsSecure, item.IsHidden)
+				if err == nil {
+					// Place the QR code to the side of the details pane
+					qrPane = lipgloss.NewStyle().MarginLeft(2).Render(qrCode)
+				}
+			}
+		}
+
+		s.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, detailsPane, qrPane))
 	}
 
 	if m.loading {
