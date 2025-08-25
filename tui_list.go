@@ -160,14 +160,10 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.selectedItem = selected
 				if selected.IsKnown {
-					m.state = stateEditView
 					m.loading = true
 					m.statusMessage = fmt.Sprintf("Fetching secret for %s...", m.selectedItem.SSID)
 					m.errorMessage = ""
-					m.passwordInput.SetValue("")
-					m.passwordInput.Focus()
-					m.editFocus = focusInput
-					m.editSelectedButton = 0
+					m.pendingEditItem = &m.selectedItem
 					cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 				} else {
 					if selected.IsSecure {

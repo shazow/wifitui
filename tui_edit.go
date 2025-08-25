@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/shazow/wifitui/backend"
@@ -41,16 +42,37 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.editFocus == focusInput {
 					m.editFocus = focusButtons
 					m.passwordInput.Blur()
+					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+						m.passwordRevealed = false
+						m.passwordInput.EchoMode = textinput.EchoPassword
+					}
 				} else {
 					m.editFocus = focusInput
 					m.passwordInput.Focus()
+					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+						m.passwordRevealed = true
+						m.passwordInput.EchoMode = textinput.EchoNormal
+					}
 				}
 			}
 		case "esc":
 			m.state = stateListView
 			m.statusMessage = ""
 			m.errorMessage = ""
-
+			// Reset password input to default state
+			m.passwordInput.EchoMode = textinput.EchoNormal
+			m.passwordInput.Placeholder = ""
+			m.passwordRevealed = false
+		case "*":
+			// Allow revealing password only for known networks with a password
+			if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+				m.passwordRevealed = !m.passwordRevealed
+				if m.passwordRevealed {
+					m.passwordInput.EchoMode = textinput.EchoNormal
+				} else {
+					m.passwordInput.EchoMode = textinput.EchoPassword
+				}
+			}
 		default:
 			switch m.editFocus {
 			case focusSSID:
@@ -97,6 +119,9 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.state = stateListView
 							m.statusMessage = ""
 							m.errorMessage = ""
+							m.passwordInput.EchoMode = textinput.EchoNormal
+							m.passwordInput.Placeholder = ""
+							m.passwordRevealed = false
 						}
 					} else if m.selectedItem.IsKnown {
 						// Known network buttons: Connect, Save, Cancel
@@ -114,6 +139,9 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.state = stateListView
 							m.statusMessage = ""
 							m.errorMessage = ""
+							m.passwordInput.EchoMode = textinput.EchoNormal
+							m.passwordInput.Placeholder = ""
+							m.passwordRevealed = false
 						}
 					} else {
 						// Unknown network buttons: Join, Cancel
@@ -127,6 +155,9 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.state = stateListView
 							m.statusMessage = ""
 							m.errorMessage = ""
+							m.passwordInput.EchoMode = textinput.EchoNormal
+							m.passwordInput.Placeholder = ""
+							m.passwordRevealed = false
 						}
 					}
 				}
@@ -254,7 +285,7 @@ func (m model) viewEditView() string {
 	// --- QR Code ---
 	if m.selectedItem.IsKnown {
 		password := m.passwordInput.Value()
-		if password != "" {
+		if m.passwordRevealed && password != "" {
 			qrCodeString, err := GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
 			if err == nil {
 				s.WriteString("\n\n")
