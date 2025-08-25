@@ -377,6 +377,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case stateEditView:
 			// Handle quit, escape, and enter in edit view
 			switch msg.String() {
+			case "c":
+				m.loading = true
+				m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
+				cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 			case "q", "esc":
 				m.state = stateListView
 				m.statusMessage = ""
@@ -459,9 +463,24 @@ func (m model) View() string {
 		viewBuilder.WriteString(statusText)
 		s.WriteString(docStyle.Render(viewBuilder.String()))
 	case stateEditView:
-		s.WriteString(fmt.Sprintf("\nEditing Wi-Fi Connection: %s\n\n", m.selectedItem.SSID))
+		var details strings.Builder
+		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
+		security := "Open"
+		if m.selectedItem.IsSecure {
+			security = "Secure"
+		}
+		details.WriteString(fmt.Sprintf("Security: %s\n", security))
+		if m.selectedItem.Strength > 0 {
+			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
+		}
+		if m.selectedItem.LastConnected != nil {
+			details.WriteString(fmt.Sprintf("Last connected: %s\n", formatDuration(*m.selectedItem.LastConnected)))
+		}
+
+		s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
+		s.WriteString("\n")
 		s.WriteString(m.passwordInput.View())
-		s.WriteString("\n\n(press enter to save, esc to cancel)")
+		s.WriteString("\n\n(c)onnect, enter to (s)ave, esc to cancel")
 
 		// Add QR code if we have a password
 		password := m.passwordInput.Value()

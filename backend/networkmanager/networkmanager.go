@@ -119,7 +119,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		b.AccessPoints[ssid] = ap
 
 		flags, _ := ap.GetPropertyFlags()
-		isSecure := uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0
+		wpaFlags, _ := ap.GetPropertyWPAFlags()
+		rsnFlags, _ := ap.GetPropertyRSNFlags()
+		isSecure := (uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0) || (wpaFlags > 0) || (rsnFlags > 0)
 
 		var connInfo backend.Connection
 		var knownConn gonetworkmanager.Connection
