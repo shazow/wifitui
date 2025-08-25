@@ -91,6 +91,7 @@ type model struct {
 	editFocus             int
 	editSelectedButton    int
 	editSecuritySelection int
+	passwordRevealed      bool
 }
 
 // initialModel creates the starting state of our application
@@ -105,7 +106,8 @@ func initialModel(b backend.Backend) (model, error) {
 	ti.Focus()
 	ti.CharLimit = 64
 	ti.Width = 30
-	ti.EchoMode = textinput.EchoNormal // Show password visibly
+	ti.EchoMode = textinput.EchoPassword // Hide password
+	ti.Placeholder = "(press * to reveal)"
 
 	// Configure the SSID input field
 	si := textinput.New()
@@ -150,6 +152,7 @@ func initialModel(b backend.Backend) (model, error) {
 		editFocus:             focusInput,
 		editSelectedButton:    0,
 		editSecuritySelection: 0, // Default to first security option
+		passwordRevealed:      false,
 	}, nil
 }
 

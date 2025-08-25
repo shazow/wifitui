@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/shazow/wifitui/backend"
@@ -50,7 +51,15 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = stateListView
 			m.statusMessage = ""
 			m.errorMessage = ""
-
+		case "*":
+			if m.editFocus == focusInput {
+				m.passwordRevealed = !m.passwordRevealed
+				if m.passwordRevealed {
+					m.passwordInput.EchoMode = textinput.EchoNormal
+				} else {
+					m.passwordInput.EchoMode = textinput.EchoPassword
+				}
+			}
 		default:
 			switch m.editFocus {
 			case focusSSID:
@@ -254,7 +263,7 @@ func (m model) viewEditView() string {
 	// --- QR Code ---
 	if m.selectedItem.IsKnown {
 		password := m.passwordInput.Value()
-		if password != "" {
+		if m.passwordRevealed && password != "" {
 			qrCodeString, err := GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
 			if err == nil {
 				s.WriteString("\n\n")
