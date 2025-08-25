@@ -183,6 +183,7 @@ type model struct {
 	selectedItem  connectionItem
 	width, height int
 	editFocus     int // 0: password, 1: connect, 2: save, 3: cancel
+	joinFocus     int // 0: password/join, 1: back
 }
 
 // initialModel creates the starting state of our application
@@ -331,17 +332,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 						} else {
 							// For unknown networks, 'connect' is the same as 'join'
+							m.state = stateJoinView
+							m.statusMessage = fmt.Sprintf("Enter details for %s", m.selectedItem.SSID)
+							m.errorMessage = ""
+							m.passwordInput.SetValue("")
+
 							if selected.IsSecure {
-								m.state = stateJoinView
-								m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
-								m.errorMessage = ""
-								m.passwordInput.SetValue("")
 								m.passwordInput.Focus()
+								m.joinFocus = 0 // 0=password
 							} else {
-								m.loading = true
-								m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-								m.errorMessage = ""
-								cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, ""))
+								m.passwordInput.Blur()
+								m.joinFocus = 0 // 0=join button
 							}
 						}
 					}
@@ -363,17 +364,17 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.editFocus = 0 // Reset focus to password input
 						cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 					} else {
+						m.state = stateJoinView
+						m.statusMessage = fmt.Sprintf("Enter details for %s", m.selectedItem.SSID)
+						m.errorMessage = ""
+						m.passwordInput.SetValue("")
+
 						if selected.IsSecure {
-							m.state = stateJoinView
-							m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
-							m.errorMessage = ""
-							m.passwordInput.SetValue("")
 							m.passwordInput.Focus()
+							m.joinFocus = 0 // 0=password
 						} else {
-							m.loading = true
-							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-							m.errorMessage = ""
-							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, ""))
+							m.passwordInput.Blur()
+							m.joinFocus = 0 // 0=join button
 						}
 					}
 				}
@@ -447,16 +448,64 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil // Key handled
 			}
 		case stateJoinView:
-			switch msg.String() {
+			isSecure := m.selectedItem.IsSecure
+			switch key := msg.String(); key {
 			case "q", "esc":
 				m.state = stateListView
 				m.statusMessage = ""
 				m.errorMessage = ""
+				return m, nil
+
+			case "tab", "shift+tab", "right", "left":
+				// Determine the number of focusable elements
+				numFocusable := 2 // Join, Back
+				if isSecure {
+					numFocusable = 3 // Password, Join, Back
+				}
+
+				// Move focus
+				if key == "shift+tab" || key == "left" {
+					m.joinFocus--
+					if m.joinFocus < 0 {
+						m.joinFocus = numFocusable - 1
+					}
+				} else {
+					m.joinFocus++
+					m.joinFocus %= numFocusable
+				}
+
+				// Set focus on password input or blur it
+				if isSecure && m.joinFocus == 0 {
+					m.passwordInput.Focus()
+				} else {
+					m.passwordInput.Blur()
+				}
+				return m, nil
+
 			case "enter":
-				m.loading = true
-				m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-				m.errorMessage = ""
-				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+				// If password field is focused, do nothing on enter.
+				if m.passwordInput.Focused() {
+					return m, nil
+				}
+
+				// Determine which button is pressed based on focus
+				buttonIndex := m.joinFocus
+				if isSecure {
+					buttonIndex-- // Buttons are at index 1 and 2 if password exists
+				}
+
+				switch buttonIndex {
+				case 0: // Join button
+					m.loading = true
+					m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
+					m.errorMessage = ""
+					cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+				case 1: // Back button
+					m.state = stateListView
+					m.statusMessage = ""
+					m.errorMessage = ""
+				}
+				return m, tea.Batch(cmds...)
 			}
 		case stateForgetView:
 			switch msg.String() {
@@ -595,9 +644,57 @@ func (m model) View() string {
 
 		s.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, detailsPane, qrPane))
 	case stateJoinView:
-		s.WriteString(fmt.Sprintf("\nJoining Wi-Fi Network: %s\n\n", m.selectedItem.SSID))
-		s.WriteString(m.passwordInput.View())
-		s.WriteString("\n\n(press enter to join, esc to cancel)")
+		var viewContent strings.Builder
+		item := m.selectedItem
+
+		// Title
+		titleStyle := lipgloss.NewStyle().Bold(true).MarginBottom(1)
+		viewContent.WriteString(titleStyle.Render(fmt.Sprintf("Join Network %s", item.SSID)))
+		viewContent.WriteString("\n")
+
+		// Details section
+		var details strings.Builder
+		keyStyle := lipgloss.NewStyle().Width(18).Align(lipgloss.Right).PaddingRight(2).Foreground(lipgloss.Color("240"))
+
+		security := "Open"
+		if item.IsSecure {
+			security = "Password Protected"
+		}
+
+		details.WriteString(keyStyle.Render("Security:") + lipgloss.NewStyle().Render(security) + "\n")
+		if item.Strength > 0 {
+			details.WriteString(keyStyle.Render("Signal Strength:") + lipgloss.NewStyle().Render(fmt.Sprintf("%d%%", item.Strength)) + "\n")
+		}
+		details.WriteString("\n")
+
+		viewContent.WriteString(details.String())
+
+		// Password input
+		if item.IsSecure {
+			viewContent.WriteString("Password:\n")
+			viewContent.WriteString(m.passwordInput.View())
+			viewContent.WriteString("\n\n")
+		}
+
+		// Buttons
+		buttonNames := []string{"Join", "Back"}
+		var renderedButtons []string
+		for i, name := range buttonNames {
+			// Adjust focus index based on whether password field is present
+			focusIndex := m.joinFocus
+			if item.IsSecure {
+				focusIndex-- // When password field is present, buttons are at index 1 and 2
+			}
+
+			if focusIndex == i {
+				renderedButtons = append(renderedButtons, focusedButtonStyle.Render(name))
+			} else {
+				renderedButtons = append(renderedButtons, buttonStyle.Render(name))
+			}
+		}
+		viewContent.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, renderedButtons...))
+
+		s.WriteString(dialogBoxStyle.Render(viewContent.String()))
 	}
 
 	if m.loading {
@@ -637,6 +734,8 @@ func activateConnection(b backend.Backend, ssid string) tea.Cmd {
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to activate connection: %w", err)}
 		}
+		// Give the backend a moment to update connection states
+		time.Sleep(2 * time.Second)
 		return connectionSavedMsg{} // Re-use this to trigger a refresh
 	}
 }
@@ -657,6 +756,8 @@ func joinNetwork(b backend.Backend, ssid string, password string) tea.Cmd {
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 		}
+		// Give the backend a moment to update connection states
+		time.Sleep(2 * time.Second)
 		return connectionSavedMsg{}
 	}
 }
