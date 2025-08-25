@@ -56,14 +56,47 @@ type connectionItem struct {
 
 func (i connectionItem) Title() string { return i.SSID }
 func (i connectionItem) Description() string {
+	if !i.IsVisible {
+		// For non-visible networks, show security status, then last connected time
+		var desc string
+		if i.IsSecure {
+			desc = "Security: " + i.SecurityString()
+		} else {
+			desc = "Security: Open"
+		}
+		if i.LastConnected != nil {
+			desc += ", Last connected: " + formatDuration(*i.LastConnected)
+		}
+		return desc
+	}
+
 	if i.Strength > 0 {
-		return fmt.Sprintf("%d%%", i.Strength)
+		if i.IsSecure {
+			return fmt.Sprintf("%d%%, Security: %s", i.Strength, i.SecurityString())
+		}
+		return fmt.Sprintf("%d%%, Security: Open", i.Strength)
 	}
-	if !i.IsVisible && i.LastConnected != nil {
-		return formatDuration(*i.LastConnected)
+
+	if i.LastConnected != nil {
+		// This case is probably for known, non-visible networks that somehow bypass the first block.
+		// Or active connections without strength?
+		return "Last connected: " + formatDuration(*i.LastConnected)
 	}
-	return ""
+
+	return "Not available"
 }
+
+func (i connectionItem) SecurityString() string {
+	switch i.Security {
+	case backend.SecurityWEP:
+		return "WEP"
+	case backend.SecurityWPA:
+		return "WPA"
+	default:
+		return "Unknown"
+	}
+}
+
 func (i connectionItem) FilterValue() string { return i.Title() }
 
 // Bubbletea messages are used to communicate between the main loop and commands
@@ -120,7 +153,7 @@ func initialModel(b backend.Backend) (model, error) {
 	defaultDel := list.NewDefaultDelegate()
 	delegate.Styles = defaultDel.Styles
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
+	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal/Security")
 	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{

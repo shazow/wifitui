@@ -150,7 +150,25 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				visibleNetworks[ssid] = c
 			} else {
 				// Add non-visible known network
-				connections = append(connections, backend.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
+				typeVar, _ := knownObj.GetProperty(iwdKnownNetworkIface + ".Type")
+				securityType := typeVar.Value().(string)
+				var security backend.SecurityType
+				switch securityType {
+				case "wpa-psk", "wpa2-psk", "wpa-eap", "wpa2-eap":
+					security = backend.SecurityWPA
+				case "wep":
+					security = backend.SecurityWEP
+				default:
+					security = backend.SecurityOpen
+				}
+
+				connections = append(connections, backend.Connection{
+					SSID:      ssid,
+					IsKnown:   true,
+					IsHidden:  isHidden,
+					IsSecure:  security != backend.SecurityOpen,
+					Security:  security,
+				})
 			}
 		}
 	}

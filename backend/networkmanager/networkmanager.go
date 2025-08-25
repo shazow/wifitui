@@ -215,7 +215,27 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 					lastConnected = &t
 				}
 			}
-			conns = append(conns, backend.Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
+			var isSecure bool
+			var security backend.SecurityType
+			if sec, ok := s["802-11-wireless-security"]; ok {
+				if keyMgmt, ok := sec["key-mgmt"].(string); ok {
+					switch keyMgmt {
+					case "wpa-psk", "wpa-eap":
+						isSecure = true
+						security = backend.SecurityWPA
+					case "wep-psk", "wep-eap":
+						isSecure = true
+						security = backend.SecurityWEP
+					}
+				}
+			}
+			conns = append(conns, backend.Connection{
+				SSID:          ssid,
+				IsKnown:       true,
+				IsSecure:      isSecure,
+				Security:      security,
+				LastConnected: lastConnected,
+			})
 		}
 	}
 
