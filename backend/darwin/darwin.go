@@ -136,9 +136,24 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	// Add known networks that are not visible
 	for ssid := range knownSSIDs {
 		if _, processed := processedSSIDs[ssid]; !processed {
+			// For non-visible known networks, we have to infer security
+			// by checking for a password in the keychain.
+			password, err := b.GetSecrets(ssid)
+			isSecure := err == nil && password != ""
+			var security backend.SecurityType
+			if isSecure {
+				// Assume WPA for any secured network, as it's the most common.
+				// We can't easily distinguish WEP/WPA for non-visible networks.
+				security = backend.SecurityWPA
+			} else {
+				security = backend.SecurityOpen
+			}
+
 			conns = append(conns, backend.Connection{
-				SSID:    ssid,
-				IsKnown: true,
+				SSID:     ssid,
+				IsKnown:  true,
+				IsSecure: isSecure,
+				Security: security,
 			})
 		}
 	}
