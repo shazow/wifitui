@@ -203,7 +203,13 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 					lastConnected = &t
 				}
 			}
-			conns = append(conns, backend.Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
+			_, isSecure := s["802-11-wireless-security"]
+			conns = append(conns, backend.Connection{
+				SSID:          ssid,
+				IsKnown:       true,
+				IsSecure:      isSecure,
+				LastConnected: lastConnected,
+			})
 		}
 	}
 
