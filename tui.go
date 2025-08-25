@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -15,7 +14,6 @@ import (
 	"github.com/lucasb-eyer/go-colorful"
 	"github.com/shazow/wifitui/backend"
 )
-
 
 // Define some styles for the UI
 var (
@@ -33,8 +31,8 @@ var (
 )
 
 const (
-	colorSignalLow = "#BC3C00"
-	colorSignalHigh  = "#00FF00"
+	colorSignalLow  = "#BC3C00"
+	colorSignalHigh = "#00FF00"
 )
 
 // viewState represents the current screen of the TUI
@@ -67,24 +65,6 @@ func (i connectionItem) Description() string {
 	return ""
 }
 func (i connectionItem) FilterValue() string { return i.Title() }
-
-// formatDuration takes a time and returns a human-readable string like "2 hours ago"
-func formatDuration(t time.Time) string {
-	d := time.Since(t)
-	var s string
-	switch {
-	case d < time.Minute*2:
-		s = fmt.Sprintf("%0.f seconds", d.Seconds())
-	case d < time.Hour*2:
-		s = fmt.Sprintf("%0.f minutes", d.Minutes())
-	case d < time.Hour*48:
-		s = fmt.Sprintf("%0.1f hours", d.Hours())
-	default:
-		days := d.Hours() / 24
-		s = fmt.Sprintf("%0.1f days", days)
-	}
-	return fmt.Sprintf("%s ago", s)
-}
 
 // itemDelegate is our custom list delegate
 type itemDelegate struct {
