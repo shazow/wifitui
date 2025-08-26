@@ -17,7 +17,47 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle key presses for the edit view
+		// If a text input is focused, only treat Tab and Enter as hotkeys;
+		// all other keys should go to the input itself (so '*' and 'q' can be typed).
+		if m.editFocus == focusInput || m.editFocus == focusSSID {
+			switch msg.String() {
+			case "tab":
+				// handled below in the main switch
+			case "esc":
+				// Exit the input focus instead of leaving the page
+				if m.editFocus == focusSSID {
+					m.ssidInput.Blur()
+				} else {
+					m.passwordInput.Blur()
+					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+						m.passwordRevealed = false
+						m.passwordInput.EchoMode = textinput.EchoPassword
+					}
+				}
+				m.editFocus = focusButtons
+				return m, tea.Batch(cmds...)
+			case "enter":
+				// let the input handle it as well
+				if m.editFocus == focusSSID {
+					m.ssidInput, cmd = m.ssidInput.Update(msg)
+				} else {
+					m.passwordInput, cmd = m.passwordInput.Update(msg)
+				}
+				cmds = append(cmds, cmd)
+				// and continue to allow any view-level enter behavior if needed
+			default:
+				// Forward to the focused input and return immediately
+				if m.editFocus == focusSSID {
+					m.ssidInput, cmd = m.ssidInput.Update(msg)
+				} else {
+					m.passwordInput, cmd = m.passwordInput.Update(msg)
+				}
+				cmds = append(cmds, cmd)
+				return m, tea.Batch(cmds...)
+			}
+		}
+
+		// Handle key presses for the edit view when not typing into inputs
 		switch msg.String() {
 		case "tab":
 			isNew := m.selectedItem.SSID == ""
@@ -63,6 +103,9 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.passwordInput.EchoMode = textinput.EchoNormal
 			m.passwordInput.Placeholder = ""
 			m.passwordRevealed = false
+		case "q":
+			// Quit from the viewer when not typing into inputs
+			return m, tea.Quit
 		case "*":
 			// Allow revealing password only for known networks with a password
 			if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
