@@ -381,10 +381,7 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 // updating the connection. This is safe because the operations that use this
 // workaround are only intended to modify other properties of the connection.
 //
-// This workaround can be removed if the underlying D-Bus library
-// (e.g., github.com/Wifx/gonetworkmanager) is updated to correctly handle
-// these types, or if NetworkManager's D-Bus API is changed to be more
-// tolerant of this type mismatch.
+// See: https://github.com/Wifx/gonetworkmanager/issues/13 and https://github.com/godbus/dbus/issues/400
 func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
 	if ipv6Settings, ok := settings["ipv6"]; ok {
 		delete(ipv6Settings, "addresses")
