@@ -83,15 +83,18 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.ssidInput.Focus()
 				}
 			} else {
-				// Cycle through password and buttons
-				if m.editFocus == focusInput {
-					m.editFocus = focusButtons
+				// Cycle through password, autoconnect, and buttons
+				switch m.editFocus {
+				case focusInput:
+					m.editFocus = focusAutoConnect
 					m.passwordInput.Blur()
 					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
 						m.passwordRevealed = false
 						m.passwordInput.EchoMode = textinput.EchoPassword
 					}
-				} else {
+				case focusAutoConnect:
+					m.editFocus = focusButtons
+				case focusButtons:
 					if shouldDisplayPasswordField(m.selectedItem.Security) {
 						m.editFocus = focusInput
 						m.passwordInput.Focus()
@@ -100,8 +103,16 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.passwordInput.EchoMode = textinput.EchoNormal
 						}
 					} else {
-						m.editFocus = focusButtons
+						m.editFocus = focusAutoConnect
 					}
+				default:
+					if shouldDisplayPasswordField(m.selectedItem.Security) {
+						m.editFocus = focusInput
+						m.passwordInput.Focus()
+					} else {
+						m.editFocus = focusAutoConnect
+					}
+
 				}
 			}
 		case "esc":
@@ -141,12 +152,17 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "left":
 					m.editSecuritySelection = (m.editSecuritySelection - 1 + numOptions) % numOptions
 				}
+			case focusAutoConnect:
+				switch msg.String() {
+				case "enter", " ":
+					m.editAutoConnect = !m.editAutoConnect
+				}
 			case focusButtons:
 				var numButtons int
 				if m.selectedItem.SSID == "" {
 					numButtons = 2 // Join, Cancel
 				} else if m.selectedItem.IsKnown {
-					numButtons = 3 // Connect, Save, Cancel
+					numButtons = 4 // Connect, Save, Forget, Cancel
 				} else {
 					numButtons = 2 // Join, Cancel
 				}
@@ -184,10 +200,18 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 						case 1: // Save
 							m.loading = true
-							m.statusMessage = fmt.Sprintf("Saving password for %s...", m.selectedItem.SSID)
+							m.statusMessage = fmt.Sprintf("Saving settings for %s...", m.selectedItem.SSID)
 							m.errorMessage = ""
+							// NOTE(shazow): We can't tell if the password changed, so we always save it.
 							cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
-						case 2: // Cancel
+							if m.editAutoConnect != m.selectedItem.AutoConnect {
+								cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.editAutoConnect))
+							}
+						case 2: // Forget
+							m.state = stateForgetView
+							m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
+							m.errorMessage = ""
+						case 3: // Cancel
 							m.state = stateListView
 							m.statusMessage = ""
 							m.errorMessage = ""
@@ -296,6 +320,25 @@ func (m model) viewEditView() string {
 		s.WriteString(inputView)
 	}
 
+	// --- Autoconnect Checkbox ---
+	if m.selectedItem.IsKnown {
+		s.WriteString("\n\n")
+		var checkbox string
+		if m.editAutoConnect {
+			checkbox = "[x]"
+		} else {
+			checkbox = "[ ]"
+		}
+		label := "Auto Connect"
+		var styledCheckbox string
+		if m.editFocus == focusAutoConnect {
+			styledCheckbox = focusedButtonStyle.Render(fmt.Sprintf("%s %s", checkbox, label))
+		} else {
+			styledCheckbox = normalButtonStyle.Render(fmt.Sprintf("%s %s", checkbox, label))
+		}
+		s.WriteString(styledCheckbox)
+	}
+
 	// --- Security Selection ---
 	if m.selectedItem.SSID == "" {
 		s.WriteString("\n\nSecurity:\n")
@@ -318,7 +361,7 @@ func (m model) viewEditView() string {
 	if m.selectedItem.SSID == "" {
 		buttons = []string{"Join", "Cancel"}
 	} else if m.selectedItem.IsKnown {
-		buttons = []string{"Connect", "Save", "Cancel"}
+		buttons = []string{"Connect", "Save", "Forget", "Cancel"}
 	} else {
 		buttons = []string{"Join", "Cancel"}
 	}

@@ -242,6 +242,24 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	return fmt.Errorf("updating secrets requires the network to be visible; try connecting to it again manually: %w", backend.ErrNotSupported)
 }
 
+func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+	path, err := b.findKnownNetworkPath(conn, ssid)
+	if err != nil {
+		return err
+	}
+	if path == "" {
+		return fmt.Errorf("cannot set autoconnect: network %s is not known: %w", ssid, backend.ErrNotFound)
+	}
+
+	obj := conn.Object(iwdDest, path)
+	variant := dbus.MakeVariant(autoConnect)
+	return obj.Call("org.freedesktop.DBus.Properties.Set", 0, iwdKnownNetworkIface, "AutoConnect", variant).Err
+}
+
 // --- iwd Helper Functions ---
 
 func (b *Backend) getDevices(conn *dbus.Conn) ([]dbus.ObjectPath, error) {

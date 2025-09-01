@@ -175,6 +175,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					m.statusMessage = fmt.Sprintf("Fetching secret for %s...", m.selectedItem.SSID)
 					m.errorMessage = ""
+					m.editAutoConnect = selected.AutoConnect
 					m.pendingEditItem = &m.selectedItem
 					cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 				} else {

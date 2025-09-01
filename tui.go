@@ -46,6 +46,7 @@ const (
 	focusSSID = iota
 	focusInput
 	focusSecurity
+	focusAutoConnect
 	focusButtons
 )
 
@@ -91,6 +92,7 @@ type model struct {
 	editFocus             int
 	editSelectedButton    int
 	editSecuritySelection int
+	editAutoConnect       bool
 	passwordRevealed      bool
 	pendingEditItem       *connectionItem
 }
@@ -199,6 +201,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		if m.pendingEditItem != nil {
 			m.selectedItem = *m.pendingEditItem
+			m.editAutoConnect = m.selectedItem.AutoConnect
 			m.pendingEditItem = nil
 		}
 		m.passwordInput.SetValue(string(msg))
@@ -324,6 +327,17 @@ func joinNetwork(b backend.Backend, ssid string, password string, security backe
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 		}
+		return connectionSavedMsg{}
+	}
+}
+
+func updateAutoConnect(b backend.Backend, ssid string, autoConnect bool) tea.Cmd {
+	return func() tea.Msg {
+		err := b.SetAutoConnect(ssid, autoConnect)
+		if err != nil {
+			return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
+		}
+		// We can reuse connectionSavedMsg to trigger a refresh
 		return connectionSavedMsg{}
 	}
 }

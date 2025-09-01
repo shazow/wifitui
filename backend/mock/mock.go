@@ -264,3 +264,14 @@ func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
 	}
 	return fmt.Errorf("cannot update secret for unknown network %s: %w", ssid, backend.ErrNotFound)
 }
+
+func (m *MockBackend) SetAutoConnect(ssid string, autoConnect bool) error {
+	// "Act on first match" logic for ambiguity.
+	for i, c := range m.KnownConnections {
+		if c.SSID == ssid {
+			m.KnownConnections[i].AutoConnect = autoConnect
+			return nil
+		}
+	}
+	return fmt.Errorf("cannot set autoconnect for unknown network %s: %w", ssid, backend.ErrNotFound)
+}
