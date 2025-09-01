@@ -115,12 +115,13 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				}
 			} else {
 				visibleNetworks[ssid] = backend.Connection{
-					SSID:      ssid,
-					IsActive:  isActive,
-					IsSecure:  security != backend.SecurityOpen,
-					Security:  security,
-					IsVisible: true,
-					Strength:  strength,
+					SSID:        ssid,
+					IsActive:    isActive,
+					IsSecure:    security != backend.SecurityOpen,
+					Security:    security,
+					IsVisible:   true,
+					Strength:    strength,
+					AutoConnect: false, // Cannot autoconnect to unknown network
 				}
 			}
 		}
@@ -143,14 +144,22 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				}
 			}
 
-			if _, exists := visibleNetworks[ssid]; exists {
-				c := visibleNetworks[ssid]
+			autoConnectVar, err := knownObj.GetProperty(iwdKnownNetworkIface + ".AutoConnect")
+			autoConnect := false
+			if err == nil {
+				if val, ok := autoConnectVar.Value().(bool); ok {
+					autoConnect = val
+				}
+			}
+
+			if c, exists := visibleNetworks[ssid]; exists {
 				c.IsKnown = true
 				c.IsHidden = isHidden
+				c.AutoConnect = autoConnect
 				visibleNetworks[ssid] = c
 			} else {
 				// Add non-visible known network
-				connections = append(connections, backend.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
+				connections = append(connections, backend.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect})
 			}
 		}
 	}
