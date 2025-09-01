@@ -34,7 +34,7 @@ func ago(duration time.Duration) *time.Time {
 // NewBackend creates a new mock.Backend with a list of fun wifi networks.
 func New() (backend.Backend, error) {
 	initialConnections := []backend.Connection{
-		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), IsKnown: true, Security: backend.SecurityWPA},
+		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA},
 		{SSID: "GET off my LAN", Security: backend.SecurityWPA},
 		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWEP},
 		{SSID: "Unencrypted_Honeypot", Security: backend.SecurityOpen},
@@ -44,7 +44,7 @@ func New() (backend.Backend, error) {
 		{SSID: "Police Surveillance 2", Strength: 48, Security: backend.SecurityWPA},
 		{SSID: "I Believe Wi Can Fi", Security: backend.SecurityWEP},
 		{SSID: "Hot singles in your area", Security: backend.SecurityWPA},
-		{SSID: "Password is password", IsKnown: true, Security: backend.SecurityWPA},
+		{SSID: "Password is password", IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA},
 		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: backend.SecurityWPA},
 		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWEP},
 		{SSID: "xX_D4rkR0ut3r_Xx", Security: backend.SecurityWPA},
@@ -131,6 +131,9 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 		}
 		c.IsKnown = isKnown
 		c.IsActive = (c.SSID == activeSSID)
+		if !isKnown {
+			c.AutoConnect = false
+		}
 		result = append(result, c)
 	}
 
@@ -222,6 +225,7 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 	}
 
 	c.IsKnown = true
+	c.AutoConnect = true
 	newConnection := mockConnection{
 		Connection: c,
 		Secret:     password,

@@ -23,6 +23,7 @@ type Connection struct {
 	Strength      uint8 // 0-100
 	Security      SecurityType
 	LastConnected *time.Time
+	AutoConnect   bool
 }
 
 // Backend defines the interface for managing network connections.
