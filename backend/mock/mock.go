@@ -27,22 +27,22 @@ func ago(duration time.Duration) *time.Time {
 // NewBackend creates a new mock.Backend with a list of fun wifi networks.
 func New() (backend.Backend, error) {
 	connections := []backend.Connection{
-		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), Security: backend.SecurityWPA},
+		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), Security: backend.SecurityWPA, IsKnown: true, AutoConnect: true},
 		{SSID: "GET off my LAN", Security: backend.SecurityWPA},
-		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWPA},
+		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWPA, IsKnown: true, AutoConnect: false},
 		{SSID: "Unencrypted_Honeypot", Security: backend.SecurityOpen},
-		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: backend.SecurityWPA},
+		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: backend.SecurityWPA, IsKnown: true, AutoConnect: true},
 		{SSID: "I See Dead Packets", Security: backend.SecurityWPA},
 		{SSID: "Dunder MiffLAN", Security: backend.SecurityWPA},
 		{SSID: "Police Surveillance 2", Strength: 48, Security: backend.SecurityWPA},
 		{SSID: "I Believe Wi Can Fi", Security: backend.SecurityWPA},
 		{SSID: "Hot singles in your area", Security: backend.SecurityOpen},
-		{SSID: "Password is password", Security: backend.SecurityWPA},
+		{SSID: "Password is password", Security: backend.SecurityWPA, IsKnown: true, AutoConnect: true},
 		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: backend.SecurityWPA},
 		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWPA},
 		{SSID: "xX_D4rkR0ut3r_Xx", Security: backend.SecurityWPA},
 		{SSID: "Luke I am your WiFi", Security: backend.SecurityWPA},
-		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityOpen},
+		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityOpen, IsKnown: true, AutoConnect: false},
 	}
 	secrets := map[string]string{
 		"Password is password": "password",
@@ -100,9 +100,10 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 		m.Connections[i].IsActive = false
 	}
 	m.Connections = append(m.Connections, backend.Connection{
-		SSID:     ssid,
-		IsActive: true,
-		IsKnown:  true,
+		SSID:        ssid,
+		IsActive:    true,
+		IsKnown:     true,
+		AutoConnect: true,
 	})
 	if password != "" {
 		if m.Secrets == nil {

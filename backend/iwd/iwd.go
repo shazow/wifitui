@@ -143,14 +143,23 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				}
 			}
 
+			autoConnectVar, err := knownObj.GetProperty(iwdKnownNetworkIface + ".AutoConnect")
+			isAutoConnect := false
+			if err == nil {
+				if val, ok := autoConnectVar.Value().(bool); ok {
+					isAutoConnect = val
+				}
+			}
+
 			if _, exists := visibleNetworks[ssid]; exists {
 				c := visibleNetworks[ssid]
 				c.IsKnown = true
 				c.IsHidden = isHidden
+				c.AutoConnect = isAutoConnect
 				visibleNetworks[ssid] = c
 			} else {
 				// Add non-visible known network
-				connections = append(connections, backend.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden})
+				connections = append(connections, backend.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: isAutoConnect})
 			}
 		}
 	}
@@ -209,10 +218,16 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 		default:
 			securityType = "psk" // Default to WPA/WPA2 PSK
 		}
-		return conn.Object(iwdDest, station).Call(iwdStationIface+".ConnectHidden", 0, ssid, securityType, password).Store()
+		err = conn.Object(iwdDest, station).Call(iwdStationIface+".ConnectHidden", 0, ssid, securityType, password).Store()
+	} else {
+		err = conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
+	}
+	if err != nil {
+		return err
 	}
 
-	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
+	// After connecting, set AutoConnect to true
+	return b.setAutoConnect(ssid, true)
 }
 
 func (b *Backend) GetSecrets(ssid string) (string, error) {
@@ -231,6 +246,24 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	// We can't re-connect without a visible AP.
 	// This is a limitation of this approach.
 	return fmt.Errorf("updating secrets requires the network to be visible; try connecting to it again manually")
+}
+
+func (b *Backend) setAutoConnect(ssid string, autoConnect bool) error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+	path, err := b.findKnownNetworkPath(conn, ssid)
+	if err != nil {
+		return err
+	}
+	if path == "" {
+		// This can happen if the network is not saved, so we don't treat it as an error.
+		return nil
+	}
+
+	obj := conn.Object(iwdDest, path)
+	return obj.Call("net.freedesktop.DBus.Properties.Set", 0, iwdKnownNetworkIface, "AutoConnect", dbus.MakeVariant(autoConnect)).Store()
 }
 
 // --- iwd Helper Functions ---

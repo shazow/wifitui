@@ -153,6 +153,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 			s, _ := knownConn.GetSettings()
 			var id string
 			var lastConnected *time.Time
+			var autoConnect bool
 			if c, ok := s["connection"]; ok {
 				if i, ok := c["id"].(string); ok {
 					id = i
@@ -160,6 +161,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
 					t := time.Unix(int64(ts), 0)
 					lastConnected = &t
+				}
+				if ac, ok := c["autoconnect"].(bool); ok {
+					autoConnect = ac
 				}
 			}
 			connInfo = backend.Connection{
@@ -171,6 +175,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				Strength:      strength,
 				Security:      security,
 				LastConnected: lastConnected,
+				AutoConnect:   autoConnect,
 			}
 		} else {
 			connInfo = backend.Connection{
@@ -288,7 +293,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 			"uuid":             uuid.New().String(),
 			"type":             "802-11-wireless",
 			"interface-name":   deviceInterface,
-			"autoconnect":      false,
+			"autoconnect":      true,
 		},
 		"802-11-wireless": {
 			"mode": "infrastructure",

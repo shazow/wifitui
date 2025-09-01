@@ -121,14 +121,17 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 			} else {
 				security = backend.SecurityOpen
 			}
+			// NOTE: AutoConnect is an assumption here. If it's a known network,
+			// we assume it's set to autoconnect.
 			conns = append(conns, backend.Connection{
-				SSID:      ssid,
-				IsActive:  ssid == currentSSID,
-				IsKnown:   knownSSIDs[ssid],
-				IsVisible: true,
-				Strength:  strength,
-				IsSecure:  security != backend.SecurityOpen,
-				Security:  security,
+				SSID:        ssid,
+				IsActive:    ssid == currentSSID,
+				IsKnown:     knownSSIDs[ssid],
+				IsVisible:   true,
+				Strength:    strength,
+				IsSecure:    security != backend.SecurityOpen,
+				Security:    security,
+				AutoConnect: knownSSIDs[ssid],
 			})
 		}
 	}
@@ -137,8 +140,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	for ssid := range knownSSIDs {
 		if _, processed := processedSSIDs[ssid]; !processed {
 			conns = append(conns, backend.Connection{
-				SSID:    ssid,
-				IsKnown: true,
+				SSID:        ssid,
+				IsKnown:     true,
+				AutoConnect: true,
 			})
 		}
 	}

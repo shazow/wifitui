@@ -19,6 +19,7 @@ type Connection struct {
 	IsSecure      bool
 	IsVisible     bool
 	IsHidden      bool
+	AutoConnect   bool
 	Strength      uint8 // 0-100
 	Security      SecurityType
 	LastConnected *time.Time
