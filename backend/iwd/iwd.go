@@ -37,12 +37,12 @@ func New() (backend.Backend, error) {
 	// Instead, we'll just use this connection to check for service availability.
 	obj := conn.Object(iwdDest, iwdPath)
 	if obj == nil {
-		return nil, fmt.Errorf("failed to get dbus object for %s", iwdDest)
+		return nil, fmt.Errorf("failed to get dbus object for %s: %w", iwdDest, backend.ErrNotAvailable)
 	}
 	// A simple way to check for availability is to try to get a property.
 	_, err = obj.GetProperty(iwdIface + ".Version")
 	if err != nil {
-		return nil, fmt.Errorf("iwd is not available: %w", err)
+		return nil, fmt.Errorf("iwd is not available: %w", backend.ErrNotAvailable)
 	}
 
 	return &Backend{}, nil
@@ -184,7 +184,7 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 		return err
 	}
 	if path == "" {
-		return fmt.Errorf("cannot forget: network %s is not known", ssid)
+		return fmt.Errorf("cannot forget: network %s is not known: %w", ssid, backend.ErrNotFound)
 	}
 	return conn.Object(iwdDest, iwdPath).Call(iwdIface+".ForgetNetwork", 0, path).Store()
 }
@@ -218,19 +218,19 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 func (b *Backend) GetSecrets(ssid string) (string, error) {
 	// The iwd API doesn't seem to expose a way to get the PSK directly for security reasons.
 	// We can't implement this feature for iwd.
-	return "", fmt.Errorf("getting secrets is not supported by the iwd backend")
+	return "", fmt.Errorf("getting secrets is not supported by the iwd backend: %w", backend.ErrNotSupported)
 }
 
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	// To "update" a secret, we have to forget the network and then re-join it.
 	err := b.ForgetNetwork(ssid)
 	if err != nil {
-		return fmt.Errorf("failed to forget network before updating secret: %w", err)
+		return fmt.Errorf("failed to forget network before updating secret: %w", backend.ErrOperationFailed)
 	}
 
 	// We can't re-connect without a visible AP.
 	// This is a limitation of this approach.
-	return fmt.Errorf("updating secrets requires the network to be visible; try connecting to it again manually")
+	return fmt.Errorf("updating secrets requires the network to be visible; try connecting to it again manually: %w", backend.ErrNotSupported)
 }
 
 // --- iwd Helper Functions ---
@@ -257,7 +257,7 @@ func (b *Backend) getStationDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
 			return devicePath, nil
 		}
 	}
-	return "", fmt.Errorf("no station device found")
+	return "", fmt.Errorf("no station device found: %w", backend.ErrNotFound)
 }
 
 func (b *Backend) getKnownNetworks(conn *dbus.Conn) ([]dbus.ObjectPath, error) {

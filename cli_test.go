@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestRunShow(t *testing.T) {
 		if err == nil {
 			t.Fatalf("runShow() with not found network should have failed, but did not")
 		}
-		if !strings.Contains(err.Error(), "network not found: "+doesNotExist) {
+		if !errors.Is(err, backend.ErrNotFound) {
 			t.Errorf("runShow() with not found network gave wrong error. got=%q", err)
 		}
 	}

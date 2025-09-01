@@ -81,7 +81,7 @@ func (m *MockBackend) Connect(ssid string) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("network not found: %s", ssid)
+		return fmt.Errorf("network not found: %s: %w", ssid, backend.ErrNotFound)
 	}
 	return nil
 }
@@ -115,7 +115,7 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 		return nil
 	}
 
-	return fmt.Errorf("network not found: %s", ssid)
+	return fmt.Errorf("network not found: %s: %w", ssid, backend.ErrNotFound)
 }
 
 func (m *MockBackend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
@@ -158,7 +158,7 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 	}
 	secret, ok := m.Secrets[ssid]
 	if !ok {
-		return "", fmt.Errorf("no secrets for %s", ssid)
+		return "", fmt.Errorf("no secrets for %s: %w", ssid, backend.ErrNotFound)
 	}
 	return secret, nil
 }
@@ -171,5 +171,5 @@ func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
 		m.Secrets[ssid] = newPassword
 		return nil
 	}
-	return fmt.Errorf("no secrets for %s", ssid)
+	return fmt.Errorf("no secrets for %s: %w", ssid, backend.ErrNotFound)
 }

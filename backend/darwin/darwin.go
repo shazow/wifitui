@@ -25,7 +25,7 @@ func New() (backend.Backend, error) {
 	cmd := exec.Command("networksetup", "-listallhardwareports")
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list hardware ports: %w", err)
+		return nil, fmt.Errorf("failed to list hardware ports: %w", backend.ErrOperationFailed)
 	}
 
 	lines := strings.Split(string(out), "\n")
@@ -42,7 +42,7 @@ func New() (backend.Backend, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("no Wi-Fi interface found")
+	return nil, fmt.Errorf("no Wi-Fi interface found: %w", backend.ErrNotFound)
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
@@ -63,7 +63,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	cmd = exec.Command("networksetup", "-listpreferredwirelessnetworks", b.WifiInterface)
 	out, err = cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list preferred networks: %w", err)
+		return nil, fmt.Errorf("failed to list preferred networks: %w", backend.ErrOperationFailed)
 	}
 	knownSSIDs := make(map[string]bool)
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
@@ -78,7 +78,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	cmd = exec.Command("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-s")
 	out, err = cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan for networks: %w", err)
+		return nil, fmt.Errorf("failed to scan for networks: %w", backend.ErrOperationFailed)
 	}
 
 	var conns []backend.Connection
