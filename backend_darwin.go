@@ -1,4 +1,5 @@
 //go:build darwin && !mock
+
 package main
 
 import (

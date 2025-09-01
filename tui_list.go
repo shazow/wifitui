@@ -28,6 +28,18 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	// Get plain title and description
 	title := i.Title()
 
+	// Add icons for security
+	var icon string
+	switch i.Security {
+	case backend.SecurityUnknown:
+		icon = "❓ "
+	case backend.SecurityOpen:
+		icon = "🔓 "
+	default:
+		icon = "🔒 "
+	}
+	title = icon + title
+
 	// Define column width for SSID
 	ssidColumnWidth := 30
 	titleLen := len(title)

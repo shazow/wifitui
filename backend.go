@@ -1,4 +1,5 @@
 //go:build !linux && !darwin && !mock
+
 package main
 
 import (
