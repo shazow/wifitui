@@ -208,3 +208,13 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	cmd = exec.Command("security", "add-generic-password", "-a", ssid, "-s", ssid, "-w", newPassword)
 	return cmd.Run()
 }
+
+// SetAutoConnect sets the autoconnect property for a known connection.
+func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
+	if autoConnect {
+		// FIXME: Re-adding a network to preferred requires security type, which we don't have here.
+		return fmt.Errorf("enabling autoconnect is not yet supported on darwin: %w", backend.ErrNotSupported)
+	}
+	cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.WifiInterface, ssid)
+	return cmd.Run()
+}

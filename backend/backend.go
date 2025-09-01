@@ -40,4 +40,6 @@ type Backend interface {
 	GetSecrets(ssid string) (string, error)
 	// UpdateSecret changes the password for a known connection.
 	UpdateSecret(ssid string, newPassword string) error
+	// SetAutoConnect sets the autoconnect property for a known connection.
+	SetAutoConnect(ssid string, autoConnect bool) error
 }

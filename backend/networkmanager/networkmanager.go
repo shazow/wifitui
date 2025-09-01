@@ -387,3 +387,23 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 
 	return conn.Update(settings)
 }
+
+func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
+	conn, ok := b.Connections[ssid]
+	if !ok {
+		return fmt.Errorf("connection not found for %s: %w", ssid, backend.ErrNotFound)
+	}
+
+	settings, err := conn.GetSettings()
+	if err != nil {
+		return err
+	}
+
+	if _, ok := settings["connection"]; !ok {
+		// This should not happen for a valid connection
+		settings["connection"] = make(map[string]interface{})
+	}
+	settings["connection"]["autoconnect"] = autoConnect
+
+	return conn.Update(settings)
+}
