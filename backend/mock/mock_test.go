@@ -207,3 +207,49 @@ func TestGetSecretsForKnownNetworkWithoutSecret(t *testing.T) {
 		t.Errorf("expected empty secret, got '%s'", secret)
 	}
 }
+
+func TestSetAutoConnect(t *testing.T) {
+	b, err := New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+
+	ssid := "Password is password"
+	err = b.SetAutoConnect(ssid, false)
+	if err != nil {
+		t.Fatalf("failed to set autoconnect to false: %v", err)
+	}
+
+	conns, err := b.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("failed to build network list: %v", err)
+	}
+
+	conn := findConnection(conns, ssid)
+	if conn == nil {
+		t.Fatalf("did not find network %s", ssid)
+	}
+
+	if conn.AutoConnect {
+		t.Errorf("expected autoconnect to be false, but it is true")
+	}
+
+	err = b.SetAutoConnect(ssid, true)
+	if err != nil {
+		t.Fatalf("failed to set autoconnect to true: %v", err)
+	}
+
+	conns, err = b.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("failed to build network list: %v", err)
+	}
+
+	conn = findConnection(conns, ssid)
+	if conn == nil {
+		t.Fatalf("did not find network %s", ssid)
+	}
+
+	if !conn.AutoConnect {
+		t.Errorf("expected autoconnect to be true, but it is false")
+	}
+}

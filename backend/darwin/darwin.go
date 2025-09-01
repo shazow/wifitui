@@ -213,7 +213,7 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 	if autoConnect {
 		// FIXME: Re-adding a network to preferred requires security type, which we don't have here.
-		return fmt.Errorf("enabling autoconnect is not yet supported on darwin")
+		return fmt.Errorf("enabling autoconnect is not yet supported on darwin: %w", backend.ErrNotSupported)
 	}
 	cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.WifiInterface, ssid)
 	return cmd.Run()
