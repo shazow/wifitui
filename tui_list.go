@@ -46,7 +46,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Truncate title if it's too long
 	if titleLen > ssidColumnWidth {
-		title = title[:ssidColumnWidth-3] + "…"
+		title = title[:ssidColumnWidth-1] + "…"
 		titleLen = ssidColumnWidth
 	}
 	padding := strings.Repeat(" ", ssidColumnWidth-titleLen)
