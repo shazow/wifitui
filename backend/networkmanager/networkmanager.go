@@ -385,6 +385,11 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	}
 	settings["802-11-wireless-security"]["psk"] = newPassword
 
+	// Workaround for a type issue with NetworkManager's D-Bus API.
+	if ipv6Settings, ok := settings["ipv6"]; ok {
+		delete(ipv6Settings, "addresses")
+	}
+
 	return conn.Update(settings)
 }
 
@@ -404,6 +409,11 @@ func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 		settings["connection"] = make(map[string]interface{})
 	}
 	settings["connection"]["autoconnect"] = autoConnect
+
+	// Workaround for a type issue with NetworkManager's D-Bus API.
+	if ipv6Settings, ok := settings["ipv6"]; ok {
+		delete(ipv6Settings, "addresses")
+	}
 
 	return conn.Update(settings)
 }
