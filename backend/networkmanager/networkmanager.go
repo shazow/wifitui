@@ -390,11 +390,22 @@ func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 		return fmt.Errorf("connection not found for %s: %w", ssid, backend.ErrNotFound)
 	}
 
-	newSettings := map[string]map[string]interface{}{
-		"connection": {
-			"autoconnect": autoConnect,
-		},
+	settings, err := conn.GetSettings()
+	if err != nil {
+		return err
 	}
 
-	return conn.Update(newSettings)
+	if _, ok := settings["connection"]; !ok {
+		// This should not happen for a valid connection
+		settings["connection"] = make(map[string]interface{})
+	}
+	settings["connection"]["autoconnect"] = autoConnect
+
+	// Workaround for a type issue with NetworkManager's D-Bus API.
+	if ipv6Settings, ok := settings["ipv6"]; ok {
+		delete(ipv6Settings, "addresses")
+		delete(ipv6Settings, "routes")
+	}
+
+	return conn.Update(settings)
 }
