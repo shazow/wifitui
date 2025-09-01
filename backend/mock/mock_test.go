@@ -174,3 +174,23 @@ func TestUpdateSecret(t *testing.T) {
 		t.Fatal("UpdateSecret() with non-existent network should have failed, but did not")
 	}
 }
+
+func TestJoinExistingNetworkWithoutPasswordThenGetSecrets(t *testing.T) {
+	b, _ := New()
+	ssid := "TacoBoutAGoodSignal" // This network exists but is not initially known and has no secret
+
+	// Simulate joining an existing network without providing a password
+	err := b.JoinNetwork(ssid, "", backend.SecurityWPA, false)
+	if err != nil {
+		t.Fatalf("JoinNetwork() failed: %v", err)
+	}
+
+	// Now try to get secrets for it
+	secret, err := b.GetSecrets(ssid)
+	if err != nil {
+		t.Fatalf("GetSecrets() failed: %v", err) // This is where the original bug would manifest
+	}
+	if secret != "" {
+		t.Errorf("expected empty secret, got %s", secret)
+	}
+}

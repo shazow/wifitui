@@ -134,13 +134,13 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 	if c == nil {
 		// Not found, create a new one
 		m.Connections = append(m.Connections, backend.Connection{
-			SSID: ssid,
+			SSID:     ssid,
+			Security: security,
 		})
 		c = &m.Connections[len(m.Connections)-1]
 	}
 
 	c.IsKnown = true
-	c.Security = security
 
 	if password != "" {
 		if m.Secrets == nil {
