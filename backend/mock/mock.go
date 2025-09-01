@@ -68,14 +68,13 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 	return m.Connections, nil
 }
 
-func (m *MockBackend) ActivateConnection(ssid string) error {
-	if m.ActivateError != nil {
-		return m.ActivateError
-	}
+func (m *MockBackend) Connect(ssid string) error {
 	found := false
 	for i := range m.Connections {
 		if m.Connections[i].SSID == ssid {
 			m.Connections[i].IsActive = true
+			now := time.Now()
+			m.Connections[i].LastConnected = &now
 			found = true
 		} else {
 			m.Connections[i].IsActive = false
@@ -87,31 +86,70 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 	return nil
 }
 
+func (m *MockBackend) ActivateConnection(ssid string) error {
+	if m.ActivateError != nil {
+		return m.ActivateError
+	}
+	return m.Connect(ssid)
+}
+
 func (m *MockBackend) ForgetNetwork(ssid string) error {
-	return m.ForgetError
+	if m.ForgetError != nil {
+		return m.ForgetError
+	}
+
+	// Find existing network and remove it
+	var newConnections []backend.Connection
+	found := false
+	for _, c := range m.Connections {
+		if c.SSID == ssid {
+			found = true
+		} else {
+			newConnections = append(newConnections, c)
+		}
+	}
+
+	if found {
+		m.Connections = newConnections
+		delete(m.Secrets, ssid)
+		return nil
+	}
+
+	return fmt.Errorf("network not found: %s", ssid)
 }
 
 func (m *MockBackend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
 	if m.JoinError != nil {
 		return m.JoinError
 	}
-	// Deactivate all other networks
+
+	// Find existing network or create a new one
+	var c *backend.Connection
 	for i := range m.Connections {
-		m.Connections[i].IsActive = false
+		if m.Connections[i].SSID == ssid {
+			c = &m.Connections[i]
+			break
+		}
 	}
-	m.Connections = append(m.Connections, backend.Connection{
-		SSID:     ssid,
-		IsActive: true,
-		IsKnown:  true,
-		Security: security,
-	})
+	if c == nil {
+		// Not found, create a new one
+		m.Connections = append(m.Connections, backend.Connection{
+			SSID: ssid,
+		})
+		c = &m.Connections[len(m.Connections)-1]
+	}
+
+	c.IsKnown = true
+	c.Security = security
+
 	if password != "" {
 		if m.Secrets == nil {
 			m.Secrets = make(map[string]string)
 		}
 		m.Secrets[ssid] = password
 	}
-	return nil
+
+	return m.Connect(ssid)
 }
 
 func (m *MockBackend) GetSecrets(ssid string) (string, error) {
@@ -126,5 +164,12 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 }
 
 func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
-	return m.UpdateSecretError
+	if m.UpdateSecretError != nil {
+		return m.UpdateSecretError
+	}
+	if _, ok := m.Secrets[ssid]; ok {
+		m.Secrets[ssid] = newPassword
+		return nil
+	}
+	return fmt.Errorf("no secrets for %s", ssid)
 }
