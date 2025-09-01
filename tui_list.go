@@ -36,11 +36,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	case backend.SecurityOpen:
 		icon = "🔓 "
 	default:
-		if i.IsKnown {
-			icon = "🔐 "
-		} else {
-			icon = "🔒 "
-		}
+		icon = "🔒 "
 	}
 	title = icon + title
 
