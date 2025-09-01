@@ -175,22 +175,45 @@ func TestUpdateSecret(t *testing.T) {
 	}
 }
 
-func TestJoinExistingNetworkWithoutPasswordThenGetSecrets(t *testing.T) {
-	b, _ := New()
-	ssid := "TacoBoutAGoodSignal" // This network exists but is not initially known and has no secret
-
-	// Simulate joining an existing network without providing a password
-	err := b.JoinNetwork(ssid, "", backend.SecurityWPA, false)
-	if err != nil {
-		t.Fatalf("JoinNetwork() failed: %v", err)
+func TestGetSecretsForKnownNetworkWithoutSecret(t *testing.T) {
+	testCases := []struct {
+		name         string
+		ssid         string
+		security     backend.SecurityType
+		joinPassword string
+	}{
+		{
+			name:         "Open network",
+			ssid:         "Unencrypted_Honeypot",
+			security:     backend.SecurityOpen,
+			joinPassword: "",
+		},
+		{
+			name:         "Secure network joined without password",
+			ssid:         "TacoBoutAGoodSignal",
+			security:     backend.SecurityWPA,
+			joinPassword: "",
+		},
 	}
 
-	// Now try to get secrets for it
-	secret, err := b.GetSecrets(ssid)
-	if err != nil {
-		t.Fatalf("GetSecrets() failed: %v", err) // This is where the original bug would manifest
-	}
-	if secret != "" {
-		t.Errorf("expected empty secret, got %s", secret)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			b, _ := New()
+
+			// Simulate joining the network to make it "known"
+			err := b.JoinNetwork(tc.ssid, tc.joinPassword, tc.security, false)
+			if err != nil {
+				t.Fatalf("JoinNetwork() failed: %v", err)
+			}
+
+			// Now try to get secrets for it, which should succeed even without a password
+			secret, err := b.GetSecrets(tc.ssid)
+			if err != nil {
+				t.Fatalf("GetSecrets() failed: %v", err)
+			}
+			if secret != "" {
+				t.Errorf("expected empty secret, got '%s'", secret)
+			}
+		})
 	}
 }

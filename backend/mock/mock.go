@@ -157,10 +157,19 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 		return "", m.GetSecretsError
 	}
 	secret, ok := m.Secrets[ssid]
-	if !ok {
-		return "", fmt.Errorf("no secrets for %s: %w", ssid, backend.ErrNotFound)
+	if ok {
+		return secret, nil
 	}
-	return secret, nil
+
+	// If no secret is found, check if the network is known.
+	// This is to handle cases like open networks that are saved.
+	for _, c := range m.Connections {
+		if c.SSID == ssid && c.IsKnown {
+			return "", nil
+		}
+	}
+
+	return "", fmt.Errorf("no secrets for %s: %w", ssid, backend.ErrNotFound)
 }
 
 func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
