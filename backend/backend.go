@@ -6,7 +6,8 @@ import "time"
 type SecurityType int
 
 const (
-	SecurityOpen SecurityType = iota
+	SecurityUnknown SecurityType = iota
+	SecurityOpen
 	SecurityWEP
 	SecurityWPA
 )

@@ -10,39 +10,39 @@ import (
 
 // MockBackend is a mock implementation of the backend.Backend interface for testing.
 type MockBackend struct {
-	Connections     []backend.Connection
-	Secrets         map[string]string
-	ActivateError   error
-	ForgetError     error
-	JoinError       error
-	GetSecretsError error
+	Connections       []backend.Connection
+	Secrets           map[string]string
+	ActivateError     error
+	ForgetError       error
+	JoinError         error
+	GetSecretsError   error
 	UpdateSecretError error
 }
 
 func ago(duration time.Duration) *time.Time {
 	t := time.Now().Add(-duration)
-	return &t;
+	return &t
 }
 
 // NewBackend creates a new mock.Backend with a list of fun wifi networks.
 func New() (backend.Backend, error) {
 	connections := []backend.Connection{
-		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), Security: backend.SecurityWPA},
+		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), IsKnown: true, Security: backend.SecurityWPA},
 		{SSID: "GET off my LAN", Security: backend.SecurityWPA},
-		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWPA},
+		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWEP},
 		{SSID: "Unencrypted_Honeypot", Security: backend.SecurityOpen},
 		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: backend.SecurityWPA},
-		{SSID: "I See Dead Packets", Security: backend.SecurityWPA},
+		{SSID: "I See Dead Packets", Security: backend.SecurityWEP},
 		{SSID: "Dunder MiffLAN", Security: backend.SecurityWPA},
 		{SSID: "Police Surveillance 2", Strength: 48, Security: backend.SecurityWPA},
-		{SSID: "I Believe Wi Can Fi", Security: backend.SecurityWPA},
-		{SSID: "Hot singles in your area", Security: backend.SecurityOpen},
-		{SSID: "Password is password", Security: backend.SecurityWPA},
+		{SSID: "I Believe Wi Can Fi", Security: backend.SecurityWEP},
+		{SSID: "Hot singles in your area", Security: backend.SecurityWPA},
+		{SSID: "Password is password", IsKnown: true, Security: backend.SecurityWPA},
 		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: backend.SecurityWPA},
-		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWPA},
+		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWEP},
 		{SSID: "xX_D4rkR0ut3r_Xx", Security: backend.SecurityWPA},
-		{SSID: "Luke I am your WiFi", Security: backend.SecurityWPA},
-		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityOpen},
+		{SSID: "Luke I am your WiFi", Security: backend.SecurityWEP},
+		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityWPA},
 	}
 	secrets := map[string]string{
 		"Password is password": "password",
@@ -60,7 +60,7 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 	s := rand.NewSource(time.Now().Unix())
 	r := rand.New(s)
 	for i := range m.Connections {
-		if (m.Connections[i].Strength > 0) {
+		if m.Connections[i].Strength > 0 {
 			// Only randomize if we have a strength already
 			m.Connections[i].Strength = uint8(r.Intn(70) + 30)
 		}
@@ -103,6 +103,7 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 		SSID:     ssid,
 		IsActive: true,
 		IsKnown:  true,
+		Security: security,
 	})
 	if password != "" {
 		if m.Secrets == nil {

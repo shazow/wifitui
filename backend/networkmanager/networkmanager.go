@@ -284,11 +284,11 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 
 	connection := map[string]map[string]interface{}{
 		"connection": {
-			"id":               ssid,
-			"uuid":             uuid.New().String(),
-			"type":             "802-11-wireless",
-			"interface-name":   deviceInterface,
-			"autoconnect":      false,
+			"id":             ssid,
+			"uuid":           uuid.New().String(),
+			"type":           "802-11-wireless",
+			"interface-name": deviceInterface,
+			"autoconnect":    false,
 		},
 		"802-11-wireless": {
 			"mode": "infrastructure",
