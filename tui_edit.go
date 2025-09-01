@@ -65,9 +65,13 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Cycle through SSID, password, security, and buttons
 				switch m.editFocus {
 				case focusSSID:
-					m.editFocus = focusInput
+					if m.showEditPassphrase() {
+						m.editFocus = focusInput
+						m.passwordInput.Focus()
+					} else {
+						m.editFocus = focusSecurity
+					}
 					m.ssidInput.Blur()
-					m.passwordInput.Focus()
 				case focusInput:
 					m.editFocus = focusSecurity
 					m.passwordInput.Blur()
@@ -79,21 +83,24 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				// Cycle through password and buttons
-				if m.editFocus == focusInput {
-					m.editFocus = focusButtons
-					m.passwordInput.Blur()
-					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
-						m.passwordRevealed = false
-						m.passwordInput.EchoMode = textinput.EchoPassword
-					}
-				} else {
-					m.editFocus = focusInput
-					m.passwordInput.Focus()
-					if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
-						m.passwordRevealed = true
-						m.passwordInput.EchoMode = textinput.EchoNormal
+				if m.showEditPassphrase() {
+					if m.editFocus == focusInput {
+						m.editFocus = focusButtons
+						m.passwordInput.Blur()
+						if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+							m.passwordRevealed = false
+							m.passwordInput.EchoMode = textinput.EchoPassword
+						}
+					} else {
+						m.editFocus = focusInput
+						m.passwordInput.Focus()
+						if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
+							m.passwordRevealed = true
+							m.passwordInput.EchoMode = textinput.EchoNormal
+						}
 					}
 				}
+				// If passphrase is not shown, tabbing does nothing.
 			}
 		case "esc":
 			m.state = stateListView
@@ -269,21 +276,23 @@ func (m model) viewEditView() string {
 	}
 
 	// --- Input field ---
-	s.WriteString("Passphrase (optional for open networks):\n")
-	var inputView string
-	if m.editFocus == focusInput {
-		inputView = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder(), true).
-			BorderForeground(lipgloss.Color("205")).
-			Padding(0, 1).
-			Render(m.passwordInput.View())
-	} else {
-		inputView = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder(), true).
-			Padding(0, 1).
-			Render(m.passwordInput.View())
+	if m.showEditPassphrase() {
+		s.WriteString("Passphrase:\n")
+		var inputView string
+		if m.editFocus == focusInput {
+			inputView = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder(), true).
+				BorderForeground(lipgloss.Color("205")).
+				Padding(0, 1).
+				Render(m.passwordInput.View())
+		} else {
+			inputView = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder(), true).
+				Padding(0, 1).
+				Render(m.passwordInput.View())
+		}
+		s.WriteString(inputView)
 	}
-	s.WriteString(inputView)
 
 	// --- Security Selection ---
 	if m.selectedItem.SSID == "" {
@@ -337,4 +346,12 @@ func (m model) viewEditView() string {
 		}
 	}
 	return s.String()
+}
+
+func (m model) showEditPassphrase() bool {
+	isNew := m.selectedItem.SSID == ""
+	if isNew {
+		return backend.SecurityType(m.editSecuritySelection) != backend.SecurityOpen
+	}
+	return m.selectedItem.Security != backend.SecurityOpen
 }
