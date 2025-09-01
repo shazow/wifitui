@@ -37,14 +37,17 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.editFocus = focusButtons
 				return m, tea.Batch(cmds...)
 			case "enter":
-				// let the input handle it as well
 				if m.editFocus == focusSSID {
+					// let the input handle it as well
 					m.ssidInput, cmd = m.ssidInput.Update(msg)
+					cmds = append(cmds, cmd)
+					// and continue to allow any view-level enter behavior if needed
 				} else {
-					m.passwordInput, cmd = m.passwordInput.Update(msg)
+					// For password, we just want to change focus
+					m.passwordInput.Blur()
+					m.editFocus = focusButtons
+					return m, tea.Batch(cmds...)
 				}
-				cmds = append(cmds, cmd)
-				// and continue to allow any view-level enter behavior if needed
 			default:
 				// Forward to the focused input and return immediately
 				if m.editFocus == focusSSID {

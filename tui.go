@@ -215,6 +215,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.passwordInput.EchoMode = textinput.EchoNormal
 			m.passwordInput.Placeholder = ""
+			m.editFocus = focusButtons
+			m.editSelectedButton = 0 // "Connect"
 		}
 		m.state = stateEditView
 	case connectionSavedMsg:

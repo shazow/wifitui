@@ -184,10 +184,11 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMessage = fmt.Sprintf("Editing network %s", m.selectedItem.SSID)
 					m.errorMessage = ""
 					m.passwordInput.SetValue("")
-					m.editFocus = focusButtons // Default focus to buttons
 					if selected.IsSecure {
 						m.passwordInput.Focus()
 						m.editFocus = focusInput
+					} else {
+						m.editFocus = focusButtons // Default focus to buttons
 					}
 					m.editSelectedButton = 0
 				}
