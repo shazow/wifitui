@@ -49,6 +49,9 @@ func TestRunShow(t *testing.T) {
 	if !strings.Contains(output, "Passphrase: password") {
 		t.Errorf("runShow() output missing passphrase. got=%q", output)
 	}
+	if !strings.Contains(output, "AutoConnect: true") {
+		t.Errorf("runShow() output missing AutoConnect. got=%q", output)
+	}
 
 	// Test case: network found, but not known (no secret)
 	buf.Reset()
@@ -138,6 +141,9 @@ func TestRunShowJSON(t *testing.T) {
 	}
 	if connWithSecretData.Passphrase != "password" {
 		t.Errorf("runShow() JSON output has wrong passphrase. got=%q", connWithSecretData.Passphrase)
+	}
+	if !connWithSecretData.AutoConnect {
+		t.Errorf("runShow() JSON output has wrong AutoConnect. got=%v", connWithSecretData.AutoConnect)
 	}
 
 	// Test case: network found, but not known (no secret)

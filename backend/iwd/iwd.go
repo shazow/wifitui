@@ -226,7 +226,6 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 		return err
 	}
 
-	// After connecting, set AutoConnect to true
 	return b.setAutoConnect(ssid, true)
 }
 
@@ -258,8 +257,7 @@ func (b *Backend) setAutoConnect(ssid string, autoConnect bool) error {
 		return err
 	}
 	if path == "" {
-		// This can happen if the network is not saved, so we don't treat it as an error.
-		return nil
+		return fmt.Errorf("cannot set autoconnect: network %s is not known", ssid)
 	}
 
 	obj := conn.Object(iwdDest, path)

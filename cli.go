@@ -34,6 +34,9 @@ func formatConnection(c backend.Connection) string {
 	if c.IsActive {
 		parts = append(parts, "active")
 	}
+	if c.AutoConnect {
+		parts = append(parts, "autoconnect")
+	}
 
 	return strings.Join(parts, ", ")
 }
@@ -98,6 +101,7 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 			fmt.Fprintf(w, "Visible: %t\n", c.IsVisible)
 			fmt.Fprintf(w, "Hidden: %t\n", c.IsHidden)
 			fmt.Fprintf(w, "Strength: %d%%\n", c.Strength)
+			fmt.Fprintf(w, "AutoConnect: %t\n", c.AutoConnect)
 			if c.LastConnected != nil {
 				fmt.Fprintf(w, "Last Connected: %s\n", formatDuration(*c.LastConnected))
 			}
