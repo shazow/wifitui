@@ -72,7 +72,7 @@ func TestRunShow(t *testing.T) {
 		if err == nil {
 			t.Fatalf("runShow() with not found network should have failed, but did not")
 		}
-		if !strings.Contains(err.Error(), "network not found: " + doesNotExist) {
+		if !strings.Contains(err.Error(), "network not found: "+doesNotExist) {
 			t.Errorf("runShow() with not found network gave wrong error. got=%q", err)
 		}
 	}

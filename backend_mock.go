@@ -1,4 +1,5 @@
 //go:build mock
+
 package main
 
 import (
