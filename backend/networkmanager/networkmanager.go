@@ -369,6 +369,29 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 	return "", nil
 }
 
+// applyUpdateWorkaround modifies the settings map to workaround D-Bus type errors.
+//
+// NetworkManager's D-Bus API can return ipv6.addresses and ipv6.routes as an
+// array of array of variants ('aav'), but expects them as an array of structs
+// on update ('a(ayuay)' for addresses and 'a(ayuayu)' for routes). This causes
+// a type mismatch error when calling the Update method with settings that
+// were previously fetched from the API.
+//
+// To avoid this, we remove these properties from the settings map before
+// updating the connection. This is safe because the operations that use this
+// workaround are only intended to modify other properties of the connection.
+//
+// This workaround can be removed if the underlying D-Bus library
+// (e.g., github.com/Wifx/gonetworkmanager) is updated to correctly handle
+// these types, or if NetworkManager's D-Bus API is changed to be more
+// tolerant of this type mismatch.
+func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
+	if ipv6Settings, ok := settings["ipv6"]; ok {
+		delete(ipv6Settings, "addresses")
+		delete(ipv6Settings, "routes")
+	}
+}
+
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
@@ -385,12 +408,7 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	}
 	settings["802-11-wireless-security"]["psk"] = newPassword
 
-	// Workaround for a type issue with NetworkManager's D-Bus API.
-	if ipv6Settings, ok := settings["ipv6"]; ok {
-		delete(ipv6Settings, "addresses")
-		delete(ipv6Settings, "routes")
-	}
-
+	applyUpdateWorkaround(settings)
 	return conn.Update(settings)
 }
 
@@ -411,11 +429,6 @@ func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 	}
 	settings["connection"]["autoconnect"] = autoConnect
 
-	// Workaround for a type issue with NetworkManager's D-Bus API.
-	if ipv6Settings, ok := settings["ipv6"]; ok {
-		delete(ipv6Settings, "addresses")
-		delete(ipv6Settings, "routes")
-	}
-
+	applyUpdateWorkaround(settings)
 	return conn.Update(settings)
 }
