@@ -375,13 +375,23 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 		return fmt.Errorf("connection not found for %s: %w", ssid, backend.ErrNotFound)
 	}
 
-	newSettings := map[string]map[string]interface{}{
-		"802-11-wireless-security": {
-			"psk": newPassword,
-		},
+	settings, err := conn.GetSettings()
+	if err != nil {
+		return err
 	}
 
-	return conn.Update(newSettings)
+	if _, ok := settings["802-11-wireless-security"]; !ok {
+		settings["802-11-wireless-security"] = make(map[string]interface{})
+	}
+	settings["802-11-wireless-security"]["psk"] = newPassword
+
+	// Workaround for a type issue with NetworkManager's D-Bus API.
+	if ipv6Settings, ok := settings["ipv6"]; ok {
+		delete(ipv6Settings, "addresses")
+		delete(ipv6Settings, "routes")
+	}
+
+	return conn.Update(settings)
 }
 
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
