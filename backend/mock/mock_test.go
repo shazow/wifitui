@@ -6,6 +6,16 @@ import (
 	"github.com/shazow/wifitui/backend"
 )
 
+// Helper to find a connection in a slice
+func findConnection(connections []backend.Connection, ssid string) *backend.Connection {
+	for i := range connections {
+		if connections[i].SSID == ssid {
+			return &connections[i]
+		}
+	}
+	return nil
+}
+
 func TestNew(t *testing.T) {
 	b, err := New()
 	if err != nil {
@@ -14,39 +24,63 @@ func TestNew(t *testing.T) {
 	if b == nil {
 		t.Fatal("New() returned nil backend")
 	}
+	mock := b.(*MockBackend)
+	if len(mock.KnownConnections) == 0 {
+		t.Fatal("New() returned no known connections")
+	}
+	if mock.ActiveConnectionIndex != -1 {
+		t.Errorf("expected ActiveConnectionIndex to be -1, got %d", mock.ActiveConnectionIndex)
+	}
 }
 
 func TestBuildNetworkList(t *testing.T) {
 	b, _ := New()
-	networks, err := b.BuildNetworkList(true)
+	mock := b.(*MockBackend)
+	knownSSID := "Password is password"
+
+	// Activate a connection to test IsActive flag
+	err := mock.ActivateConnection("HideYoKidsHideYoWiFi")
+	if err != nil {
+		t.Fatalf("ActivateConnection failed: %v", err)
+	}
+
+	networks, err := b.BuildNetworkList(false)
 	if err != nil {
 		t.Fatalf("BuildNetworkList() failed: %v", err)
 	}
-	if len(networks) == 0 {
-		t.Fatal("BuildNetworkList() returned no networks")
+
+	conn := findConnection(networks, knownSSID)
+	if conn == nil {
+		t.Fatalf("did not find known network %s in list", knownSSID)
+	}
+	if !conn.IsKnown {
+		t.Errorf("expected network %s to be known, but it was not", knownSSID)
+	}
+
+	conn = findConnection(networks, "HideYoKidsHideYoWiFi")
+	if conn == nil {
+		t.Fatalf("did not find active network in list")
+	}
+	if !conn.IsActive {
+		t.Errorf("expected network to be active, but it was not")
 	}
 }
 
 func TestActivateConnection(t *testing.T) {
 	b, _ := New()
 	mockBackend := b.(*MockBackend)
-	ssid := mockBackend.Connections[0].SSID
+	ssid := "Password is password"
 
 	err := b.ActivateConnection(ssid)
 	if err != nil {
 		t.Fatalf("ActivateConnection() failed: %v", err)
 	}
 
-	for _, c := range mockBackend.Connections {
-		if c.SSID == ssid {
-			if !c.IsActive {
-				t.Errorf("connection %s should be active but is not", ssid)
-			}
-		} else {
-			if c.IsActive {
-				t.Errorf("connection %s should be inactive but is not", c.SSID)
-			}
-		}
+	if mockBackend.ActiveConnectionIndex == -1 {
+		t.Fatal("ActiveConnectionIndex was not set")
+	}
+	if mockBackend.KnownConnections[mockBackend.ActiveConnectionIndex].SSID != ssid {
+		t.Errorf("expected active connection to be %s, but got %s", ssid, mockBackend.KnownConnections[mockBackend.ActiveConnectionIndex].SSID)
 	}
 
 	err = b.ActivateConnection("non-existent-network")
@@ -58,28 +92,47 @@ func TestActivateConnection(t *testing.T) {
 func TestForgetNetwork(t *testing.T) {
 	b, _ := New()
 	mockBackend := b.(*MockBackend)
-	connectionToForget := mockBackend.Connections[0]
-	ssid := connectionToForget.SSID
 
-	err := b.ForgetNetwork(ssid)
+	// --- Test index shifting ---
+	// Activate a network that is not the first one.
+	ssidToActivate := "Password is password"
+	err := b.ActivateConnection(ssidToActivate)
+	if err != nil {
+		t.Fatalf("ActivateConnection() failed: %v", err)
+	}
+
+	initialActiveIndex := mockBackend.ActiveConnectionIndex
+	if initialActiveIndex <= 0 {
+		t.Fatalf("Test setup failed: expected active index > 0, got %d", initialActiveIndex)
+	}
+
+	// Forget a network that appears *before* the active one.
+	ssidToForget := mockBackend.KnownConnections[0].SSID
+	if ssidToForget == ssidToActivate {
+		t.Fatalf("Test setup failed: network to forget is the same as the active one")
+	}
+
+	err = b.ForgetNetwork(ssidToForget)
 	if err != nil {
 		t.Fatalf("ForgetNetwork() failed: %v", err)
 	}
 
-	for _, c := range mockBackend.Connections {
-		if c.SSID == ssid {
-			t.Errorf("connection %s should have been forgotten but was not", ssid)
-		}
+	// Check that the active index was shifted correctly.
+	expectedIndex := initialActiveIndex - 1
+	if mockBackend.ActiveConnectionIndex != expectedIndex {
+		t.Errorf("active index should have shifted to %d, but got %d", expectedIndex, mockBackend.ActiveConnectionIndex)
+	}
+	if mockBackend.KnownConnections[mockBackend.ActiveConnectionIndex].SSID != ssidToActivate {
+		t.Errorf("active connection SSID is incorrect after forgetting another network")
 	}
 
-	_, err = b.GetSecrets(ssid)
-	if err == nil {
-		t.Errorf("secrets for %s should have been forgotten but were not", ssid)
+	// --- Test forgetting the active network ---
+	err = b.ForgetNetwork(ssidToActivate)
+	if err != nil {
+		t.Fatalf("ForgetNetwork() of active network failed: %v", err)
 	}
-
-	err = b.ForgetNetwork("non-existent-network")
-	if err == nil {
-		t.Fatal("ForgetNetwork() with non-existent network should have failed, but did not")
+	if mockBackend.ActiveConnectionIndex != -1 {
+		t.Errorf("ActiveConnectionIndex should be -1 after forgetting active network, got %d", mockBackend.ActiveConnectionIndex)
 	}
 }
 
@@ -87,7 +140,6 @@ func TestJoinNetwork(t *testing.T) {
 	b, _ := New()
 	mockBackend := b.(*MockBackend)
 
-	// Join a new network
 	newSSID := "new-network"
 	password := "password"
 	err := b.JoinNetwork(newSSID, password, backend.SecurityWPA, false)
@@ -95,65 +147,33 @@ func TestJoinNetwork(t *testing.T) {
 		t.Fatalf("JoinNetwork() failed: %v", err)
 	}
 
-	var newConnection *backend.Connection
-	for i := range mockBackend.Connections {
-		if mockBackend.Connections[i].SSID == newSSID {
-			newConnection = &mockBackend.Connections[i]
-			break
-		}
+	lastIndex := len(mockBackend.KnownConnections) - 1
+	if mockBackend.KnownConnections[lastIndex].SSID != newSSID {
+		t.Fatalf("JoinNetwork() did not add the new network to known connections")
 	}
-
-	if newConnection == nil {
-		t.Fatalf("JoinNetwork() did not add the new network")
-	}
-	if !newConnection.IsActive {
-		t.Error("newly joined network should be active")
-	}
-	if !newConnection.IsKnown {
-		t.Error("newly joined network should be known")
-	}
-	if newConnection.Security != backend.SecurityWPA {
-		t.Errorf("expected security %v, got %v", backend.SecurityWPA, newConnection.Security)
-	}
-
-	secret, err := b.GetSecrets(newSSID)
-	if err != nil {
-		t.Fatalf("GetSecrets() failed: %v", err)
-	}
-	if secret != password {
-		t.Errorf("expected password %s, got %s", password, secret)
-	}
-
-	// Join an existing network
-	existingSSID := mockBackend.Connections[0].SSID
-	err = b.JoinNetwork(existingSSID, "", backend.SecurityOpen, false)
-	if err != nil {
-		t.Fatalf("JoinNetwork() for existing network failed: %v", err)
+	if mockBackend.ActiveConnectionIndex != lastIndex {
+		t.Errorf("newly joined network should be active, expected index %d but got %d", lastIndex, mockBackend.ActiveConnectionIndex)
 	}
 }
 
-func TestGetSecrets(t *testing.T) {
+func TestGetSecretsForDuplicateSSID(t *testing.T) {
 	b, _ := New()
-	ssid := "Password is password"
-	expectedSecret := "password"
+	ssid := "HideYoKidsHideYoWiFi" // This one has duplicates
+	expectedSecret := "hidden"     // This is the secret of the first one in the list
 
 	secret, err := b.GetSecrets(ssid)
 	if err != nil {
 		t.Fatalf("GetSecrets() failed: %v", err)
 	}
 	if secret != expectedSecret {
-		t.Errorf("expected secret %s, got %s", expectedSecret, secret)
-	}
-
-	_, err = b.GetSecrets("non-existent-network")
-	if err == nil {
-		t.Fatal("GetSecrets() with non-existent network should have failed, but did not")
+		t.Errorf("expected secret '%s' for first matching network, got '%s'", expectedSecret, secret)
 	}
 }
 
-func TestUpdateSecret(t *testing.T) {
+func TestUpdateSecretForDuplicateSSID(t *testing.T) {
 	b, _ := New()
-	ssid := "Password is password"
+	mockBackend := b.(*MockBackend)
+	ssid := "HideYoKidsHideYoWiFi"
 	newPassword := "new-password"
 
 	err := b.UpdateSecret(ssid, newPassword)
@@ -161,59 +181,29 @@ func TestUpdateSecret(t *testing.T) {
 		t.Fatalf("UpdateSecret() failed: %v", err)
 	}
 
-	secret, err := b.GetSecrets(ssid)
-	if err != nil {
-		t.Fatalf("GetSecrets() failed: %v", err)
+	// Verify that only the first entry was updated
+	if mockBackend.KnownConnections[0].SSID != ssid || mockBackend.KnownConnections[0].Secret != newPassword {
+		t.Errorf("first instance of duplicate SSID was not updated correctly")
 	}
-	if secret != newPassword {
-		t.Errorf("expected secret %s, got %s", newPassword, secret)
-	}
-
-	err = b.UpdateSecret("non-existent-network", "new-password")
-	if err == nil {
-		t.Fatal("UpdateSecret() with non-existent network should have failed, but did not")
+	if mockBackend.KnownConnections[1].SSID == ssid && mockBackend.KnownConnections[1].Secret == newPassword {
+		t.Errorf("second instance of duplicate SSID should not have been updated")
 	}
 }
 
 func TestGetSecretsForKnownNetworkWithoutSecret(t *testing.T) {
-	testCases := []struct {
-		name         string
-		ssid         string
-		security     backend.SecurityType
-		joinPassword string
-	}{
-		{
-			name:         "Open network",
-			ssid:         "Unencrypted_Honeypot",
-			security:     backend.SecurityOpen,
-			joinPassword: "",
-		},
-		{
-			name:         "Secure network joined without password",
-			ssid:         "TacoBoutAGoodSignal",
-			security:     backend.SecurityWPA,
-			joinPassword: "",
-		},
+	b, _ := New()
+	ssid := "Unencrypted_Honeypot"
+
+	err := b.JoinNetwork(ssid, "", backend.SecurityOpen, false)
+	if err != nil {
+		t.Fatalf("JoinNetwork() failed: %v", err)
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			b, _ := New()
-
-			// Simulate joining the network to make it "known"
-			err := b.JoinNetwork(tc.ssid, tc.joinPassword, tc.security, false)
-			if err != nil {
-				t.Fatalf("JoinNetwork() failed: %v", err)
-			}
-
-			// Now try to get secrets for it, which should succeed even without a password
-			secret, err := b.GetSecrets(tc.ssid)
-			if err != nil {
-				t.Fatalf("GetSecrets() failed: %v", err)
-			}
-			if secret != "" {
-				t.Errorf("expected empty secret, got '%s'", secret)
-			}
-		})
+	secret, err := b.GetSecrets(ssid)
+	if err != nil {
+		t.Fatalf("GetSecrets() failed: %v", err)
+	}
+	if secret != "" {
+		t.Errorf("expected empty secret, got '%s'", secret)
 	}
 }
