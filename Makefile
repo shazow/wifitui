@@ -11,14 +11,14 @@ $(BINARY): *.go
 
 build: $(BINARY)
 
-mock:
-	go build -tags mock .
-
 clean:
 	rm $(BINARY)
 
 run: $(BINARY)
 	go run .
+
+mock:
+	go run -tags mock .
 
 test:
 	go test -race -test.timeout 5s ./...
