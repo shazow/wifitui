@@ -166,20 +166,17 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.pendingEditItem = &m.selectedItem
 					cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 				} else {
+					// For unknown networks, 'enter' should open the edit view
+					m.state = stateEditView
+					m.statusMessage = fmt.Sprintf("Editing network %s", m.selectedItem.SSID)
+					m.errorMessage = ""
+					m.passwordInput.SetValue("")
+					m.editFocus = focusButtons // Default focus to buttons
 					if selected.IsSecure {
-						m.state = stateEditView
-						m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
-						m.errorMessage = ""
-						m.passwordInput.SetValue("")
 						m.passwordInput.Focus()
 						m.editFocus = focusInput
-						m.editSelectedButton = 0
-					} else {
-						m.loading = true
-						m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-						m.errorMessage = ""
-						cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, "", backend.SecurityOpen, false))
 					}
+					m.editSelectedButton = 0
 				}
 			}
 		}
