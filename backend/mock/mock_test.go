@@ -6,6 +6,7 @@ import (
 	"github.com/shazow/wifitui/backend"
 )
 
+
 // Helper to find a connection in a slice
 func findConnection(connections []backend.Connection, ssid string) *backend.Connection {
 	for i := range connections {
@@ -252,4 +253,9 @@ func TestSetAutoConnect(t *testing.T) {
 	if !conn.AutoConnect {
 		t.Errorf("expected autoconnect to be true, but it is false")
 	}
+}
+
+func TestMain(m *testing.M) {
+	DefaultConnectSleep = 0
+	m.Run()
 }

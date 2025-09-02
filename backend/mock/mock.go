@@ -8,6 +8,8 @@ import (
 	"github.com/shazow/wifitui/backend"
 )
 
+var DefaultConnectSleep = 500 * time.Millisecond
+
 // mockConnection wraps a backend.Connection with mock-specific metadata.
 type mockConnection struct {
 	backend.Connection
@@ -21,9 +23,10 @@ type MockBackend struct {
 	ActiveConnectionIndex int
 	ActivateError         error
 	ForgetError           error
-	JoinError            error
-	GetSecretsError      error
-	UpdateSecretError    error
+	JoinError             error
+	GetSecretsError       error
+	UpdateSecretError     error
+	ConnectSleep          time.Duration
 }
 
 func ago(duration time.Duration) *time.Time {
@@ -81,6 +84,7 @@ func New() (backend.Backend, error) {
 		VisibleConnections:    initialConnections,
 		KnownConnections:      knownConnections,
 		ActiveConnectionIndex: -1, // No connection active initially
+		ConnectSleep:          DefaultConnectSleep,
 	}, nil
 }
 
@@ -144,7 +148,7 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 	if m.ActivateError != nil {
 		return m.ActivateError
 	}
-	time.Sleep(1 * time.Second)
+	time.Sleep(m.ConnectSleep)
 	// "Act on first match" logic for ambiguity.
 	for i, c := range m.KnownConnections {
 		if c.SSID == ssid {
@@ -225,6 +229,8 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 		}
 	}
 
+	time.Sleep(m.ConnectSleep)
+
 	c.IsKnown = true
 	c.AutoConnect = true
 	newConnection := mockConnection{
@@ -251,7 +257,6 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 	}
 	return "", fmt.Errorf("no secrets for %s: %w", ssid, backend.ErrNotFound)
 }
-
 
 func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
 	if m.UpdateSecretError != nil {
