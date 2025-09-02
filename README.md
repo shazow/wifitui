@@ -2,6 +2,8 @@
 
 A replacement for `nmtui`.
 
+<img width="821.5" height="395.5" alt="image" src="https://github.com/user-attachments/assets/0982a201-0b41-4c52-a80e-7cf24915c763" />
+
 `wifitui` is a cute wifi TUI that can:
 - [x] **Works with NetworkManager over dbus**
 - [x] Show all saved and visible networks
