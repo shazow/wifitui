@@ -27,6 +27,7 @@ More things I'd like to do:
 Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not maintained package managers yet](https://github.com/shazow/wifitui/issues/48)):
 
 ```shell
+# Fetch the latest release version
 TAG=$(curl -s https://api.github.com/repos/shazow/wifitui/releases/latest | grep "tag_name" | cut -d '"' -f4)
 
 # Arch Linux
@@ -37,7 +38,7 @@ sudo apt install https://github.com/shazow/wifitui/releases/download/$TAG/wifitu
 ```
 
 
-Or if you have nix, you can run the latest code in one command:
+If you have nix, you can run the latest code in one command:
 
 ```
 nix run github:shazow/wifitui
@@ -48,7 +49,7 @@ nix run github:shazow/wifitui
 
 - Powered by [bubbletea](https://github.com/charmbracelet/bubbletea).
 - Inspired by [impala](https://github.com/pythops/impala).
-- Initial version prototyped with Gemini 2.5 Pro.
+- Early versions made possible by Neovim, LSP, Gemini 2.5 Pro, Jules, Github code search, Google, caffeine, oxygen, my Framework laptop running NixOS.
 
 ## License
 
