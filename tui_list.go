@@ -117,11 +117,23 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statusMessage = "Enter details for new network"
 			m.errorMessage = ""
 			m.selectedItem = connectionItem{}
-			m.passwordInput.SetValue("")
-			m.ssidInput.SetValue("")
-			m.ssidInput.Focus()
-			m.editFocus = focusSSID
-			m.editSelectedButton = 0
+			m.passwordInput.Model.SetValue("")
+			m.ssidInput.Model.SetValue("")
+			m.buttons = []*Button{
+				NewButton("Join", 0, func() tea.Cmd {
+					ssid := m.ssidInput.Model.Value()
+					return joinNetwork(m.backend, ssid, m.passwordInput.Model.Value(), backend.SecurityType(m.securityGroup.Selected), true)
+				}),
+				NewButton("Cancel", 1, func() tea.Cmd {
+					m.state = stateListView
+					m.statusMessage = ""
+					m.errorMessage = ""
+					return nil
+				}),
+			}
+			m.buttonFocusManager.SetComponents(Focusables(m.buttons)...)
+			m.focusManager.SetComponents(m.ssidInput, m.passwordInput, m.securityGroup, m.buttonFocusManager)
+			m.focusManager.Focus()
 		case "s":
 			m.loading = true
 			m.statusMessage = "Scanning for networks..."
@@ -151,10 +163,21 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.state = stateEditView
 							m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
 							m.errorMessage = ""
-							m.passwordInput.SetValue("")
-							m.passwordInput.Focus()
-							m.editFocus = focusInput
-							m.editSelectedButton = 0
+							m.passwordInput.Model.SetValue("")
+							m.buttons = []*Button{
+								NewButton("Join", 0, func() tea.Cmd {
+									return joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Model.Value(), m.selectedItem.Security, m.selectedItem.IsHidden)
+								}),
+								NewButton("Cancel", 1, func() tea.Cmd {
+									m.state = stateListView
+									m.statusMessage = ""
+									m.errorMessage = ""
+									return nil
+								}),
+							}
+							m.buttonFocusManager.SetComponents(Focusables(m.buttons)...)
+							m.focusManager.SetComponents(m.passwordInput, m.buttonFocusManager)
+							m.focusManager.Focus()
 						} else {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
@@ -175,7 +198,6 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					m.statusMessage = fmt.Sprintf("Loading details for %s...", m.selectedItem.SSID)
 					m.errorMessage = ""
-					m.editAutoConnect = selected.AutoConnect
 					m.pendingEditItem = &m.selectedItem
 					cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 				} else {
@@ -183,14 +205,25 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = stateEditView
 					m.statusMessage = fmt.Sprintf("Editing network %s", m.selectedItem.SSID)
 					m.errorMessage = ""
-					m.passwordInput.SetValue("")
-					if shouldDisplayPasswordField(selected.Security) {
-						m.passwordInput.Focus()
-						m.editFocus = focusInput
-					} else {
-						m.editFocus = focusButtons // Default focus to buttons
+					m.passwordInput.Model.SetValue("")
+					m.buttons = []*Button{
+						NewButton("Join", 0, func() tea.Cmd {
+							return joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Model.Value(), m.selectedItem.Security, m.selectedItem.IsHidden)
+						}),
+						NewButton("Cancel", 1, func() tea.Cmd {
+							m.state = stateListView
+							m.statusMessage = ""
+							m.errorMessage = ""
+							return nil
+						}),
 					}
-					m.editSelectedButton = 0
+					m.buttonFocusManager.SetComponents(Focusables(m.buttons)...)
+					if shouldDisplayPasswordField(selected.Security) {
+						m.focusManager.SetComponents(m.passwordInput, m.buttonFocusManager)
+					} else {
+						m.focusManager.SetComponents(m.buttonFocusManager)
+					}
+					m.focusManager.Focus()
 				}
 			}
 		}

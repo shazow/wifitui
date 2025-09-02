@@ -42,13 +42,6 @@ const (
 	stateForgetView
 )
 
-const (
-	focusSSID = iota
-	focusInput
-	focusSecurity
-	focusAutoConnect
-	focusButtons
-)
 
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
@@ -80,8 +73,13 @@ type (
 type model struct {
 	state                 viewState
 	list                  list.Model
-	passwordInput         textinput.Model
-	ssidInput             textinput.Model
+	passwordInput         *Input
+	ssidInput             *Input
+	buttons               []*Button
+	securityGroup         *RadioGroup
+	autoConnectCheckbox   *Checkbox
+	focusManager          *FocusManager
+	buttonFocusManager    *FocusManager
 	spinner               spinner.Model
 	backend               backend.Backend
 	loading               bool
@@ -89,10 +87,6 @@ type model struct {
 	errorMessage          string
 	selectedItem          connectionItem
 	width, height         int
-	editFocus             int
-	editSelectedButton    int
-	editSecuritySelection int
-	editAutoConnect       bool
 	passwordRevealed      bool
 	pendingEditItem       *connectionItem
 }
@@ -105,17 +99,17 @@ func initialModel(b backend.Backend) (model, error) {
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	// Configure the password input field
-	ti := textinput.New()
-	ti.Focus()
-	ti.CharLimit = 64
-	ti.Width = 30
-	ti.EchoMode = textinput.EchoNormal // Show password visibly
+	ti := NewInput()
+	ti.Model.Focus()
+	ti.Model.CharLimit = 64
+	ti.Model.Width = 30
+	ti.Model.EchoMode = textinput.EchoNormal // Show password visibly
 
 	// Configure the SSID input field
-	si := textinput.New()
-	si.Focus()
-	si.CharLimit = 32
-	si.Width = 30
+	si := NewInput()
+	si.Model.Focus()
+	si.Model.CharLimit = 32
+	si.Model.Width = 30
 
 	// Configure the list
 	delegate := itemDelegate{}
@@ -147,13 +141,14 @@ func initialModel(b backend.Backend) (model, error) {
 		list:                  l,
 		passwordInput:         ti,
 		ssidInput:             si,
+		securityGroup:         NewRadioGroup([]string{"Open", "WEP", "WPA/WPA2"}, 0),
+		autoConnectCheckbox:   NewCheckbox("Auto Connect", false),
+		focusManager:          NewFocusManager(),
+		buttonFocusManager:    NewFocusManager(),
 		spinner:               s,
 		backend:               b,
 		loading:               true,
 		statusMessage:         "Loading connections...",
-		editFocus:             focusInput,
-		editSelectedButton:    0,
-		editSecuritySelection: 0, // Default to first security option
 		passwordRevealed:      false,
 		pendingEditItem:       nil,
 	}, nil
@@ -201,22 +196,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		if m.pendingEditItem != nil {
 			m.selectedItem = *m.pendingEditItem
-			m.editAutoConnect = m.selectedItem.AutoConnect
 			m.pendingEditItem = nil
 		}
-		m.passwordInput.SetValue(string(msg))
-		m.passwordInput.CursorEnd()
+		m.passwordInput.Model.SetValue(string(msg))
+		m.passwordInput.Model.CursorEnd()
+		m.buttons = []*Button{
+			NewButton("Connect", 0, func() tea.Cmd {
+				return activateConnection(m.backend, m.selectedItem.SSID)
+			}),
+			NewButton("Save", 1, func() tea.Cmd {
+				var cmds []tea.Cmd
+				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Model.Value()))
+				if m.autoConnectCheckbox.Checked != m.selectedItem.AutoConnect {
+					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked))
+				}
+				return tea.Batch(cmds...)
+			}),
+			NewButton("Forget", 2, func() tea.Cmd {
+				m.state = stateForgetView
+				m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
+				m.errorMessage = ""
+				return nil
+			}),
+			NewButton("Cancel", 3, func() tea.Cmd {
+				m.state = stateListView
+				m.statusMessage = ""
+				m.errorMessage = ""
+				m.passwordInput.Model.EchoMode = textinput.EchoNormal
+				m.passwordInput.Model.Placeholder = ""
+				m.passwordRevealed = false
+				return nil
+			}),
+		}
+		m.buttonFocusManager.SetComponents(Focusables(m.buttons)...)
+		m.autoConnectCheckbox.Checked = m.selectedItem.AutoConnect
+		m.focusManager.SetComponents(m.passwordInput, m.autoConnectCheckbox, m.buttonFocusManager)
+		m.focusManager.Focus()
 		if string(msg) != "" {
-			m.passwordInput.EchoMode = textinput.EchoPassword
-			m.passwordInput.Placeholder = "(press * to reveal)"
-			m.editFocus = focusButtons
-			m.editSelectedButton = 0 // "Connect"
-			m.passwordInput.Blur()
+			m.passwordInput.Model.EchoMode = textinput.EchoPassword
+			m.passwordInput.Model.Placeholder = "(press * to reveal)"
 		} else {
-			m.passwordInput.EchoMode = textinput.EchoNormal
-			m.passwordInput.Placeholder = ""
-			m.editFocus = focusButtons
-			m.editSelectedButton = 0 // "Connect"
+			m.passwordInput.Model.EchoMode = textinput.EchoNormal
+			m.passwordInput.Model.Placeholder = ""
 		}
 		m.state = stateEditView
 	case connectionSavedMsg:
