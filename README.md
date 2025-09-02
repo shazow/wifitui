@@ -22,6 +22,27 @@ More things I'd like to do:
 - [ ] Join hidden network
 - [ ] Maybe a better name?
 
+## Getting Started
+
+Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not maintained package managers yet](https://github.com/shazow/wifitui/issues/48)):
+
+```shell
+TAG=$(curl -s https://api.github.com/repos/shazow/wifitui/releases/latest | grep "tag_name" | cut -d '"' -f4)
+
+# Arch Linux
+sudo pacman -U https://github.com/shazow/wifitui/releases/download/$TAG/wifitui_$TAG_linux_$(uname -m).pkg.tar.zst
+
+# Debian
+sudo apt install https://github.com/shazow/wifitui/releases/download/$TAG/wifitui_$TAG_linux_$(uname -m).deb
+```
+
+
+Or if you have nix, you can run the latest code in one command:
+
+```
+nix run github:shazow/wifitui
+```
+
 
 ## Acknowldgements
 
