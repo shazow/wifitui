@@ -50,16 +50,25 @@ func New() (backend.Backend, error) {
 		return nil, fmt.Errorf("failed to list hardware ports: %w", backend.ErrOperationFailed)
 	}
 
-	lines := strings.Split(string(out), "\n")
-	var hardwarePort, device string
-	for _, line := range lines {
-		if strings.HasPrefix(line, "Hardware Port: ") {
-			hardwarePort = strings.TrimPrefix(line, "Hardware Port: ")
+	// The output is a series of stanzas, separated by blank lines.
+	// Each stanza describes a hardware port.
+	stanzas := strings.Split(string(out), "\n\n")
+	for _, stanza := range stanzas {
+		var hardwarePort, device string
+		isWifiPort := false
+		lines := strings.Split(stanza, "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "Hardware Port: ") {
+				hardwarePort = strings.TrimPrefix(line, "Hardware Port: ")
+				if strings.Contains(hardwarePort, "Wi-Fi") || strings.Contains(hardwarePort, "AirPort") {
+					isWifiPort = true
+				}
+			}
+			if strings.HasPrefix(line, "Device: ") {
+				device = strings.TrimPrefix(line, "Device: ")
+			}
 		}
-		if strings.HasPrefix(line, "Device: ") {
-			device = strings.TrimPrefix(line, "Device: ")
-		}
-		if (strings.Contains(hardwarePort, "Wi-Fi") || strings.Contains(hardwarePort, "AirPort")) && device != "" {
+		if isWifiPort && device != "" {
 			return &Backend{WifiInterface: device}, nil
 		}
 	}
