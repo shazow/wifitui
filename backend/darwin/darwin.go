@@ -41,6 +41,7 @@ type Backend struct {
 	WifiInterface string
 }
 
+
 // New creates a new darwin.Backend.
 func New() (backend.Backend, error) {
 	// Find the Wi-Fi interface name (e.g., en0)
@@ -50,30 +51,12 @@ func New() (backend.Backend, error) {
 		return nil, fmt.Errorf("failed to list hardware ports: %w", backend.ErrOperationFailed)
 	}
 
-	// The output is a series of stanzas, separated by blank lines.
-	// Each stanza describes a hardware port.
-	stanzas := strings.Split(string(out), "\n\n")
-	for _, stanza := range stanzas {
-		var hardwarePort, device string
-		isWifiPort := false
-		lines := strings.Split(stanza, "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "Hardware Port: ") {
-				hardwarePort = strings.TrimPrefix(line, "Hardware Port: ")
-				if strings.Contains(hardwarePort, "Wi-Fi") || strings.Contains(hardwarePort, "AirPort") {
-					isWifiPort = true
-				}
-			}
-			if strings.HasPrefix(line, "Device: ") {
-				device = strings.TrimPrefix(line, "Device: ")
-			}
-		}
-		if isWifiPort && device != "" {
-			return &Backend{WifiInterface: device}, nil
-		}
+	device, err := findWifiDevice(string(out))
+	if err != nil {
+		return nil, err
 	}
-
-	return nil, fmt.Errorf("no Wi-Fi interface found: %w", backend.ErrNotFound)
+  
+	return &Backend{WifiInterface: device}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
