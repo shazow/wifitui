@@ -49,7 +49,7 @@ nix run github:shazow/wifitui
 
 - Powered by [bubbletea](https://github.com/charmbracelet/bubbletea).
 - Inspired by [impala](https://github.com/pythops/impala).
-- Early versions made possible by Neovim, LSP, Gemini 2.5 Pro, Jules, Github code search, Google, caffeine, oxygen, my Framework laptop running NixOS.
+- Early versions made possible by Neovim, LSP, Gemini 2.5 Pro, Jules, Github code search, Google, water, oxygen, my Framework laptop running NixOS, the public goods built by socialism, the economies scaled by capitalism, the lands stolen by imperialism, and everything else.
 
 ## License
 
