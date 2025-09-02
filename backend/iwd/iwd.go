@@ -5,10 +5,13 @@ package iwd
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/godbus/dbus/v5"
 	"github.com/shazow/wifitui/backend"
 )
+
+const connectionTimeout = 30 * time.Second
 
 // IWD constants
 const (
@@ -180,7 +183,11 @@ func (b *Backend) ActivateConnection(ssid string) error {
 	if err != nil {
 		return err
 	}
-	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid).Store()
+	err = conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid).Store()
+	if err != nil {
+		return err
+	}
+	return b.waitForConnection(ssid)
 }
 
 func (b *Backend) ForgetNetwork(ssid string) error {
@@ -218,10 +225,14 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 		default:
 			securityType = "psk" // Default to WPA/WPA2 PSK
 		}
-		return conn.Object(iwdDest, station).Call(iwdStationIface+".ConnectHidden", 0, ssid, securityType, password).Store()
+		err = conn.Object(iwdDest, station).Call(iwdStationIface+".ConnectHidden", 0, ssid, securityType, password).Store()
+	} else {
+		err = conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
 	}
-
-	return conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
+	if err != nil {
+		return err
+	}
+	return b.waitForConnection(ssid)
 }
 
 func (b *Backend) GetSecrets(ssid string) (string, error) {
@@ -242,6 +253,7 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	return fmt.Errorf("updating secrets requires the network to be visible; try connecting to it again manually: %w", backend.ErrNotSupported)
 }
 
+
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
@@ -258,6 +270,49 @@ func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 	obj := conn.Object(iwdDest, path)
 	variant := dbus.MakeVariant(autoConnect)
 	return obj.Call("org.freedesktop.DBus.Properties.Set", 0, iwdKnownNetworkIface, "AutoConnect", variant).Err
+}
+
+func (b *Backend) waitForConnection(ssid string) error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+
+	timeout := time.After(connectionTimeout)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("connection timed out")
+		case <-ticker.C:
+			devices, err := b.getDevices(conn)
+			if err != nil {
+				return err
+			}
+
+			for _, devicePath := range devices {
+				deviceObj := conn.Object(iwdDest, devicePath)
+				var networkPaths []dbus.ObjectPath
+				err := deviceObj.Call(iwdStationIface+".GetOrderedNetworks", 0).Store(&networkPaths)
+				if err != nil {
+					continue
+				}
+
+				for _, networkPath := range networkPaths {
+					networkObj := conn.Object(iwdDest, networkPath)
+					nameVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Name")
+					if name, ok := nameVar.Value().(string); ok && name == ssid {
+						connectedVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Connected")
+						if connected, ok := connectedVar.Value().(bool); ok && connected {
+							return nil // Connected!
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 // --- iwd Helper Functions ---

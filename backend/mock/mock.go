@@ -144,6 +144,7 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 	if m.ActivateError != nil {
 		return m.ActivateError
 	}
+	time.Sleep(1 * time.Second)
 	// "Act on first match" logic for ambiguity.
 	for i, c := range m.KnownConnections {
 		if c.SSID == ssid {
@@ -250,6 +251,7 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 	}
 	return "", fmt.Errorf("no secrets for %s: %w", ssid, backend.ErrNotFound)
 }
+
 
 func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
 	if m.UpdateSecretError != nil {

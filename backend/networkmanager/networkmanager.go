@@ -11,6 +11,8 @@ import (
 	"github.com/shazow/wifitui/backend"
 )
 
+const connectionTimeout = 30 * time.Second
+
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
 type Backend struct {
 	NM           gonetworkmanager.NetworkManager
@@ -261,8 +263,42 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return fmt.Errorf("no wireless device found: %w", backend.ErrNotFound)
 	}
 
-	_, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
-	return err
+	activeConn, err := b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	if err != nil {
+		return err
+	}
+
+	// Now, block until the connection is fully activated.
+	stateChanges := make(chan gonetworkmanager.StateChange, 1)
+	done := make(chan struct{})
+	defer close(done)
+	err = activeConn.SubscribeState(stateChanges, done)
+	if err != nil {
+		return err
+	}
+
+	// Check the initial state first
+	initialState, err := activeConn.GetPropertyState()
+	if err != nil {
+		return err
+	}
+	if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
+		return nil
+	}
+
+	for {
+		select {
+		case change := <-stateChanges:
+			if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
+				return nil
+			}
+			if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
+				return fmt.Errorf("connection failed")
+			}
+		case <-time.After(connectionTimeout):
+			return fmt.Errorf("connection timed out")
+		}
+	}
 }
 
 func (b *Backend) ForgetNetwork(ssid string) error {
@@ -326,16 +362,51 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 		}
 	}
 
+	var activeConn gonetworkmanager.ActiveConnection
 	if isHidden {
-		_, err = b.NM.AddAndActivateConnection(connection, wirelessDevice)
+		activeConn, err = b.NM.AddAndActivateConnection(connection, wirelessDevice)
 	} else {
 		ap, ok := b.AccessPoints[ssid]
 		if !ok {
 			return fmt.Errorf("access point not found for %s: %w", ssid, backend.ErrNotFound)
 		}
-		_, err = b.NM.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
+		activeConn, err = b.NM.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
 	}
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Now, block until the connection is fully activated.
+	stateChanges := make(chan gonetworkmanager.StateChange, 1)
+	done := make(chan struct{})
+	defer close(done)
+	err = activeConn.SubscribeState(stateChanges, done)
+	if err != nil {
+		return err
+	}
+
+	// Check the initial state first
+	initialState, err := activeConn.GetPropertyState()
+	if err != nil {
+		return err
+	}
+	if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
+		return nil
+	}
+
+	for {
+		select {
+		case change := <-stateChanges:
+			if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
+				return nil
+			}
+			if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
+				return fmt.Errorf("connection failed")
+			}
+		case <-time.After(connectionTimeout):
+			return fmt.Errorf("connection timed out")
+		}
+	}
 }
 
 func (b *Backend) GetSecrets(ssid string) (string, error) {
