@@ -44,6 +44,41 @@ If you have nix, you can run the latest code in one command:
 nix run github:shazow/wifitui
 ```
 
+Run the TUI:
+
+```
+$ wifitui
+```
+
+Or run it in non-interactive mode:
+
+```console
+$ ./wifitui --help
+USAGE
+  wifitui [flags] <subcommand> [args...]
+
+SUBCOMMANDS
+  list     List wifi networks
+  show     Show a wifi network
+  connect  Connect to a wifi network
+
+FLAGS
+  -version=false  display version
+
+$ ./wifitui show --json "GET off my LAN"
+{
+  "SSID": "GET off my LAN",
+  "IsActive": false,
+  "IsKnown": false,
+  "IsSecure": false,
+  "IsVisible": false,
+  "IsHidden": false,
+  "Strength": 0,
+  "Security": 3,
+  "LastConnected": null,
+  "AutoConnect": false
+}
+```
 
 ## Acknowldgements
 
