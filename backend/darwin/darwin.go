@@ -55,6 +55,7 @@ func New() (backend.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
+  
 	return &Backend{WifiInterface: device}, nil
 }
 
