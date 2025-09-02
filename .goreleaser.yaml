@@ -17,6 +17,7 @@ builds:
       - CGO_ENABLED=0
     goos:
       - linux
+      - freebsd
       - darwin
     goarch:
       - amd64
@@ -50,4 +51,5 @@ nfpms:
     license: 'MIT'
     formats:
       - deb
+      - rpm
       - archlinux
