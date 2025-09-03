@@ -40,6 +40,7 @@ const (
 	stateListView viewState = iota
 	stateEditView
 	stateForgetView
+	stateErrorView
 )
 
 const (
@@ -227,6 +228,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errorMsg:
 		m.loading = false
 		m.errorMessage = msg.err.Error()
+		m.state = stateErrorView
 
 	// Handle key presses
 	case tea.KeyMsg:
@@ -244,6 +246,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateEditView(msg)
 	case stateForgetView:
 		return m.updateForgetView(msg)
+	case stateErrorView:
+		return m.updateErrorView(msg)
 	}
 
 	// Always update the spinner. It will handle its own tick messages.
@@ -255,10 +259,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // View renders the UI based on the current model state
 func (m model) View() string {
-	if m.errorMessage != "" {
-		return docStyle.Render(fmt.Sprintf("Error: %s\n\nPress 'q' to quit.", errorStyle(m.errorMessage)))
-	}
-
 	var s strings.Builder
 
 	switch m.state {
@@ -268,6 +268,8 @@ func (m model) View() string {
 		s.WriteString(m.viewEditView())
 	case stateForgetView:
 		s.WriteString(m.viewForgetView())
+	case stateErrorView:
+		s.WriteString(m.viewErrorView())
 	}
 
 	if m.loading {
