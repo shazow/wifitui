@@ -215,7 +215,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							}
 						case 2: // Forget
 							m.state = stateForgetView
-							m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
+							m.statusMessage = fmt.Sprintf("Forget network '%s'? (Y/n)", m.selectedItem.SSID)
 							m.errorMessage = ""
 						case 3: // Cancel
 							m.state = stateListView
