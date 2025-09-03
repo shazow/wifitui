@@ -77,6 +77,8 @@ func main() {
 		},
 	}
 
+	// TODO: Add a `wifitui tui` sub-command that is just an alias for the root command.
+
 	root := &ffcli.Command{
 		ShortUsage:  "wifitui [flags] <subcommand> [args...]",
 		FlagSet:     rootFlagSet,

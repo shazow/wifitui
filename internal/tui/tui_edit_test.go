@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"testing"
@@ -13,7 +13,7 @@ func TestUpdateEditView_EscapeKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create mock backend: %v", err)
 	}
-	m, err := initialModel(b)
+	m, err := NewModel(b)
 	if err != nil {
 		t.Fatalf("failed to create initial model: %v", err)
 	}

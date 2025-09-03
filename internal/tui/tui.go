@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -10,7 +10,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/internal/helpers"
 )
 
 // Define some styles for the UI
@@ -62,7 +64,7 @@ func (i connectionItem) Description() string {
 		return fmt.Sprintf("%d%%", i.Strength)
 	}
 	if !i.IsVisible && i.LastConnected != nil {
-		return formatDuration(*i.LastConnected)
+		return helpers.FormatDuration(*i.LastConnected)
 	}
 	return ""
 }
@@ -98,8 +100,8 @@ type model struct {
 	pendingEditItem       *connectionItem
 }
 
-// initialModel creates the starting state of our application
-func initialModel(b backend.Backend) (model, error) {
+// NewModel creates the starting state of our application
+func NewModel(b backend.Backend) (model, error) {
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot

@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
+
 	"github.com/shazow/wifitui/backend"
 )
 
@@ -215,4 +216,8 @@ func (m model) viewListView() string {
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
 	return docStyle.Render(viewBuilder.String())
+}
+
+func shouldDisplayPasswordField(security backend.SecurityType) bool {
+	return security != backend.SecurityOpen
 }

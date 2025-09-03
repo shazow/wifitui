@@ -1,14 +1,12 @@
-package main
+package helpers
 
 import (
 	"fmt"
 	"time"
-
-	"github.com/shazow/wifitui/backend"
 )
 
-// formatDuration takes a time and returns a human-readable string like "2 hours ago"
-func formatDuration(t time.Time) string {
+// FormatDuration takes a time and returns a human-readable string like "2 hours ago"
+func FormatDuration(t time.Time) string {
 	d := time.Since(t)
 	var s string
 	switch {
@@ -24,8 +22,4 @@ func formatDuration(t time.Time) string {
 		s = fmt.Sprintf("%0.f days", d.Hours()/24)
 	}
 	return fmt.Sprintf("%s ago", s)
-}
-
-func shouldDisplayPasswordField(security backend.SecurityType) bool {
-	return security != backend.SecurityOpen
 }
