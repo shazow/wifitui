@@ -120,9 +120,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedItem = connectionItem{}
 			m.passwordInput.SetValue("")
 			m.ssidInput.SetValue("")
-			m.ssidInput.Focus()
-			m.editFocus = focusSSID
-			m.editSelectedButton = 0
+			m.setupEditView()
 		case "s":
 			m.loading = true
 			m.statusMessage = "Scanning for networks..."
@@ -153,9 +151,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
 							m.errorMessage = ""
 							m.passwordInput.SetValue("")
-							m.passwordInput.Focus()
-							m.editFocus = focusInput
-							m.editSelectedButton = 0
+							m.setupEditView()
 						} else {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
@@ -185,13 +181,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMessage = fmt.Sprintf("Editing network %s", m.selectedItem.SSID)
 					m.errorMessage = ""
 					m.passwordInput.SetValue("")
-					if shouldDisplayPasswordField(selected.Security) {
-						m.passwordInput.Focus()
-						m.editFocus = focusInput
-					} else {
-						m.editFocus = focusButtons // Default focus to buttons
-					}
-					m.editSelectedButton = 0
+					m.setupEditView()
 				}
 			}
 		}

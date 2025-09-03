@@ -45,14 +45,6 @@ const (
 	stateErrorView
 )
 
-const (
-	focusSSID = iota
-	focusInput
-	focusSecurity
-	focusAutoConnect
-	focusButtons
-)
-
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
 	backend.Connection
@@ -91,13 +83,17 @@ type model struct {
 	statusMessage         string
 	errorMessage          string
 	selectedItem          connectionItem
-	width, height         int
-	editFocus             int
-	editSelectedButton    int
-	editSecuritySelection int
-	editAutoConnect       bool
-	passwordRevealed      bool
-	pendingEditItem       *connectionItem
+	width, height      int
+	editFocusManager   *FocusManager
+	editAutoConnect    bool
+	passwordRevealed   bool
+	pendingEditItem    *connectionItem
+	editSecurity       backend.SecurityType
+	editNewSSID        string
+	editAction         func(int) tea.Cmd
+	editButtons        *ButtonGroup
+	editSecurityChoice *RadioGroup
+	editConnectCheck   *Checkbox
 }
 
 // NewModel creates the starting state of our application
@@ -152,13 +148,10 @@ func NewModel(b backend.Backend) (model, error) {
 		ssidInput:             si,
 		spinner:               s,
 		backend:               b,
-		loading:               true,
-		statusMessage:         "Loading connections...",
-		editFocus:             focusInput,
-		editSelectedButton:    0,
-		editSecuritySelection: 0, // Default to first security option
-		passwordRevealed:      false,
-		pendingEditItem:       nil,
+		loading:          true,
+		statusMessage:    "Loading connections...",
+		passwordRevealed: false,
+		pendingEditItem:  nil,
 	}, nil
 }
 
@@ -212,16 +205,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if string(msg) != "" {
 			m.passwordInput.EchoMode = textinput.EchoPassword
 			m.passwordInput.Placeholder = "(press * to reveal)"
-			m.editFocus = focusButtons
-			m.editSelectedButton = 0 // "Connect"
 			m.passwordInput.Blur()
 		} else {
 			m.passwordInput.EchoMode = textinput.EchoNormal
 			m.passwordInput.Placeholder = ""
-			m.editFocus = focusButtons
-			m.editSelectedButton = 0 // "Connect"
 		}
 		m.state = stateEditView
+		m.setupEditView()
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = fmt.Sprintf("Successfully updated '%s'. Refreshing list...", m.selectedItem.SSID)

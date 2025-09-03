@@ -18,31 +18,55 @@ func TestUpdateEditView_EscapeKey(t *testing.T) {
 		t.Fatalf("failed to create initial model: %v", err)
 	}
 
-	// Set the state to edit view, with focus on an input field
+	// Set the state to edit view
 	m.state = stateEditView
 	m.selectedItem = connectionItem{} // A default item
-	m.editFocus = focusInput          // Start with focus on the password input
+	m.setupEditView()
 
 	// Create an escape key message
 	escMsg := tea.KeyMsg{Type: tea.KeyEsc}
 
-	// The first press of 'esc' should move focus from the input to the buttons
+	// The press of 'esc' should switch the view back to the list view
 	updatedModel, _ := m.updateEditView(escMsg)
-	m = updatedModel.(model)
-
-	if m.state != stateEditView {
-		t.Fatalf("expected state to remain 'editView' after first escape, but got %v", m.state)
-	}
-	if m.editFocus != focusButtons {
-		t.Fatalf("expected focus to move to 'focusButtons' after first escape, but got %v", m.editFocus)
-	}
-
-	// The second press of 'esc' should switch the view back to the list view
-	updatedModel, _ = m.updateEditView(escMsg)
 	m = updatedModel.(model)
 
 	// Assert the state changed back to list view
 	if m.state != stateListView {
-		t.Errorf("expected state to be 'stateListView' after second escape, but got %v", m.state)
+		t.Errorf("expected state to be 'stateListView' after escape, but got %v", m.state)
+	}
+}
+
+func TestUpdateEditView_TabKey(t *testing.T) {
+	// Initialize the model
+	b, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	m, err := NewModel(b)
+	if err != nil {
+		t.Fatalf("failed to create initial model: %v", err)
+	}
+
+	// Set the state to edit view for a new network
+	m.state = stateEditView
+	m.selectedItem = connectionItem{} // A new network
+	m.setupEditView()
+
+	// Get the initial focused element
+	initialFocus := m.editFocusManager.Focused()
+
+	// Create a tab key message
+	tabMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")}
+
+	// Update the model with the tab key press
+	updatedModel, _ := m.updateEditView(tabMsg)
+	m = updatedModel.(model)
+
+	// Get the new focused element
+	newFocus := m.editFocusManager.Focused()
+
+	// Assert that the focus has changed
+	if newFocus == initialFocus {
+		t.Errorf("expected focus to change after pressing tab, but it did not")
 	}
 }
