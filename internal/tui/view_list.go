@@ -102,7 +102,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprintf(w, "%s%s %s", title, padding, desc)
 }
 
-func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -172,7 +172,6 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					m.statusMessage = fmt.Sprintf("Loading details for %s...", m.selectedItem.SSID)
 					m.errorMessage = ""
-					m.editAutoConnect = selected.AutoConnect
 					m.pendingEditItem = &m.selectedItem
 					cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 				} else {

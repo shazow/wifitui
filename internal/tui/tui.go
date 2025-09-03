@@ -26,8 +26,6 @@ var (
 	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
 	dialogBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("205"))
-
-	// Signal strength colors are now defined as hex constants
 )
 
 const (
@@ -83,21 +81,19 @@ type model struct {
 	statusMessage         string
 	errorMessage          string
 	selectedItem          connectionItem
-	width, height      int
-	editFocusManager   *FocusManager
-	editAutoConnect    bool
-	passwordRevealed   bool
-	pendingEditItem    *connectionItem
-	editSecurity       backend.SecurityType
-	editNewSSID        string
-	editAction         func(int) tea.Cmd
-	editButtons        *ButtonGroup
-	editSecurityChoice *RadioGroup
-	editConnectCheck   *Checkbox
+	width, height         int
+	editFocusManager      *FocusManager
+	ssidAdapter           *TextInputAdapter
+	passwordAdapter       *TextInputAdapter
+	securityGroup         *ChoiceComponent
+	autoConnectCheckbox   *Checkbox
+	buttonGroup           *MultiButtonComponent
+	passwordRevealed      bool
+	pendingEditItem       *connectionItem
 }
 
 // NewModel creates the starting state of our application
-func NewModel(b backend.Backend) (model, error) {
+func NewModel(b backend.Backend) (*model, error) {
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -141,18 +137,19 @@ func NewModel(b backend.Backend) (model, error) {
 	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	return model{
-		state:                 stateListView,
-		list:                  l,
-		passwordInput:         ti,
-		ssidInput:             si,
-		spinner:               s,
-		backend:               b,
+	m := model{
+		state:            stateListView,
+		list:             l,
+		passwordInput:    ti,
+		ssidInput:        si,
+		spinner:          s,
+		backend:          b,
 		loading:          true,
 		statusMessage:    "Loading connections...",
 		passwordRevealed: false,
 		pendingEditItem:  nil,
-	}, nil
+	}
+	return &m, nil
 }
 
 // Init is the first command that is run when the program starts
@@ -161,7 +158,7 @@ func (m model) Init() tea.Cmd {
 }
 
 // Update handles all incoming messages and updates the model accordingly
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
@@ -197,7 +194,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		if m.pendingEditItem != nil {
 			m.selectedItem = *m.pendingEditItem
-			m.editAutoConnect = m.selectedItem.AutoConnect
 			m.pendingEditItem = nil
 		}
 		m.passwordInput.SetValue(string(msg))

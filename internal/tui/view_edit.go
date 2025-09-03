@@ -17,26 +17,30 @@ func (m *model) setupEditView() {
 	isNew := m.selectedItem.SSID == ""
 	var items []Focusable
 
-	ssidAdapter := NewTextInputAdapter(m.ssidInput)
-	passwordAdapter := NewTextInputAdapter(m.passwordInput)
+	m.ssidAdapter = NewTextInputAdapter(m.ssidInput)
+	m.passwordAdapter = NewTextInputAdapter(m.passwordInput)
 
 	if isNew {
-		m.ssidInput.Focus()
-		items = append(items, ssidAdapter)
-		m.editSecurityChoice = NewRadioGroup([]string{"Open", "WEP", "WPA/WPA2"}, 0)
-		if shouldDisplayPasswordField(backend.SecurityType(m.editSecurityChoice.Selected())) {
-			items = append(items, passwordAdapter)
-		}
-		items = append(items, m.editSecurityChoice)
-	} else {
-		m.passwordInput.Focus()
-		if shouldDisplayPasswordField(m.selectedItem.Security) {
-			items = append(items, passwordAdapter)
-		}
-		if m.selectedItem.IsKnown {
-			m.editConnectCheck = NewCheckbox("Auto Connect", m.editAutoConnect)
-			items = append(items, m.editConnectCheck)
-		}
+		items = append(items, m.ssidAdapter)
+	}
+
+	security := m.selectedItem.Security
+	if isNew {
+		m.securityGroup = NewChoiceComponent("Security:", []string{"Open", "WEP", "WPA/WPA2"})
+		security = backend.SecurityType(m.securityGroup.Selected())
+	}
+
+	if shouldDisplayPasswordField(security) {
+		items = append(items, m.passwordAdapter)
+	}
+
+	if isNew {
+		items = append(items, m.securityGroup)
+	}
+
+	if m.selectedItem.IsKnown {
+		m.autoConnectCheckbox = NewCheckbox("Auto Connect", m.selectedItem.AutoConnect)
+		items = append(items, m.autoConnectCheckbox)
 	}
 
 	var buttons []string
@@ -47,14 +51,57 @@ func (m *model) setupEditView() {
 	} else {
 		buttons = []string{"Join", "Cancel"}
 	}
-	m.editButtons = NewButtonGroup(buttons, m.editAction)
-	items = append(items, m.editButtons)
+	buttonAction := func(index int) tea.Cmd {
+		var cmds []tea.Cmd
+		isNew := m.selectedItem.SSID == ""
+		if isNew {
+			switch index {
+			case 0: // Join
+				m.loading = true
+				ssid := m.ssidInput.Value()
+				m.statusMessage = fmt.Sprintf("Joining '%s'...", ssid)
+				cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordInput.Value(), backend.SecurityType(m.securityGroup.Selected()), true))
+			case 1: // Cancel
+				m.state = stateListView
+			}
+		} else if m.selectedItem.IsKnown {
+			switch index {
+			case 0: // Connect
+				m.loading = true
+				m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
+				cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
+			case 1: // Save
+				m.loading = true
+				m.statusMessage = fmt.Sprintf("Saving settings for %s...", m.selectedItem.SSID)
+				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+				if m.autoConnectCheckbox.Checked() != m.selectedItem.AutoConnect {
+					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked()))
+				}
+			case 2: // Forget
+				m.state = stateForgetView
+			case 3: // Cancel
+				m.state = stateListView
+			}
+		} else {
+			switch index {
+			case 0: // Join
+				m.loading = true
+				m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
+				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value(), m.selectedItem.Security, m.selectedItem.IsHidden))
+			case 1: // Cancel
+				m.state = stateListView
+			}
+		}
+		return tea.Batch(cmds...)
+	}
+	m.buttonGroup = NewMultiButtonComponent(buttons, buttonAction)
+	items = append(items, m.buttonGroup)
 
 	m.editFocusManager = NewFocusManager(items...)
 	m.editFocusManager.Focus()
 }
 
-func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -66,44 +113,19 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.editFocusManager.Prev()
 		case "esc":
 			m.state = stateListView
-			m.statusMessage = ""
-			m.errorMessage = ""
 			return m, nil
-		case "q":
-			return m, tea.Quit
-		case "*":
-			if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
-				m.passwordRevealed = !m.passwordRevealed
-			}
 		}
 	}
 
-	var cmd tea.Cmd
 	newFocusable, cmd := m.editFocusManager.Update(msg)
 	cmds = append(cmds, cmd)
 
-	// Persist the new focusable to the model
-	switch v := newFocusable.(type) {
-	case *TextInputAdapter:
-		// This is a bit of a hack, but we need to update the model's text input
-		// since the adapter just wraps it.
-		focused := m.editFocusManager.Focused()
-		if focused == v {
-			// This is the SSID or password input. We need to figure out which one.
-			// We can do this by comparing the value.
-			if v.Value() == m.ssidInput.Value() {
-				m.ssidInput = v.Model
-			} else {
-				m.passwordInput = v.Model
-			}
+	if ta, ok := newFocusable.(*TextInputAdapter); ok {
+		if ta == m.ssidAdapter {
+			m.ssidInput = ta.Model
+		} else if ta == m.passwordAdapter {
+			m.passwordInput = ta.Model
 		}
-	case *Checkbox:
-		m.editConnectCheck = v
-		m.editAutoConnect = v.Checked()
-	case *RadioGroup:
-		m.editSecurityChoice = v
-	case *ButtonGroup:
-		m.editButtons = v
 	}
 
 	return m, tea.Batch(cmds...)
@@ -114,11 +136,7 @@ func (m model) viewEditView() string {
 	s.WriteString(fmt.Sprintf("\n%s\n\n", "Wi-Fi Connection"))
 
 	isNew := m.selectedItem.SSID == ""
-	if isNew {
-		s.WriteString("SSID:\n")
-		s.WriteString(m.ssidInput.View())
-		s.WriteString("\n\n")
-	} else {
+	if !isNew {
 		var details strings.Builder
 		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
 		var security string
@@ -147,23 +165,26 @@ func (m model) viewEditView() string {
 		s.WriteString("\n\n")
 	}
 
-	if shouldDisplayPasswordField(m.selectedItem.Security) {
-		s.WriteString("Passphrase:\n")
-		s.WriteString(m.passwordInput.View())
-	}
-
-	if m.selectedItem.IsKnown {
+	for _, item := range m.editFocusManager.items {
+		if ta, ok := item.(*TextInputAdapter); ok {
+			if ta == m.ssidAdapter {
+				s.WriteString("SSID:\n")
+			} else {
+				s.WriteString("Passphrase:\n")
+			}
+			style := lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder(), true).
+				Padding(0, 1)
+			if m.editFocusManager.Focused() == item {
+				style = style.BorderForeground(lipgloss.Color("205"))
+			}
+			s.WriteString(style.Render(item.View()))
+		} else {
+			s.WriteString(item.View())
+		}
 		s.WriteString("\n\n")
-		s.WriteString(m.editConnectCheck.View())
 	}
 
-	if isNew {
-		s.WriteString("\n\nSecurity:\n")
-		s.WriteString(m.editSecurityChoice.View())
-	}
-
-	s.WriteString("\n\n")
-	s.WriteString(m.editButtons.View())
 	s.WriteString("\n\n(tab to switch fields, arrows to navigate, enter to select)")
 
 	if m.selectedItem.IsKnown {
@@ -176,5 +197,6 @@ func (m model) viewEditView() string {
 			}
 		}
 	}
+
 	return s.String()
 }

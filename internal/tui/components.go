@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// --- Styles ---
 var (
 	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
 	blurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
@@ -66,48 +65,49 @@ func (c *Checkbox) Checked() bool {
 	return c.checked
 }
 
-// --- RadioGroup ---
+// --- ChoiceComponent ---
 
-type RadioGroup struct {
-	options []string
+type ChoiceComponent struct {
+	label    string
+	options  []string
 	selected int
-	focused bool
+	focused  bool
 }
 
-func NewRadioGroup(options []string, selected int) *RadioGroup {
-	return &RadioGroup{
+func NewChoiceComponent(label string, options []string) *ChoiceComponent {
+	return &ChoiceComponent{
+		label:   label,
 		options: options,
-		selected: selected,
 	}
 }
 
-func (r *RadioGroup) Focus() tea.Cmd {
-	r.focused = true
+func (c *ChoiceComponent) Focus() tea.Cmd {
+	c.focused = true
 	return nil
 }
-
-func (r *RadioGroup) Blur() {
-	r.focused = false
+func (c *ChoiceComponent) Blur() {
+	c.focused = false
 }
 
-func (r *RadioGroup) Update(msg tea.Msg) (Focusable, tea.Cmd) {
+func (c *ChoiceComponent) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "right":
-			r.selected = (r.selected + 1) % len(r.options)
+			c.selected = (c.selected + 1) % len(c.options)
 		case "left":
-			r.selected = (r.selected - 1 + len(r.options)) % len(r.options)
+			c.selected = (c.selected - 1 + len(c.options)) % len(c.options)
 		}
 	}
-	return r, nil
+	return c, nil
 }
 
-func (r *RadioGroup) View() string {
+func (c *ChoiceComponent) View() string {
 	var s strings.Builder
-	for i, option := range r.options {
+	s.WriteString(c.label + "\n")
+	for i, option := range c.options {
 		style := blurredStyle
-		if r.focused && i == r.selected {
+		if c.focused && i == c.selected {
 			style = focusedStyle
 		}
 		s.WriteString(style.Render("[ " + option + " ]"))
@@ -116,36 +116,35 @@ func (r *RadioGroup) View() string {
 	return s.String()
 }
 
-func (r *RadioGroup) Selected() int {
-	return r.selected
+func (c *ChoiceComponent) Selected() int {
+	return c.selected
 }
 
-// --- ButtonGroup ---
+// --- MultiButtonComponent ---
 
-type ButtonGroup struct {
+type MultiButtonComponent struct {
 	buttons  []string
 	selected int
 	focused  bool
 	action   func(int) tea.Cmd
 }
 
-func NewButtonGroup(buttons []string, action func(int) tea.Cmd) *ButtonGroup {
-	return &ButtonGroup{
+func NewMultiButtonComponent(buttons []string, action func(int) tea.Cmd) *MultiButtonComponent {
+	return &MultiButtonComponent{
 		buttons: buttons,
 		action:  action,
 	}
 }
 
-func (b *ButtonGroup) Focus() tea.Cmd {
+func (b *MultiButtonComponent) Focus() tea.Cmd {
 	b.focused = true
 	return nil
 }
-
-func (b *ButtonGroup) Blur() {
+func (b *MultiButtonComponent) Blur() {
 	b.focused = false
 }
 
-func (b *ButtonGroup) Update(msg tea.Msg) (Focusable, tea.Cmd) {
+func (b *MultiButtonComponent) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -162,7 +161,7 @@ func (b *ButtonGroup) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 	return b, nil
 }
 
-func (b *ButtonGroup) View() string {
+func (b *MultiButtonComponent) View() string {
 	var s strings.Builder
 	for i, label := range b.buttons {
 		style := blurredStyle

@@ -6,7 +6,7 @@ import (
 
 import "fmt"
 
-func (m model) updateErrorView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) updateErrorView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
 	case tea.KeyMsg:
 		// Any key press dismisses the error
