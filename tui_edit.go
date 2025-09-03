@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/qrwifi"
 )
 
 func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -386,7 +387,7 @@ func (m model) viewEditView() string {
 	if m.selectedItem.IsKnown {
 		password := m.passwordInput.Value()
 		if m.passwordRevealed && password != "" {
-			qrCodeString, err := GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
+			qrCodeString, err := qrwifi.GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
 			if err == nil {
 				s.WriteString("\n\n")
 				s.WriteString(qrCodeString)
