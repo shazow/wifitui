@@ -211,15 +211,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.passwordInput.CursorEnd()
 		if string(msg) != "" {
 			m.passwordInput.EchoMode = textinput.EchoPassword
-			m.passwordInput.Placeholder = "(press * to reveal)"
 			m.editFocus = focusButtons
-			m.editSelectedButton = 0 // "Connect"
 			m.passwordInput.Blur()
 		} else {
 			m.passwordInput.EchoMode = textinput.EchoNormal
-			m.passwordInput.Placeholder = ""
 			m.editFocus = focusButtons
-			m.editSelectedButton = 0 // "Connect"
 		}
 		m.state = stateEditView
 	case connectionSavedMsg:
