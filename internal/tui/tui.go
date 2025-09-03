@@ -43,6 +43,14 @@ const (
 	stateErrorView
 )
 
+const (
+	focusSSID = iota
+	focusInput
+	focusSecurity
+	focusAutoConnect
+	focusButtons
+)
+
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
 	backend.Connection
@@ -88,6 +96,9 @@ type model struct {
 	securityGroup         *ChoiceComponent
 	autoConnectCheckbox   *Checkbox
 	buttonGroup           *MultiButtonComponent
+	editSelectedButton    int
+	editSecuritySelection int
+	editAutoConnect       bool
 	passwordRevealed      bool
 	pendingEditItem       *connectionItem
 }
@@ -138,16 +149,19 @@ func NewModel(b backend.Backend) (*model, error) {
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	m := model{
-		state:            stateListView,
-		list:             l,
-		passwordInput:    ti,
-		ssidInput:        si,
-		spinner:          s,
-		backend:          b,
-		loading:          true,
-		statusMessage:    "Loading connections...",
-		passwordRevealed: false,
-		pendingEditItem:  nil,
+		state:                 stateListView,
+		list:                  l,
+		passwordInput:         ti,
+		ssidInput:             si,
+		spinner:               s,
+		backend:               b,
+		loading:               true,
+		statusMessage:         "Loading connections...",
+		editSelectedButton:    0,
+		editSecuritySelection: 0,
+		editAutoConnect:       false,
+		passwordRevealed:      false,
+		pendingEditItem:       nil,
 	}
 	return &m, nil
 }
@@ -191,7 +205,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetItems(items)
 	case secretsLoadedMsg:
 		m.loading = false
-		m.statusMessage = "Network loaded. Press 'esc' to go back."
+		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		if m.pendingEditItem != nil {
 			m.selectedItem = *m.pendingEditItem
 			m.pendingEditItem = nil
@@ -200,9 +214,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.passwordInput.CursorEnd()
 		if string(msg) != "" {
 			m.passwordInput.EchoMode = textinput.EchoPassword
+			m.passwordInput.Placeholder = "(press * to reveal)"
 			m.passwordInput.Blur()
 		} else {
 			m.passwordInput.EchoMode = textinput.EchoNormal
+			m.passwordInput.Placeholder = ""
 		}
 		m.state = stateEditView
 		m.setupEditView()

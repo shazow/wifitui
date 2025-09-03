@@ -169,11 +169,12 @@ func (m *FocusManager) Focused() Focusable {
 // TextInputAdapter wraps a textinput.Model to make it conform to the Focusable interface.
 type TextInputAdapter struct {
 	textinput.Model
+	isPassword bool
 }
 
 // NewTextInputAdapter creates a new adapter for a textinput.Model.
-func NewTextInputAdapter(ti textinput.Model) *TextInputAdapter {
-	return &TextInputAdapter{Model: ti}
+func NewTextInputAdapter(ti textinput.Model, isPassword bool) *TextInputAdapter {
+	return &TextInputAdapter{Model: ti, isPassword: isPassword}
 }
 
 // Update wraps the textinput.Model's Update method.
@@ -185,11 +186,17 @@ func (a *TextInputAdapter) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 
 // Focus delegates to the underlying textinput.Model.
 func (a *TextInputAdapter) Focus() tea.Cmd {
+	if a.isPassword {
+		a.Model.EchoMode = textinput.EchoNormal
+	}
 	return a.Model.Focus()
 }
 
 // Blur delegates to the underlying textinput.Model.
 func (a *TextInputAdapter) Blur() {
+	if a.isPassword {
+		a.Model.EchoMode = textinput.EchoPassword
+	}
 	a.Model.Blur()
 }
 
@@ -198,3 +205,11 @@ func (a *TextInputAdapter) View() string {
 	return a.Model.View()
 }
 
+// --- focusableInt ---
+
+type focusableInt int
+
+func (f focusableInt) Focus() tea.Cmd                           { return nil }
+func (f focusableInt) Blur()                                    {}
+func (f focusableInt) Update(msg tea.Msg) (Focusable, tea.Cmd) { return f, nil }
+func (f focusableInt) View() string                             { return "" }
