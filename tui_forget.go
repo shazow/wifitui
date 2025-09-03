@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func (m model) updateForgetView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) updateForgetView(msg tea.Msg) tea.Cmd {
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -23,7 +23,7 @@ func (m model) updateForgetView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errorMessage = ""
 		}
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 func (m model) viewForgetView() string {

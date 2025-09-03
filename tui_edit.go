@@ -11,7 +11,7 @@ import (
 	"github.com/shazow/wifitui/backend"
 )
 
-func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) updateEditView(msg tea.Msg) tea.Cmd {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
@@ -35,7 +35,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.editFocus = focusButtons
-				return m, tea.Batch(cmds...)
+				return tea.Batch(cmds...)
 			case "enter":
 				if m.editFocus == focusSSID {
 					// let the input handle it as well
@@ -46,7 +46,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// For password, we just want to change focus
 					m.passwordInput.Blur()
 					m.editFocus = focusButtons
-					return m, tea.Batch(cmds...)
+					return tea.Batch(cmds...)
 				}
 			default:
 				// Forward to the focused input and return immediately
@@ -56,7 +56,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.passwordInput, cmd = m.passwordInput.Update(msg)
 				}
 				cmds = append(cmds, cmd)
-				return m, tea.Batch(cmds...)
+				return tea.Batch(cmds...)
 			}
 		}
 
@@ -128,7 +128,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.passwordRevealed = false
 		case "q":
 			// Quit from the viewer when not typing into inputs
-			return m, tea.Quit
+			return tea.Quit
 		case "*":
 			// Allow revealing password only for known networks with a password
 			if m.selectedItem.IsKnown && m.passwordInput.Value() != "" {
@@ -243,7 +243,7 @@ func (m model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	}
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 func (m model) viewEditView() string {

@@ -8,6 +8,12 @@ import (
 )
 
 func TestUpdateEditView_EscapeKey(t *testing.T) {
+	// NOTE(shazow): This test is a bit tricky because the update methods
+	// now use pointer receivers. This means they modify the model in place,
+	// and we don't need to re-assign the model after each update.
+	// We call the update method on a pointer to the model `(&m)` and then
+	// assert on the state of the modified `m`.
+
 	// Initialize the model
 	b, err := mock.New()
 	if err != nil {
@@ -27,8 +33,7 @@ func TestUpdateEditView_EscapeKey(t *testing.T) {
 	escMsg := tea.KeyMsg{Type: tea.KeyEsc}
 
 	// The first press of 'esc' should move focus from the input to the buttons
-	updatedModel, _ := m.updateEditView(escMsg)
-	m = updatedModel.(model)
+	(&m).updateEditView(escMsg)
 
 	if m.state != stateEditView {
 		t.Fatalf("expected state to remain 'editView' after first escape, but got %v", m.state)
@@ -38,8 +43,7 @@ func TestUpdateEditView_EscapeKey(t *testing.T) {
 	}
 
 	// The second press of 'esc' should switch the view back to the list view
-	updatedModel, _ = m.updateEditView(escMsg)
-	m = updatedModel.(model)
+	(&m).updateEditView(escMsg)
 
 	// Assert the state changed back to list view
 	if m.state != stateListView {

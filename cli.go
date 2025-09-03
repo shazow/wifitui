@@ -15,7 +15,7 @@ func runTUI(b backend.Backend) error {
 	if err != nil {
 		return fmt.Errorf("error initializing model: %w", err)
 	}
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(&m, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("error running program: %w", err)
 	}

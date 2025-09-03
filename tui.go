@@ -95,6 +95,10 @@ type model struct {
 	editAutoConnect       bool
 	passwordRevealed      bool
 	pendingEditItem       *connectionItem
+
+	// For saving state across list reloads
+	listCursor          int
+	postActionFocusSSID string
 }
 
 // initialModel creates the starting state of our application
@@ -165,7 +169,7 @@ func (m model) Init() tea.Cmd {
 }
 
 // Update handles all incoming messages and updates the model accordingly
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
@@ -188,6 +192,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			items[i] = connectionItem{Connection: c}
 		}
 		m.list.SetItems(items)
+		m.restoreCursorPosition()
 	case scanFinishedMsg:
 		m.loading = false
 		m.statusMessage = "Scan finished."
@@ -196,6 +201,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			items[i] = connectionItem{Connection: c}
 		}
 		m.list.SetItems(items)
+		m.restoreCursorPosition()
 	case secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
@@ -239,18 +245,42 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Pass messages to the active view to handle
 	switch m.state {
 	case stateListView:
-		return m.updateListView(msg)
+		cmd = m.updateListView(msg)
 	case stateEditView:
-		return m.updateEditView(msg)
+		cmd = m.updateEditView(msg)
 	case stateForgetView:
-		return m.updateForgetView(msg)
+		cmd = m.updateForgetView(msg)
 	}
-
-	// Always update the spinner. It will handle its own tick messages.
-	m.spinner, cmd = m.spinner.Update(msg)
 	cmds = append(cmds, cmd)
 
+	// Always update the spinner. It will handle its own tick messages.
+	var spinnerCmd tea.Cmd
+	m.spinner, spinnerCmd = m.spinner.Update(msg)
+	cmds = append(cmds, spinnerCmd)
+
 	return m, tea.Batch(cmds...)
+}
+
+// restoreCursorPosition restores the cursor position after the list is reloaded
+func (m *model) restoreCursorPosition() {
+	if m.postActionFocusSSID != "" {
+		for i, item := range m.list.Items() {
+			if ci, ok := item.(connectionItem); ok && ci.SSID == m.postActionFocusSSID {
+				m.list.Select(i)
+				break
+			}
+		}
+		m.postActionFocusSSID = ""
+	} else if m.listCursor > 0 {
+		if m.listCursor >= len(m.list.Items()) {
+			m.listCursor = len(m.list.Items()) - 1
+		}
+		if m.listCursor < 0 {
+			m.listCursor = 0
+		}
+		m.list.Select(m.listCursor)
+		m.listCursor = 0 // Reset cursor after use
+	}
 }
 
 // View renders the UI based on the current model state

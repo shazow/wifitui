@@ -101,7 +101,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprintf(w, "%s%s %s", title, padding, desc)
 }
 
-func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) updateListView(msg tea.Msg) tea.Cmd {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -110,7 +110,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q":
 			if m.list.FilterState() != list.Filtering {
-				return m, tea.Quit
+				return tea.Quit
 			}
 		case "n":
 			m.state = stateEditView
@@ -130,6 +130,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
 				if ok && selected.IsKnown {
+					m.listCursor = m.list.Index()
 					m.selectedItem = selected
 					m.state = stateForgetView
 					m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
@@ -143,6 +144,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedItem = selected
 					if selected.IsKnown {
 						m.loading = true
+						m.postActionFocusSSID = selected.SSID
 						m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
 						cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 					} else {
@@ -200,7 +202,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	m.list, cmd = m.list.Update(msg)
 	cmds = append(cmds, cmd)
 
-	return m, tea.Batch(cmds...)
+	return tea.Batch(cmds...)
 }
 
 func (m model) viewListView() string {
