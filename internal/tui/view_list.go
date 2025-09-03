@@ -131,7 +131,7 @@ func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if ok && selected.IsKnown {
 					m.selectedItem = selected
 					m.state = stateForgetView
-					m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
+					m.statusMessage = fmt.Sprintf("Forget network '%s'? (Y/n)", m.selectedItem.SSID)
 					m.errorMessage = ""
 				}
 			}
