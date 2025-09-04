@@ -43,14 +43,6 @@ const (
 	stateErrorView
 )
 
-const (
-	focusSSID = iota
-	focusInput
-	focusSecurity
-	focusAutoConnect
-	focusButtons
-)
-
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
 	backend.Connection
@@ -75,6 +67,7 @@ type (
 	secretsLoadedMsg     string               // Sent when a password is fetched
 	connectionSavedMsg   struct{}             // Sent when a password is saved
 	errorMsg             struct{ err error }
+	changeViewMsg        viewState
 )
 
 // The main model for our TUI application
@@ -96,9 +89,6 @@ type model struct {
 	securityGroup         *ChoiceComponent
 	autoConnectCheckbox   *Checkbox
 	buttonGroup           *MultiButtonComponent
-	editSelectedButton    int
-	editSecuritySelection int
-	editAutoConnect       bool
 	passwordRevealed      bool
 	pendingEditItem       *connectionItem
 }
@@ -149,25 +139,22 @@ func NewModel(b backend.Backend) (*model, error) {
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	m := model{
-		state:                 stateListView,
-		list:                  l,
-		passwordInput:         ti,
-		ssidInput:             si,
-		spinner:               s,
-		backend:               b,
-		loading:               true,
-		statusMessage:         "Loading connections...",
-		editSelectedButton:    0,
-		editSecuritySelection: 0,
-		editAutoConnect:       false,
-		passwordRevealed:      false,
-		pendingEditItem:       nil,
+		state:            stateListView,
+		list:             l,
+		passwordInput:    ti,
+		ssidInput:        si,
+		spinner:          s,
+		backend:          b,
+		loading:          true,
+		statusMessage:    "Loading connections...",
+		passwordRevealed: false,
+		pendingEditItem:  nil,
 	}
 	return &m, nil
 }
 
 // Init is the first command that is run when the program starts
-func (m model) Init() tea.Cmd {
+func (m *model) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, refreshNetworks(m.backend))
 }
 
@@ -231,6 +218,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.errorMessage = msg.err.Error()
 		m.state = stateErrorView
+	case changeViewMsg:
+		m.state = viewState(msg)
 
 	// Handle key presses
 	case tea.KeyMsg:

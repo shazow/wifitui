@@ -53,7 +53,7 @@ func TestUpdateEditView_PasswordReveal(t *testing.T) {
 	m.setupEditView()
 
 	// Focus the password field
-	for m.editFocusManager.Focused().(focusableInt) != focusInput {
+	for m.editFocusManager.Focused() != m.passwordAdapter {
 		updatedModel, _ := m.updateEditView(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
 		m = updatedModel.(*model)
 	}
@@ -86,18 +86,20 @@ func TestUpdateEditView_CancelButton(t *testing.T) {
 	m.setupEditView()
 
 	// Focus the buttons
-	for m.editFocusManager.Focused().(focusableInt) != focusButtons {
+	for m.editFocusManager.Focused() != m.buttonGroup {
 		updatedModel, _ := m.updateEditView(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
 		m = updatedModel.(*model)
 	}
 
 	// Select the cancel button
-	m.editSelectedButton = 1
+	m.buttonGroup.selected = 1
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
-	updatedModel, _ := m.updateEditView(enterMsg)
+	updatedModel, cmd := m.updateEditView(enterMsg)
 	m = updatedModel.(*model)
 
-	if m.state != stateListView {
-		t.Errorf("expected state to be list view after cancel")
+	// Check that the correct message was sent
+	msg := cmd()
+	if _, ok := msg.(changeViewMsg); !ok {
+		t.Errorf("expected a changeViewMsg but got %T", msg)
 	}
 }

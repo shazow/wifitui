@@ -24,9 +24,9 @@ type Focusable interface {
 type FocusGroup interface {
 	Focusable
 	// Next moves the focus to the next element in the group.
-	Next() tea.Cmd
+	Next() (Focusable, tea.Cmd)
 	// Prev moves the focus to the previous element in the group.
-	Prev() tea.Cmd
+	Prev() (Focusable, tea.Cmd)
 }
 
 // FocusManager manages focus for a group of Focusable elements. It also
@@ -85,9 +85,9 @@ func (m *FocusManager) View() string {
 }
 
 // Next moves focus to the next item, handling nested focus groups.
-func (m *FocusManager) Next() tea.Cmd {
+func (m *FocusManager) Next() (Focusable, tea.Cmd) {
 	if len(m.items) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Try to advance focus within a focused subgroup.
@@ -96,12 +96,12 @@ func (m *FocusManager) Next() tea.Cmd {
 		// the subgroup's state. We can only do this if it's a FocusManager.
 		if subManager, ok := subGroup.(*FocusManager); ok {
 			oldFocus := subManager.focus
-			cmd := subManager.Next() // This is the recursive call
+			blurred, cmd := subManager.Next() // This is the recursive call
 			newFocus := subManager.focus
 
 			// If focus advanced and didn't wrap, we're done propagating.
 			if newFocus > oldFocus {
-				return cmd
+				return blurred, cmd
 			}
 		} else {
 			// For other FocusGroup implementations, we can't know if they
@@ -112,27 +112,28 @@ func (m *FocusManager) Next() tea.Cmd {
 
 	// If the child is not a group, or if the subgroup wrapped,
 	// we advance the focus in the current group.
-	m.items[m.focus].Blur()
+	blurred := m.items[m.focus]
+	blurred.Blur()
 	m.focus = (m.focus + 1) % len(m.items)
-	return m.items[m.focus].Focus()
+	return blurred, m.items[m.focus].Focus()
 }
 
 // Prev moves focus to the previous item, handling nested focus groups.
-func (m *FocusManager) Prev() tea.Cmd {
+func (m *FocusManager) Prev() (Focusable, tea.Cmd) {
 	if len(m.items) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	// Try to move focus backward within a focused subgroup.
 	if subGroup, ok := m.items[m.focus].(FocusGroup); ok {
 		if subManager, ok := subGroup.(*FocusManager); ok {
 			oldFocus := subManager.focus
-			cmd := subManager.Prev()
+			blurred, cmd := subManager.Prev()
 			newFocus := subManager.focus
 
 			// If focus moved backward and didn't wrap, we're done.
 			if newFocus < oldFocus {
-				return cmd
+				return blurred, cmd
 			}
 		} else {
 			return subGroup.Prev()
@@ -141,7 +142,8 @@ func (m *FocusManager) Prev() tea.Cmd {
 
 	// If the child is not a group, or if the subgroup wrapped,
 	// we move focus backward in the current group.
-	m.items[m.focus].Blur()
+	blurred := m.items[m.focus]
+	blurred.Blur()
 	m.focus--
 	if m.focus < 0 {
 		m.focus = len(m.items) - 1
@@ -150,10 +152,12 @@ func (m *FocusManager) Prev() tea.Cmd {
 	// If the new item is a group, we need to focus its last element.
 	// We can do this by calling Prev() on it, which will cause it to wrap.
 	if subGroup, ok := m.items[m.focus].(FocusGroup); ok {
-		return subGroup.Prev()
+		// We don't care about the blurred item from the subgroup here.
+		_, cmd := subGroup.Prev()
+		return blurred, cmd
 	}
 
-	return m.items[m.focus].Focus()
+	return blurred, m.items[m.focus].Focus()
 }
 
 // Focused returns the currently focused element.
@@ -204,12 +208,3 @@ func (a *TextInputAdapter) Blur() {
 func (a *TextInputAdapter) View() string {
 	return a.Model.View()
 }
-
-// --- focusableInt ---
-
-type focusableInt int
-
-func (f focusableInt) Focus() tea.Cmd                           { return nil }
-func (f focusableInt) Blur()                                    {}
-func (f focusableInt) Update(msg tea.Msg) (Focusable, tea.Cmd) { return f, nil }
-func (f focusableInt) View() string                             { return "" }
