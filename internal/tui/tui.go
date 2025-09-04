@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -10,7 +10,9 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
 	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/internal/helpers"
 )
 
 // Define some styles for the UI
@@ -24,8 +26,6 @@ var (
 	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
 	dialogBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("205"))
-
-	// Signal strength colors are now defined as hex constants
 )
 
 const (
@@ -43,14 +43,6 @@ const (
 	stateErrorView
 )
 
-const (
-	focusSSID = iota
-	focusInput
-	focusSecurity
-	focusAutoConnect
-	focusButtons
-)
-
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
 	backend.Connection
@@ -62,7 +54,7 @@ func (i connectionItem) Description() string {
 		return fmt.Sprintf("%d%%", i.Strength)
 	}
 	if !i.IsVisible && i.LastConnected != nil {
-		return formatDuration(*i.LastConnected)
+		return helpers.FormatDuration(*i.LastConnected)
 	}
 	return ""
 }
@@ -75,6 +67,7 @@ type (
 	secretsLoadedMsg     string               // Sent when a password is fetched
 	connectionSavedMsg   struct{}             // Sent when a password is saved
 	errorMsg             struct{ err error }
+	changeViewMsg        viewState
 )
 
 // The main model for our TUI application
@@ -90,16 +83,18 @@ type model struct {
 	errorMessage          string
 	selectedItem          connectionItem
 	width, height         int
-	editFocus             int
-	editSelectedButton    int
-	editSecuritySelection int
-	editAutoConnect       bool
+	editFocusManager      *FocusManager
+	ssidAdapter           *TextInput
+	passwordAdapter       *TextInput
+	securityGroup         *ChoiceComponent
+	autoConnectCheckbox   *Checkbox
+	buttonGroup           *MultiButtonComponent
 	passwordRevealed      bool
 	pendingEditItem       *connectionItem
 }
 
-// initialModel creates the starting state of our application
-func initialModel(b backend.Backend) (model, error) {
+// NewModel creates the starting state of our application
+func NewModel(b backend.Backend) (*model, error) {
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -143,30 +138,28 @@ func initialModel(b backend.Backend) (model, error) {
 	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	return model{
-		state:                 stateListView,
-		list:                  l,
-		passwordInput:         ti,
-		ssidInput:             si,
-		spinner:               s,
-		backend:               b,
-		loading:               true,
-		statusMessage:         "Loading connections...",
-		editFocus:             focusInput,
-		editSelectedButton:    0,
-		editSecuritySelection: 0, // Default to first security option
-		passwordRevealed:      false,
-		pendingEditItem:       nil,
-	}, nil
+	m := model{
+		state:            stateListView,
+		list:             l,
+		passwordInput:    ti,
+		ssidInput:        si,
+		spinner:          s,
+		backend:          b,
+		loading:          true,
+		statusMessage:    "Loading connections...",
+		passwordRevealed: false,
+		pendingEditItem:  nil,
+	}
+	return &m, nil
 }
 
 // Init is the first command that is run when the program starts
-func (m model) Init() tea.Cmd {
+func (m *model) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, refreshNetworks(m.backend))
 }
 
 // Update handles all incoming messages and updates the model accordingly
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
@@ -202,7 +195,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		if m.pendingEditItem != nil {
 			m.selectedItem = *m.pendingEditItem
-			m.editAutoConnect = m.selectedItem.AutoConnect
 			m.pendingEditItem = nil
 		}
 		m.passwordInput.SetValue(string(msg))
@@ -210,16 +202,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if string(msg) != "" {
 			m.passwordInput.EchoMode = textinput.EchoPassword
 			m.passwordInput.Placeholder = "(press * to reveal)"
-			m.editFocus = focusButtons
-			m.editSelectedButton = 0 // "Connect"
 			m.passwordInput.Blur()
 		} else {
 			m.passwordInput.EchoMode = textinput.EchoNormal
 			m.passwordInput.Placeholder = ""
-			m.editFocus = focusButtons
-			m.editSelectedButton = 0 // "Connect"
 		}
 		m.state = stateEditView
+		m.setupEditView()
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = fmt.Sprintf("Successfully updated '%s'. Refreshing list...", m.selectedItem.SSID)
@@ -229,6 +218,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.errorMessage = msg.err.Error()
 		m.state = stateErrorView
+	case changeViewMsg:
+		m.state = viewState(msg)
 
 	// Handle key presses
 	case tea.KeyMsg:

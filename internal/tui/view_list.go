@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
+
 	"github.com/shazow/wifitui/backend"
 )
 
@@ -101,7 +102,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprintf(w, "%s%s %s", title, padding, desc)
 }
 
-func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
@@ -119,9 +120,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedItem = connectionItem{}
 			m.passwordInput.SetValue("")
 			m.ssidInput.SetValue("")
-			m.ssidInput.Focus()
-			m.editFocus = focusSSID
-			m.editSelectedButton = 0
+			m.setupEditView()
 		case "s":
 			m.loading = true
 			m.statusMessage = "Scanning for networks..."
@@ -152,9 +151,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
 							m.errorMessage = ""
 							m.passwordInput.SetValue("")
-							m.passwordInput.Focus()
-							m.editFocus = focusInput
-							m.editSelectedButton = 0
+							m.setupEditView()
 						} else {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
@@ -175,7 +172,6 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.loading = true
 					m.statusMessage = fmt.Sprintf("Loading details for %s...", m.selectedItem.SSID)
 					m.errorMessage = ""
-					m.editAutoConnect = selected.AutoConnect
 					m.pendingEditItem = &m.selectedItem
 					cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
 				} else {
@@ -184,13 +180,7 @@ func (m model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.statusMessage = fmt.Sprintf("Editing network %s", m.selectedItem.SSID)
 					m.errorMessage = ""
 					m.passwordInput.SetValue("")
-					if shouldDisplayPasswordField(selected.Security) {
-						m.passwordInput.Focus()
-						m.editFocus = focusInput
-					} else {
-						m.editFocus = focusButtons // Default focus to buttons
-					}
-					m.editSelectedButton = 0
+					m.setupEditView()
 				}
 			}
 		}
@@ -215,4 +205,8 @@ func (m model) viewListView() string {
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
 	return docStyle.Render(viewBuilder.String())
+}
+
+func shouldDisplayPasswordField(security backend.SecurityType) bool {
+	return security != backend.SecurityOpen
 }

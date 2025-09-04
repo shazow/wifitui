@@ -8,10 +8,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/internal/tui"
+	"github.com/shazow/wifitui/internal/helpers"
 )
 
 func runTUI(b backend.Backend) error {
-	m, err := initialModel(b)
+	m, err := tui.NewModel(b)
 	if err != nil {
 		return fmt.Errorf("error initializing model: %w", err)
 	}
@@ -99,7 +101,7 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 			fmt.Fprintf(w, "Hidden: %t\n", c.IsHidden)
 			fmt.Fprintf(w, "Strength: %d%%\n", c.Strength)
 			if c.LastConnected != nil {
-				fmt.Fprintf(w, "Last Connected: %s\n", formatDuration(*c.LastConnected))
+				fmt.Fprintf(w, "Last Connected: %s\n", helpers.FormatDuration(*c.LastConnected))
 			}
 			return nil
 		}
