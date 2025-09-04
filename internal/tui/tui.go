@@ -192,7 +192,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.list.SetItems(items)
 	case secretsLoadedMsg:
 		m.loading = false
-		m.statusMessage = "Secret loaded. Press 'esc' to go back."
+		m.statusMessage = "Network loaded. Press 'esc' to go back."
 		if m.pendingEditItem != nil {
 			m.selectedItem = *m.pendingEditItem
 			m.pendingEditItem = nil
