@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -118,6 +119,54 @@ func (c *ChoiceComponent) View() string {
 
 func (c *ChoiceComponent) Selected() int {
 	return c.selected
+}
+
+// --- TextInput ---
+
+// TextInput wraps a textinput.Model to make it conform to the Focusable interface.
+type TextInput struct {
+	textinput.Model
+	label   string
+	focused bool
+	OnFocus func(*textinput.Model) tea.Cmd
+	OnBlur  func(*textinput.Model)
+}
+
+// Update wraps the textinput.Model's Update method.
+func (a *TextInput) Update(msg tea.Msg) (Focusable, tea.Cmd) {
+	newModel, cmd := a.Model.Update(msg)
+	a.Model = newModel
+	return a, cmd
+}
+
+// Focus delegates to the underlying textinput.Model.
+func (a *TextInput) Focus() tea.Cmd {
+	a.focused = true
+	a.Model.Focus()
+	if a.OnFocus != nil {
+		return a.OnFocus(&a.Model)
+	}
+	return nil
+}
+
+// Blur delegates to the underlying textinput.Model.
+func (a *TextInput) Blur() {
+	if a.OnBlur != nil {
+		a.OnBlur(&a.Model)
+	}
+	a.focused = false
+	a.Model.Blur()
+}
+
+// View delegates to the underlying textinput.Model.
+func (a *TextInput) View() string {
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder(), true).
+		Padding(0, 1)
+	if a.focused {
+		style = style.BorderForeground(lipgloss.Color("205"))
+	}
+	return a.label + "\n" + style.Render(a.Model.View())
 }
 
 // --- MultiButtonComponent ---

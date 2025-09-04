@@ -84,8 +84,8 @@ type model struct {
 	selectedItem          connectionItem
 	width, height         int
 	editFocusManager      *FocusManager
-	ssidAdapter           *TextInputAdapter
-	passwordAdapter       *TextInputAdapter
+	ssidAdapter           *TextInput
+	passwordAdapter       *TextInput
 	securityGroup         *ChoiceComponent
 	autoConnectCheckbox   *Checkbox
 	buttonGroup           *MultiButtonComponent

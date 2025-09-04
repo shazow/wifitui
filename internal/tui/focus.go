@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Focusable defines the contract for a UI element that can be managed by the
@@ -165,50 +163,3 @@ func (m *FocusManager) Focused() Focusable {
 	return m.items[m.focus]
 }
 
-// --- Adapter for textinput.Model ---
-
-// TextInputAdapter wraps a textinput.Model to make it conform to the Focusable interface.
-type TextInputAdapter struct {
-	textinput.Model
-	label   string
-	focused bool
-	OnFocus func(*textinput.Model) tea.Cmd
-	OnBlur  func(*textinput.Model)
-}
-
-// Update wraps the textinput.Model's Update method.
-func (a *TextInputAdapter) Update(msg tea.Msg) (Focusable, tea.Cmd) {
-	newModel, cmd := a.Model.Update(msg)
-	a.Model = newModel
-	return a, cmd
-}
-
-// Focus delegates to the underlying textinput.Model.
-func (a *TextInputAdapter) Focus() tea.Cmd {
-	a.focused = true
-	a.Model.Focus()
-	if a.OnFocus != nil {
-		return a.OnFocus(&a.Model)
-	}
-	return nil
-}
-
-// Blur delegates to the underlying textinput.Model.
-func (a *TextInputAdapter) Blur() {
-	if a.OnBlur != nil {
-		a.OnBlur(&a.Model)
-	}
-	a.focused = false
-	a.Model.Blur()
-}
-
-// View delegates to the underlying textinput.Model.
-func (a *TextInputAdapter) View() string {
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder(), true).
-		Padding(0, 1)
-	if a.focused {
-		style = style.BorderForeground(lipgloss.Color("205"))
-	}
-	return a.label + "\n" + style.Render(a.Model.View())
-}

@@ -18,7 +18,7 @@ func (m *model) setupEditView() {
 	isNew := m.selectedItem.SSID == ""
 	var items []Focusable
 
-	m.ssidAdapter = &TextInputAdapter{
+	m.ssidAdapter = &TextInput{
 		Model: m.ssidInput,
 		label: "SSID:",
 	}
@@ -31,7 +31,7 @@ func (m *model) setupEditView() {
 		ti.EchoMode = textinput.EchoPassword
 		m.passwordRevealed = false
 	}
-	m.passwordAdapter = &TextInputAdapter{
+	m.passwordAdapter = &TextInput{
 		Model:   m.passwordInput,
 		label:   "Passphrase:",
 		OnFocus: onPasswordFocus,
@@ -138,7 +138,7 @@ func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newFocusable, cmd := m.editFocusManager.Update(msg)
 	cmds = append(cmds, cmd)
 
-	if ta, ok := newFocusable.(*TextInputAdapter); ok {
+	if ta, ok := newFocusable.(*TextInput); ok {
 		if ta == m.ssidAdapter {
 			m.ssidInput = ta.Model
 		} else if ta == m.passwordAdapter {
