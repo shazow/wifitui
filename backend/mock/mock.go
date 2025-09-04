@@ -214,10 +214,12 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 
 	var c backend.Connection
 	found := false
-	for _, vc := range m.VisibleConnections {
+	foundIndex := -1
+	for i, vc := range m.VisibleConnections {
 		if vc.SSID == ssid {
 			c = vc
 			found = true
+			foundIndex = i
 			break
 		}
 	}
@@ -233,6 +235,10 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 
 	c.IsKnown = true
 	c.AutoConnect = true
+	if found {
+		m.VisibleConnections[foundIndex] = c
+	}
+
 	newConnection := mockConnection{
 		Connection: c,
 		Secret:     password,
