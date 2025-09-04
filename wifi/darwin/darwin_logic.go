@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 )
 
 // findWifiDevice parses the output of `networksetup -listallhardwareports` to find the Wi-Fi device.
@@ -31,5 +31,5 @@ func findWifiDevice(output string) (string, error) {
 			return device, nil
 		}
 	}
-	return "", fmt.Errorf("no Wi-Fi interface found: %w", backend.ErrNotFound)
+	return "", fmt.Errorf("no Wi-Fi interface found: %w", wifi.ErrNotFound)
 }

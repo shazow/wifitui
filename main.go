@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 )
 
 var (
@@ -22,7 +22,7 @@ func main() {
 		version     = rootFlagSet.Bool("version", false, "display version")
 	)
 
-	var b backend.Backend
+	var b wifi.Backend
 	var err error
 
 	listFlagSet := flag.NewFlagSet("list", flag.ExitOnError)
@@ -62,14 +62,14 @@ func main() {
 			if len(args) == 0 {
 				return fmt.Errorf("connect requires an ssid")
 			}
-			var security backend.SecurityType
+			var security wifi.SecurityType
 			switch *connectSecurity {
 			case "open":
-				security = backend.SecurityOpen
+				security = wifi.SecurityOpen
 			case "wep":
-				security = backend.SecurityWEP
+				security = wifi.SecurityWEP
 			case "wpa":
-				security = backend.SecurityWPA
+				security = wifi.SecurityWPA
 			default:
 				return fmt.Errorf("invalid security type: %s", *connectSecurity)
 			}

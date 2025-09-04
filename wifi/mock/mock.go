@@ -5,20 +5,20 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 )
 
 var DefaultConnectSleep = 500 * time.Millisecond
 
 // mockConnection wraps a backend.Connection with mock-specific metadata.
 type mockConnection struct {
-	backend.Connection
+	wifi.Connection
 	Secret string
 }
 
 // MockBackend is a mock implementation of the backend.Backend interface for testing.
 type MockBackend struct {
-	VisibleConnections    []backend.Connection
+	VisibleConnections    []wifi.Connection
 	KnownConnections      []mockConnection
 	ActiveConnectionIndex int
 	ActivateError         error
@@ -35,24 +35,24 @@ func ago(duration time.Duration) *time.Time {
 }
 
 // NewBackend creates a new mock.Backend with a list of fun wifi networks.
-func New() (backend.Backend, error) {
-	initialConnections := []backend.Connection{
-		{SSID: "HideYoKidsHideYoWiFi", LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA},
-		{SSID: "GET off my LAN", Security: backend.SecurityWPA, LastConnected: ago(761 * time.Hour), IsKnown: true, AutoConnect: false},
-		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWEP, IsVisible: true},
-		{SSID: "Unencrypted_Honeypot", Security: backend.SecurityOpen, IsVisible: true},
-		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: backend.SecurityWPA},
-		{SSID: "I See Dead Packets", Security: backend.SecurityWEP, LastConnected: ago(8763 * time.Hour)},
-		{SSID: "Dunder MiffLAN", Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "Police Surveillance 2", Strength: 48, Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "I Believe Wi Can Fi", Security: backend.SecurityWEP, IsVisible: true},
-		{SSID: "Hot singles in your area", Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "Password is password", Strength: 87, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWEP},
-		{SSID: "xX_D4rkR0ut3r_Xx", Security: backend.SecurityWPA},
-		{SSID: "Luke I am your WiFi", Security: backend.SecurityWEP},
-		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityWPA},
+func New() (wifi.Backend, error) {
+	initialConnections := []wifi.Connection{
+		{SSID: "HideYoKidsHideYoWiFi", LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA},
+		{SSID: "GET off my LAN", Security: wifi.SecurityWPA, LastConnected: ago(761 * time.Hour), IsKnown: true, AutoConnect: false},
+		{SSID: "NeverGonnaGiveYouIP", Security: wifi.SecurityWEP, IsVisible: true},
+		{SSID: "Unencrypted_Honeypot", Security: wifi.SecurityOpen, IsVisible: true},
+		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: wifi.SecurityWPA},
+		{SSID: "I See Dead Packets", Security: wifi.SecurityWEP, LastConnected: ago(8763 * time.Hour)},
+		{SSID: "Dunder MiffLAN", Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Police Surveillance 2", Strength: 48, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "I Believe Wi Can Fi", Security: wifi.SecurityWEP, IsVisible: true},
+		{SSID: "Hot singles in your area", Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Password is password", Strength: 87, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Wi-Fight the Feeling?", Security: wifi.SecurityWEP},
+		{SSID: "xX_D4rkR0ut3r_Xx", Security: wifi.SecurityWPA},
+		{SSID: "Luke I am your WiFi", Security: wifi.SecurityWEP},
+		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: wifi.SecurityWPA},
 	}
 	secrets := map[string]string{
 		"Password is password": "password",
@@ -71,11 +71,11 @@ func New() (backend.Backend, error) {
 
 	// For testing duplicate SSIDs
 	knownConnections = append(knownConnections, mockConnection{
-		Connection: backend.Connection{
+		Connection: wifi.Connection{
 			SSID:     "HideYoKidsHideYoWiFi",
 			Strength: 25,
 			IsKnown:  true,
-			Security: backend.SecurityWPA,
+			Security: wifi.SecurityWPA,
 		},
 		Secret: "different_secret",
 	})
@@ -105,7 +105,7 @@ func (m *MockBackend) setActiveConnection(ssid string) {
 	}
 }
 
-func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
+func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	// For mock, we can re-randomize strengths on each scan
 	if shouldScan {
 		s := rand.NewSource(time.Now().Unix())
@@ -118,7 +118,7 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 	}
 
 	// Build a unified list of connections, de-duplicating known networks.
-	unified := make(map[string]backend.Connection)
+	unified := make(map[string]wifi.Connection)
 
 	// Add all visible connections first.
 	for _, c := range m.VisibleConnections {
@@ -135,7 +135,7 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 	}
 
 	// Convert map back to a slice for the return value.
-	var result []backend.Connection
+	var result []wifi.Connection
 	for _, c := range unified {
 		// IsActive is now stored on the connection object itself.
 		// We still need to determine IsKnown for networks that might only be in the visible list.
@@ -170,7 +170,7 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("cannot activate unknown network %s: %w", ssid, backend.ErrNotFound)
+	return fmt.Errorf("cannot activate unknown network %s: %w", ssid, wifi.ErrNotFound)
 }
 
 func (m *MockBackend) ForgetNetwork(ssid string) error {
@@ -194,7 +194,7 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 	}
 
 	if !found {
-		return fmt.Errorf("network not found: %s: %w", ssid, backend.ErrNotFound)
+		return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 	}
 
 	m.KnownConnections = newKnownConnections
@@ -208,12 +208,12 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 	return nil
 }
 
-func (m *MockBackend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
+func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	if m.JoinError != nil {
 		return m.JoinError
 	}
 
-	var c backend.Connection
+	var c wifi.Connection
 	found := false
 	foundIndex := -1
 	for i, vc := range m.VisibleConnections {
@@ -225,7 +225,7 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 		}
 	}
 	if !found {
-		c = backend.Connection{
+		c = wifi.Connection{
 			SSID:     ssid,
 			Security: security,
 			IsHidden: isHidden,
@@ -277,7 +277,7 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 			return c.Secret, nil
 		}
 	}
-	return "", fmt.Errorf("no secrets for %s: %w", ssid, backend.ErrNotFound)
+	return "", fmt.Errorf("no secrets for %s: %w", ssid, wifi.ErrNotFound)
 }
 
 func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
@@ -291,7 +291,7 @@ func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("cannot update secret for unknown network %s: %w", ssid, backend.ErrNotFound)
+	return fmt.Errorf("cannot update secret for unknown network %s: %w", ssid, wifi.ErrNotFound)
 }
 
 func (m *MockBackend) SetAutoConnect(ssid string, autoConnect bool) error {
@@ -302,5 +302,5 @@ func (m *MockBackend) SetAutoConnect(ssid string, autoConnect bool) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("cannot set autoconnect for unknown network %s: %w", ssid, backend.ErrNotFound)
+	return fmt.Errorf("cannot set autoconnect for unknown network %s: %w", ssid, wifi.ErrNotFound)
 }

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/shazow/wifitui/backend"
-	"github.com/shazow/wifitui/backend/mock"
+	"github.com/shazow/wifitui/wifi"
+	"github.com/shazow/wifitui/wifi/mock"
 )
 
 func TestRunList(t *testing.T) {
@@ -73,7 +73,7 @@ func TestRunShow(t *testing.T) {
 		if err == nil {
 			t.Fatalf("runShow() with not found network should have failed, but did not")
 		}
-		if !errors.Is(err, backend.ErrNotFound) {
+		if !errors.Is(err, wifi.ErrNotFound) {
 			t.Errorf("runShow() with not found network gave wrong error. got=%q", err)
 		}
 	}
@@ -90,7 +90,7 @@ func TestRunListJSON(t *testing.T) {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
-	var connections []backend.Connection
+	var connections []wifi.Connection
 	if err := json.Unmarshal(buf.Bytes(), &connections); err != nil {
 		t.Fatalf("runList() output is not valid JSON: %v. got=%q", err, buf.String())
 	}
@@ -125,7 +125,7 @@ func TestRunShowJSON(t *testing.T) {
 	}
 
 	type connectionWithSecret struct {
-		backend.Connection
+		wifi.Connection
 		Passphrase string `json:"passphrase,omitempty"`
 	}
 
@@ -170,7 +170,7 @@ func TestRunConnect(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Test case: connect to a new network with a passphrase
-	if err := runConnect(&buf, "new-network", "new-password", backend.SecurityWPA, false, mockBackend); err != nil {
+	if err := runConnect(&buf, "new-network", "new-password", wifi.SecurityWPA, false, mockBackend); err != nil {
 		t.Fatalf("runConnect() with passphrase failed: %v", err)
 	}
 
@@ -192,7 +192,7 @@ func TestRunConnect(t *testing.T) {
 
 	// Test case: connect to a known network without a passphrase
 	buf.Reset()
-	if err := runConnect(&buf, "Password is password", "", backend.SecurityWPA, false, mockBackend); err != nil {
+	if err := runConnect(&buf, "Password is password", "", wifi.SecurityWPA, false, mockBackend); err != nil {
 		t.Fatalf("runConnect() without passphrase failed: %v", err)
 	}
 

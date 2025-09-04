@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lucasb-eyer/go-colorful"
 
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 )
 
 // itemDelegate is our custom list delegate
@@ -31,11 +31,11 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	// Add icons for security
 	var icon string = "  ️ "
 	switch i.Security {
-	case backend.SecurityUnknown:
+	case wifi.SecurityUnknown:
 		if i.IsVisible {
 			icon = "❓ "
 		}
-	case backend.SecurityOpen:
+	case wifi.SecurityOpen:
 		icon = "🔓 "
 	default:
 		icon = "🔒 "
@@ -157,7 +157,7 @@ func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.loading = true
 							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
 							m.errorMessage = ""
-							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, "", backend.SecurityOpen, false))
+							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, "", wifi.SecurityOpen, false))
 						}
 					}
 				}
@@ -208,6 +208,6 @@ func (m model) viewListView() string {
 	return docStyle.Render(viewBuilder.String())
 }
 
-func shouldDisplayPasswordField(security backend.SecurityType) bool {
-	return security != backend.SecurityOpen
+func shouldDisplayPasswordField(security wifi.SecurityType) bool {
+	return security != wifi.SecurityOpen
 }

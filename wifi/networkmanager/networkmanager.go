@@ -8,7 +8,7 @@ import (
 
 	"github.com/Wifx/gonetworkmanager"
 	"github.com/google/uuid"
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 )
 
 const connectionTimeout = 30 * time.Second
@@ -22,15 +22,15 @@ type Backend struct {
 }
 
 // New creates a new dbus.Backend.
-func New() (backend.Backend, error) {
+func New() (wifi.Backend, error) {
 	nm, err := gonetworkmanager.NewNetworkManager()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create network manager client: %w", backend.ErrNotAvailable)
+		return nil, fmt.Errorf("failed to create network manager client: %w", wifi.ErrNotAvailable)
 	}
 
 	settings, err := gonetworkmanager.NewSettings()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get settings: %w", backend.ErrOperationFailed)
+		return nil, fmt.Errorf("failed to get settings: %w", wifi.ErrOperationFailed)
 	}
 
 	return &Backend{
@@ -42,7 +42,7 @@ func New() (backend.Backend, error) {
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
+func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	b.Connections = make(map[string]gonetworkmanager.Connection)
 	b.AccessPoints = make(map[string]gonetworkmanager.AccessPoint)
 
@@ -59,7 +59,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		}
 	}
 	if wirelessDevice == nil {
-		return nil, fmt.Errorf("no wireless device found: %w", backend.ErrNotFound)
+		return nil, fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 	}
 
 	if shouldScan {
@@ -79,7 +79,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		return nil, err
 	}
 
-	var conns []backend.Connection
+	var conns []wifi.Connection
 	processedSSIDs := make(map[string]bool)
 
 	activeConnections, err := b.NM.GetPropertyActiveConnections()
@@ -124,16 +124,16 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
 		rsnFlags, _ := ap.GetPropertyRSNFlags()
 		isSecure := (uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0) || (wpaFlags > 0) || (rsnFlags > 0)
-		var security backend.SecurityType
+		var security wifi.SecurityType
 		if wpaFlags > 0 || rsnFlags > 0 {
-			security = backend.SecurityWPA
+			security = wifi.SecurityWPA
 		} else if isSecure {
-			security = backend.SecurityWEP
+			security = wifi.SecurityWEP
 		} else {
-			security = backend.SecurityOpen
+			security = wifi.SecurityOpen
 		}
 
-		var connInfo backend.Connection
+		var connInfo wifi.Connection
 		var knownConn gonetworkmanager.Connection
 		for _, kc := range knownConnections {
 			s, err := kc.GetSettings()
@@ -170,7 +170,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 					autoConnect = ac
 				}
 			}
-			connInfo = backend.Connection{
+			connInfo = wifi.Connection{
 				SSID:          ssid,
 				IsActive:      activeConnectionID != "" && id == activeConnectionID,
 				IsKnown:       true,
@@ -182,7 +182,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				AutoConnect:   autoConnect,
 			}
 		} else {
-			connInfo = backend.Connection{
+			connInfo = wifi.Connection{
 				SSID:        ssid,
 				IsKnown:     false,
 				IsSecure:    isSecure,
@@ -225,23 +225,23 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 					lastConnected = &t
 				}
 			}
-			conns = append(conns, backend.Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
+			conns = append(conns, wifi.Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
 		}
 	}
 
-	backend.SortConnections(conns)
+	wifi.SortConnections(conns)
 	return conns, nil
 }
 
 func (b *Backend) ActivateConnection(ssid string) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
-		return fmt.Errorf("connection not found for %s: %w", ssid, backend.ErrNotFound)
+		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
 	ap, apOK := b.AccessPoints[ssid]
 	if !apOK {
-		return fmt.Errorf("access point not found for %s: %w", ssid, backend.ErrNotFound)
+		return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
 	devices, err := b.NM.GetDevices()
@@ -260,7 +260,7 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		}
 	}
 	if wirelessDevice == nil {
-		return fmt.Errorf("no wireless device found: %w", backend.ErrNotFound)
+		return fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 	}
 
 	activeConn, err := b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
@@ -304,12 +304,12 @@ func (b *Backend) ActivateConnection(ssid string) error {
 func (b *Backend) ForgetNetwork(ssid string) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
-		return fmt.Errorf("connection not found for %s: %w", ssid, backend.ErrNotFound)
+		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 	return conn.Delete()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return err
@@ -322,7 +322,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 		}
 	}
 	if wirelessDevice == nil {
-		return fmt.Errorf("no wireless device found: %w", backend.ErrNotFound)
+		return fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 	}
 	deviceInterface, _ := wirelessDevice.GetPropertyInterface()
 
@@ -346,9 +346,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 	}
 
 	switch security {
-	case backend.SecurityOpen:
+	case wifi.SecurityOpen:
 		// No security settings needed
-	case backend.SecurityWEP:
+	case wifi.SecurityWEP:
 		connection["802-11-wireless"]["security"] = "802-11-wireless-security"
 		connection["802-11-wireless-security"] = map[string]interface{}{
 			"key-mgmt": "none",
@@ -368,7 +368,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 	} else {
 		ap, ok := b.AccessPoints[ssid]
 		if !ok {
-			return fmt.Errorf("access point not found for %s: %w", ssid, backend.ErrNotFound)
+			return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
 		}
 		activeConn, err = b.NM.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
 	}
@@ -412,12 +412,12 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 func (b *Backend) GetSecrets(ssid string) (string, error) {
 	conn, ok := b.Connections[ssid]
 	if !ok {
-		return "", fmt.Errorf("connection not found for %s: %w", ssid, backend.ErrNotFound)
+		return "", fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
 	s, err := conn.GetSettings()
 	if err != nil {
-		return "", fmt.Errorf("failed to get settings: %w", backend.ErrOperationFailed)
+		return "", fmt.Errorf("failed to get settings: %w", wifi.ErrOperationFailed)
 	}
 
 	if _, ok := s["802-11-wireless-security"]; !ok {
@@ -426,7 +426,7 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 
 	settings, err := conn.GetSecrets("802-11-wireless-security")
 	if err != nil {
-		return "", fmt.Errorf("failed to get secrets: %w", backend.ErrOperationFailed)
+		return "", fmt.Errorf("failed to get secrets: %w", wifi.ErrOperationFailed)
 	}
 
 	if s, ok := settings["802-11-wireless-security"]; ok {
@@ -463,7 +463,7 @@ func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
-		return fmt.Errorf("connection not found for %s: %w", ssid, backend.ErrNotFound)
+		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
 	settings, err := conn.GetSettings()
@@ -483,7 +483,7 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
-		return fmt.Errorf("connection not found for %s: %w", ssid, backend.ErrNotFound)
+		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
 	settings, err := conn.GetSettings()

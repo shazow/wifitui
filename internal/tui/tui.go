@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/internal/helpers"
 )
 
@@ -45,7 +45,7 @@ const (
 
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
-	backend.Connection
+	wifi.Connection
 }
 
 func (i connectionItem) Title() string { return i.SSID }
@@ -62,8 +62,8 @@ func (i connectionItem) FilterValue() string { return i.Title() }
 
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
-	connectionsLoadedMsg []backend.Connection // Sent when connections are fetched
-	scanFinishedMsg      []backend.Connection // Sent when a scan is finished
+	connectionsLoadedMsg []wifi.Connection // Sent when connections are fetched
+	scanFinishedMsg      []wifi.Connection // Sent when a scan is finished
 	secretsLoadedMsg     string // Sent when a password is fetched
 	connectionSavedMsg   struct{}
 	errorMsg             struct{ err error }
@@ -78,7 +78,7 @@ type model struct {
 	passwordInput         textinput.Model
 	ssidInput             textinput.Model
 	spinner               spinner.Model
-	backend               backend.Backend
+	backend               wifi.Backend
 	loading               bool
 	statusMessage         string
 	errorMessage          string
@@ -95,7 +95,7 @@ type model struct {
 }
 
 // NewModel creates the starting state of our application
-func NewModel(b backend.Backend) (*model, error) {
+func NewModel(b wifi.Backend) (*model, error) {
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -277,29 +277,29 @@ func (m model) View() string {
 
 // --- Commands that interact with the backend ---
 
-func scanNetworks(b backend.Backend) tea.Cmd {
+func scanNetworks(b wifi.Backend) tea.Cmd {
 	return func() tea.Msg {
 		connections, err := b.BuildNetworkList(true)
 		if err != nil {
 			return errorMsg{err}
 		}
-		backend.SortConnections(connections)
+		wifi.SortConnections(connections)
 		return scanFinishedMsg(connections)
 	}
 }
 
-func refreshNetworks(b backend.Backend) tea.Cmd {
+func refreshNetworks(b wifi.Backend) tea.Cmd {
 	return func() tea.Msg {
 		connections, err := b.BuildNetworkList(false)
 		if err != nil {
 			return errorMsg{err}
 		}
-		backend.SortConnections(connections)
+		wifi.SortConnections(connections)
 		return connectionsLoadedMsg(connections)
 	}
 }
 
-func activateConnection(b backend.Backend, ssid string) tea.Cmd {
+func activateConnection(b wifi.Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
 		err := b.ActivateConnection(ssid)
 		if err != nil {
@@ -309,7 +309,7 @@ func activateConnection(b backend.Backend, ssid string) tea.Cmd {
 	}
 }
 
-func forgetNetwork(b backend.Backend, ssid string) tea.Cmd {
+func forgetNetwork(b wifi.Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
 		err := b.ForgetNetwork(ssid)
 		if err != nil {
@@ -319,7 +319,7 @@ func forgetNetwork(b backend.Backend, ssid string) tea.Cmd {
 	}
 }
 
-func joinNetwork(b backend.Backend, ssid string, password string, security backend.SecurityType, isHidden bool) tea.Cmd {
+func joinNetwork(b wifi.Backend, ssid string, password string, security wifi.SecurityType, isHidden bool) tea.Cmd {
 	return func() tea.Msg {
 		err := b.JoinNetwork(ssid, password, security, isHidden)
 		if err != nil {
@@ -329,7 +329,7 @@ func joinNetwork(b backend.Backend, ssid string, password string, security backe
 	}
 }
 
-func updateAutoConnect(b backend.Backend, ssid string, autoConnect bool) tea.Cmd {
+func updateAutoConnect(b wifi.Backend, ssid string, autoConnect bool) tea.Cmd {
 	return func() tea.Msg {
 		err := b.SetAutoConnect(ssid, autoConnect)
 		if err != nil {
@@ -340,7 +340,7 @@ func updateAutoConnect(b backend.Backend, ssid string, autoConnect bool) tea.Cmd
 	}
 }
 
-func getSecrets(b backend.Backend, ssid string) tea.Cmd {
+func getSecrets(b wifi.Backend, ssid string) tea.Cmd {
 	return func() tea.Msg {
 		secret, err := b.GetSecrets(ssid)
 		if err != nil {
@@ -350,7 +350,7 @@ func getSecrets(b backend.Backend, ssid string) tea.Cmd {
 	}
 }
 
-func updateSecret(b backend.Backend, ssid string, newPassword string) tea.Cmd {
+func updateSecret(b wifi.Backend, ssid string, newPassword string) tea.Cmd {
 	return func() tea.Msg {
 		err := b.UpdateSecret(ssid, newPassword)
 		if err != nil {

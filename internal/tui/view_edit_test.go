@@ -5,8 +5,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/shazow/wifitui/backend"
-	"github.com/shazow/wifitui/backend/mock"
+	"github.com/shazow/wifitui/wifi"
+	"github.com/shazow/wifitui/wifi/mock"
 )
 
 func TestUpdateEditView_TabKey(t *testing.T) {
@@ -47,7 +47,7 @@ func TestUpdateEditView_PasswordReveal(t *testing.T) {
 
 	m.state = stateEditView
 	m.selectedItem = connectionItem{
-		Connection: backend.Connection{IsKnown: true, IsSecure: true},
+		Connection: wifi.Connection{IsKnown: true, IsSecure: true},
 	}
 	m.passwordInput.SetValue("password")
 	m.setupEditView()
@@ -115,7 +115,7 @@ func TestFullWorkflow_JoinAndEdit(t *testing.T) {
 	password := "password123"
 
 	// 2. Simulate joining the network by calling the command directly.
-	joinCmd := joinNetwork(b, ssid, password, backend.SecurityWPA, false)
+	joinCmd := joinNetwork(b, ssid, password, wifi.SecurityWPA, false)
 	msg := joinCmd()
 	if _, ok := msg.(errorMsg); ok {
 		t.Fatal("joinNetwork command failed")
@@ -187,7 +187,7 @@ func TestTypingInPasswordField_IsSaved(t *testing.T) {
 
 	// 2. Navigate to the edit view for an unknown network
 	m.state = stateEditView
-	m.selectedItem = connectionItem{Connection: backend.Connection{SSID: ssid, Security: backend.SecurityWPA}}
+	m.selectedItem = connectionItem{Connection: wifi.Connection{SSID: ssid, Security: wifi.SecurityWPA}}
 	m.setupEditView()
 
 	// 3. Simulate focusing the password field by tabbing to it

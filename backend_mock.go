@@ -3,10 +3,10 @@
 package main
 
 import (
-	"github.com/shazow/wifitui/backend"
-	mockBackend "github.com/shazow/wifitui/backend/mock"
+	"github.com/shazow/wifitui/wifi"
+	mockBackend "github.com/shazow/wifitui/wifi/mock"
 )
 
-func GetBackend() (backend.Backend, error) {
+func GetBackend() (wifi.Backend, error) {
 	return mockBackend.New()
 }

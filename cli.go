@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/internal/helpers"
 )
 
-func runTUI(b backend.Backend) error {
+func runTUI(b wifi.Backend) error {
 	m, err := tui.NewModel(b)
 	if err != nil {
 		return fmt.Errorf("error initializing model: %w", err)
@@ -24,7 +24,7 @@ func runTUI(b backend.Backend) error {
 	return nil
 }
 
-func formatConnection(c backend.Connection) string {
+func formatConnection(c wifi.Connection) string {
 	var parts []string
 	if c.IsVisible {
 		parts = append(parts, fmt.Sprintf("%d%%", c.Strength))
@@ -40,7 +40,7 @@ func formatConnection(c backend.Connection) string {
 	return strings.Join(parts, ", ")
 }
 
-func runList(w io.Writer, jsonOut bool, b backend.Backend) error {
+func runList(w io.Writer, jsonOut bool, b wifi.Backend) error {
 	connections, err := b.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
@@ -59,7 +59,7 @@ func runList(w io.Writer, jsonOut bool, b backend.Backend) error {
 	return nil
 }
 
-func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
+func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 	connections, err := b.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
@@ -80,7 +80,7 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 			if jsonOut {
 				// We need a custom struct to include the passphrase
 				type connectionWithSecret struct {
-					backend.Connection
+					wifi.Connection
 					Passphrase string `json:"passphrase,omitempty"`
 				}
 				data := connectionWithSecret{
@@ -107,10 +107,10 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b backend.Backend) error {
 		}
 	}
 
-	return fmt.Errorf("network not found: %s: %w", ssid, backend.ErrNotFound)
+	return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func runConnect(w io.Writer, ssid string, passphrase string, security backend.SecurityType, isHidden bool, b backend.Backend) error {
+func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, b wifi.Backend) error {
 	if passphrase != "" || isHidden {
 		fmt.Fprintf(w, "Joining network %q...\n", ssid)
 		return b.JoinNetwork(ssid, passphrase, security, isHidden)

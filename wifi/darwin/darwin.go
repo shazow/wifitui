@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 )
 
 // runWithOutput wraps exec.Command to capture stderr and wrap errors.
@@ -36,19 +36,19 @@ func runOnly(c *exec.Cmd) error {
 	return nil
 }
 
-// Backend implements the backend.Backend interface for macOS.
+// Backend implements the wifi.Backend interface for macOS.
 type Backend struct {
 	WifiInterface string
 }
 
 
 // New creates a new darwin.Backend.
-func New() (backend.Backend, error) {
+func New() (wifi.Backend, error) {
 	// Find the Wi-Fi interface name (e.g., en0)
 	cmd := exec.Command("networksetup", "-listallhardwareports")
 	out, err := runWithOutput(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list hardware ports: %w", backend.ErrOperationFailed)
+		return nil, fmt.Errorf("failed to list hardware ports: %w", wifi.ErrOperationFailed)
 	}
 
 	device, err := findWifiDevice(string(out))
@@ -60,7 +60,7 @@ func New() (backend.Backend, error) {
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
+func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	// Get current network
 	cmd := exec.Command("networksetup", "-getairportnetwork", b.WifiInterface)
 	out, err := runWithOutput(cmd)
@@ -77,7 +77,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	cmd = exec.Command("networksetup", "-listpreferredwirelessnetworks", b.WifiInterface)
 	out, err = runWithOutput(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list preferred networks: %w: %s", backend.ErrOperationFailed, err)
+		return nil, fmt.Errorf("failed to list preferred networks: %w: %s", wifi.ErrOperationFailed, err)
 	}
 	knownSSIDs := make(map[string]bool)
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
@@ -92,10 +92,10 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	cmd = exec.Command("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-s")
 	out, err = runWithOutput(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan for networks: %w", backend.ErrOperationFailed)
+		return nil, fmt.Errorf("failed to scan for networks: %w", wifi.ErrOperationFailed)
 	}
 
-	var conns []backend.Connection
+	var conns []wifi.Connection
 	processedSSIDs := make(map[string]bool)
 	scanner = bufio.NewScanner(strings.NewReader(string(out)))
 	// The regex is to parse the output of the airport command.
@@ -127,22 +127,22 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				strength = 100
 			}
 
-			var security backend.SecurityType
+			var security wifi.SecurityType
 			if strings.Contains(line, "WPA") || strings.Contains(line, "WPA2") {
-				security = backend.SecurityWPA
+				security = wifi.SecurityWPA
 			} else if strings.Contains(line, "WEP") {
-				security = backend.SecurityWEP
+				security = wifi.SecurityWEP
 			} else {
-				security = backend.SecurityOpen
+				security = wifi.SecurityOpen
 			}
 			isKnown := knownSSIDs[ssid]
-			conns = append(conns, backend.Connection{
+			conns = append(conns, wifi.Connection{
 				SSID:        ssid,
 				IsActive:    ssid == currentSSID,
 				IsKnown:     isKnown,
 				IsVisible:   true,
 				Strength:    strength,
-				IsSecure:    security != backend.SecurityOpen,
+				IsSecure:    security != wifi.SecurityOpen,
 				Security:    security,
 				AutoConnect: isKnown,
 			})
@@ -152,7 +152,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 	// Add known networks that are not visible
 	for ssid := range knownSSIDs {
 		if _, processed := processedSSIDs[ssid]; !processed {
-			conns = append(conns, backend.Connection{
+			conns = append(conns, wifi.Connection{
 				SSID:        ssid,
 				IsKnown:     true,
 				AutoConnect: true,
@@ -182,7 +182,7 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 }
 
 // JoinNetwork connects to a new network, potentially creating a new configuration.
-func (b *Backend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
 	if err := runOnly(cmd); err != nil {
 		return err
@@ -190,9 +190,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 	// Add to preferred networks so it becomes "known"
 	var securityType string
 	switch security {
-	case backend.SecurityOpen:
+	case wifi.SecurityOpen:
 		securityType = "OPEN"
-	case backend.SecurityWEP:
+	case wifi.SecurityWEP:
 		securityType = "WEP"
 	default:
 		securityType = "WPA2" // Default to WPA2 for WPA/WPA2
@@ -227,7 +227,7 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 	if autoConnect {
 		// FIXME: Re-adding a network to preferred requires security type, which we don't have here.
-		return fmt.Errorf("enabling autoconnect is not yet supported on darwin: %w", backend.ErrNotSupported)
+		return fmt.Errorf("enabling autoconnect is not yet supported on darwin: %w", wifi.ErrNotSupported)
 	}
 	cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.WifiInterface, ssid)
 	return runOnly(cmd)

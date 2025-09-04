@@ -3,12 +3,12 @@ package mock
 import (
 	"testing"
 
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 )
 
 
 // Helper to find a connection in a slice
-func findConnection(connections []backend.Connection, ssid string) *backend.Connection {
+func findConnection(connections []wifi.Connection, ssid string) *wifi.Connection {
 	for i := range connections {
 		if connections[i].SSID == ssid {
 			return &connections[i]
@@ -143,7 +143,7 @@ func TestJoinNetwork(t *testing.T) {
 
 	newSSID := "new-network"
 	password := "password"
-	err := b.JoinNetwork(newSSID, password, backend.SecurityWPA, false)
+	err := b.JoinNetwork(newSSID, password, wifi.SecurityWPA, false)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestGetSecretsForKnownNetworkWithoutSecret(t *testing.T) {
 	b, _ := New()
 	ssid := "Unencrypted_Honeypot"
 
-	err := b.JoinNetwork(ssid, "", backend.SecurityOpen, false)
+	err := b.JoinNetwork(ssid, "", wifi.SecurityOpen, false)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 	password := "password123"
 
 	// 1. Join the network for the first time
-	err := b.JoinNetwork(ssid, password, backend.SecurityWPA, false)
+	err := b.JoinNetwork(ssid, password, wifi.SecurityWPA, false)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed on first join: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 
 	// 3. Join the same network again with a new password
 	newPassword := "newPassword456"
-	err = b.JoinNetwork(ssid, newPassword, backend.SecurityWPA, false)
+	err = b.JoinNetwork(ssid, newPassword, wifi.SecurityWPA, false)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed on second join: %v", err)
 	}

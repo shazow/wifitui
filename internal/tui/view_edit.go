@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/internal/helpers"
 	"github.com/shazow/wifitui/qrwifi"
 )
@@ -45,7 +45,7 @@ func (m *model) setupEditView() {
 	security := m.selectedItem.Security
 	if isNew {
 		m.securityGroup = NewChoiceComponent("Security:", []string{"Open", "WEP", "WPA/WPA2"})
-		security = backend.SecurityType(m.securityGroup.Selected())
+		security = wifi.SecurityType(m.securityGroup.Selected())
 	}
 
 	if shouldDisplayPasswordField(security) {
@@ -78,7 +78,7 @@ func (m *model) setupEditView() {
 				m.loading = true
 				ssid := m.ssidInput.Value()
 				m.statusMessage = fmt.Sprintf("Joining '%s'...", ssid)
-				cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordAdapter.Model.Value(), backend.SecurityType(m.securityGroup.Selected()), true))
+				cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordAdapter.Model.Value(), wifi.SecurityType(m.securityGroup.Selected()), true))
 			case 1: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
@@ -173,11 +173,11 @@ func (m model) viewEditView() string {
 		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
 		var security string
 		switch m.selectedItem.Security {
-		case backend.SecurityOpen:
+		case wifi.SecurityOpen:
 			security = "Open"
-		case backend.SecurityWEP:
+		case wifi.SecurityWEP:
 			security = "WEP"
-		case backend.SecurityWPA:
+		case wifi.SecurityWPA:
 			security = "WPA/WPA2"
 		default:
 			if m.selectedItem.IsSecure {

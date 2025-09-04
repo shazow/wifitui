@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/godbus/dbus/v5"
-	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/wifi"
 )
 
 const connectionTimeout = 30 * time.Second
@@ -31,7 +31,7 @@ type Backend struct {
 }
 
 // New creates a new iwd.Backend.
-func New() (backend.Backend, error) {
+func New() (wifi.Backend, error) {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return nil, err
@@ -40,19 +40,19 @@ func New() (backend.Backend, error) {
 	// Instead, we'll just use this connection to check for service availability.
 	obj := conn.Object(iwdDest, iwdPath)
 	if obj == nil {
-		return nil, fmt.Errorf("failed to get dbus object for %s: %w", iwdDest, backend.ErrNotAvailable)
+		return nil, fmt.Errorf("failed to get dbus object for %s: %w", iwdDest, wifi.ErrNotAvailable)
 	}
 	// A simple way to check for availability is to try to get a property.
 	_, err = obj.GetProperty(iwdIface + ".Version")
 	if err != nil {
-		return nil, fmt.Errorf("iwd is not available: %w", backend.ErrNotAvailable)
+		return nil, fmt.Errorf("iwd is not available: %w", wifi.ErrNotAvailable)
 	}
 
 	return &Backend{}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
+func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return nil, err
@@ -71,8 +71,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 		return nil, err
 	}
 
-	var connections []backend.Connection
-	visibleNetworks := make(map[string]backend.Connection)
+	var connections []wifi.Connection
+	visibleNetworks := make(map[string]wifi.Connection)
 
 	for _, devicePath := range devices {
 		deviceObj := conn.Object(iwdDest, devicePath)
@@ -92,14 +92,14 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 
 			typeVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Type")
 			securityType := typeVar.Value().(string)
-			var security backend.SecurityType
+			var security wifi.SecurityType
 			switch securityType {
 			case "wpa-psk", "wpa2-psk", "wpa-eap", "wpa2-eap":
-				security = backend.SecurityWPA
+				security = wifi.SecurityWPA
 			case "wep":
-				security = backend.SecurityWEP
+				security = wifi.SecurityWEP
 			default:
-				security = backend.SecurityOpen
+				security = wifi.SecurityOpen
 			}
 
 			connectedVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Connected")
@@ -107,20 +107,20 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 
 			if existing, exists := visibleNetworks[ssid]; exists {
 				if strength > existing.Strength {
-					visibleNetworks[ssid] = backend.Connection{
+					visibleNetworks[ssid] = wifi.Connection{
 						SSID:      ssid,
 						IsActive:  isActive,
-						IsSecure:  security != backend.SecurityOpen,
+						IsSecure:  security != wifi.SecurityOpen,
 						Security:  security,
 						IsVisible: true,
 						Strength:  strength,
 					}
 				}
 			} else {
-				visibleNetworks[ssid] = backend.Connection{
+				visibleNetworks[ssid] = wifi.Connection{
 					SSID:        ssid,
 					IsActive:    isActive,
-					IsSecure:    security != backend.SecurityOpen,
+					IsSecure:    security != wifi.SecurityOpen,
 					Security:    security,
 					IsVisible:   true,
 					Strength:    strength,
@@ -162,7 +162,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error
 				visibleNetworks[ssid] = c
 			} else {
 				// Add non-visible known network
-				connections = append(connections, backend.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect})
+				connections = append(connections, wifi.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect})
 			}
 		}
 	}
@@ -200,12 +200,12 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 		return err
 	}
 	if path == "" {
-		return fmt.Errorf("cannot forget: network %s is not known: %w", ssid, backend.ErrNotFound)
+		return fmt.Errorf("cannot forget: network %s is not known: %w", ssid, wifi.ErrNotFound)
 	}
 	return conn.Object(iwdDest, iwdPath).Call(iwdIface+".ForgetNetwork", 0, path).Store()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security backend.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -218,9 +218,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 	if isHidden {
 		var securityType string
 		switch security {
-		case backend.SecurityOpen:
+		case wifi.SecurityOpen:
 			securityType = "open"
-		case backend.SecurityWEP:
+		case wifi.SecurityWEP:
 			securityType = "wep"
 		default:
 			securityType = "psk" // Default to WPA/WPA2 PSK
@@ -238,19 +238,19 @@ func (b *Backend) JoinNetwork(ssid string, password string, security backend.Sec
 func (b *Backend) GetSecrets(ssid string) (string, error) {
 	// The iwd API doesn't seem to expose a way to get the PSK directly for security reasons.
 	// We can't implement this feature for iwd.
-	return "", fmt.Errorf("getting secrets is not supported by the iwd backend: %w", backend.ErrNotSupported)
+	return "", fmt.Errorf("getting secrets is not supported by the iwd backend: %w", wifi.ErrNotSupported)
 }
 
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 	// To "update" a secret, we have to forget the network and then re-join it.
 	err := b.ForgetNetwork(ssid)
 	if err != nil {
-		return fmt.Errorf("failed to forget network before updating secret: %w", backend.ErrOperationFailed)
+		return fmt.Errorf("failed to forget network before updating secret: %w", wifi.ErrOperationFailed)
 	}
 
 	// We can't re-connect without a visible AP.
 	// This is a limitation of this approach.
-	return fmt.Errorf("updating secrets requires the network to be visible; try connecting to it again manually: %w", backend.ErrNotSupported)
+	return fmt.Errorf("updating secrets requires the network to be visible; try connecting to it again manually: %w", wifi.ErrNotSupported)
 }
 
 
@@ -264,7 +264,7 @@ func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 		return err
 	}
 	if path == "" {
-		return fmt.Errorf("cannot set autoconnect: network %s is not known: %w", ssid, backend.ErrNotFound)
+		return fmt.Errorf("cannot set autoconnect: network %s is not known: %w", ssid, wifi.ErrNotFound)
 	}
 
 	obj := conn.Object(iwdDest, path)
@@ -339,7 +339,7 @@ func (b *Backend) getStationDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
 			return devicePath, nil
 		}
 	}
-	return "", fmt.Errorf("no station device found: %w", backend.ErrNotFound)
+	return "", fmt.Errorf("no station device found: %w", wifi.ErrNotFound)
 }
 
 func (b *Backend) getKnownNetworks(conn *dbus.Conn) ([]dbus.ObjectPath, error) {

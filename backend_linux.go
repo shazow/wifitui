@@ -3,12 +3,12 @@
 package main
 
 import (
-	"github.com/shazow/wifitui/backend"
-	"github.com/shazow/wifitui/backend/iwd"
-	"github.com/shazow/wifitui/backend/networkmanager"
+	"github.com/shazow/wifitui/wifi"
+	"github.com/shazow/wifitui/wifi/iwd"
+	"github.com/shazow/wifitui/wifi/networkmanager"
 )
 
-func GetBackend() (backend.Backend, error) {
+func GetBackend() (wifi.Backend, error) {
 	b, err := networkmanager.New()
 	if err == nil {
 		return b, nil
