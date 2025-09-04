@@ -66,7 +66,7 @@ func TestUpdateEditView_PasswordReveal(t *testing.T) {
 	updatedModel, _ := m.updateEditView(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
 	m = updatedModel.(*model)
 
-	if m.passwordInput.EchoMode != textinput.EchoPassword {
+	if m.passwordAdapter.Model.EchoMode != textinput.EchoPassword {
 		t.Errorf("expected password to be hidden on blur")
 	}
 }

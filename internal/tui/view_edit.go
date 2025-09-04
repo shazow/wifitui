@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -17,8 +18,25 @@ func (m *model) setupEditView() {
 	isNew := m.selectedItem.SSID == ""
 	var items []Focusable
 
-	m.ssidAdapter = NewTextInputAdapter(m.ssidInput, false)
-	m.passwordAdapter = NewTextInputAdapter(m.passwordInput, true)
+	m.ssidAdapter = &TextInputAdapter{
+		Model: m.ssidInput,
+		label: "SSID:",
+	}
+	onPasswordFocus := func(ti *textinput.Model) tea.Cmd {
+		ti.EchoMode = textinput.EchoNormal
+		m.passwordRevealed = true
+		return nil
+	}
+	onPasswordBlur := func(ti *textinput.Model) {
+		ti.EchoMode = textinput.EchoPassword
+		m.passwordRevealed = false
+	}
+	m.passwordAdapter = &TextInputAdapter{
+		Model:   m.passwordInput,
+		label:   "Passphrase:",
+		OnFocus: onPasswordFocus,
+		OnBlur:  onPasswordBlur,
+	}
 
 	if isNew {
 		items = append(items, m.ssidAdapter)
@@ -108,21 +126,9 @@ func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":
-			blurred, cmd := m.editFocusManager.Next()
-			if ta, ok := blurred.(*TextInputAdapter); ok {
-				if ta == m.passwordAdapter {
-					m.passwordInput = ta.Model
-				}
-			}
-			return m, cmd
+			return m, m.editFocusManager.Next()
 		case "shift+tab":
-			blurred, cmd := m.editFocusManager.Prev()
-			if ta, ok := blurred.(*TextInputAdapter); ok {
-				if ta == m.passwordAdapter {
-					m.passwordInput = ta.Model
-				}
-			}
-			return m, cmd
+			return m, m.editFocusManager.Prev()
 		case "esc":
 			m.state = stateListView
 			return m, nil
@@ -178,22 +184,7 @@ func (m model) viewEditView() string {
 	}
 
 	for _, item := range m.editFocusManager.items {
-		if ta, ok := item.(*TextInputAdapter); ok {
-			if ta == m.ssidAdapter {
-				s.WriteString("SSID:\n")
-			} else {
-				s.WriteString("Passphrase:\n")
-			}
-			style := lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder(), true).
-				Padding(0, 1)
-			if m.editFocusManager.Focused() == item {
-				style = style.BorderForeground(lipgloss.Color("205"))
-			}
-			s.WriteString(style.Render(item.View()))
-		} else {
-			s.WriteString(item.View())
-		}
+		s.WriteString(item.View())
 		s.WriteString("\n\n")
 	}
 

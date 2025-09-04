@@ -3,6 +3,7 @@ package tui
 import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Focusable defines the contract for a UI element that can be managed by the
@@ -24,9 +25,9 @@ type Focusable interface {
 type FocusGroup interface {
 	Focusable
 	// Next moves the focus to the next element in the group.
-	Next() (Focusable, tea.Cmd)
+	Next() tea.Cmd
 	// Prev moves the focus to the previous element in the group.
-	Prev() (Focusable, tea.Cmd)
+	Prev() tea.Cmd
 }
 
 // FocusManager manages focus for a group of Focusable elements. It also
@@ -85,9 +86,9 @@ func (m *FocusManager) View() string {
 }
 
 // Next moves focus to the next item, handling nested focus groups.
-func (m *FocusManager) Next() (Focusable, tea.Cmd) {
+func (m *FocusManager) Next() tea.Cmd {
 	if len(m.items) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	// Try to advance focus within a focused subgroup.
@@ -96,12 +97,12 @@ func (m *FocusManager) Next() (Focusable, tea.Cmd) {
 		// the subgroup's state. We can only do this if it's a FocusManager.
 		if subManager, ok := subGroup.(*FocusManager); ok {
 			oldFocus := subManager.focus
-			blurred, cmd := subManager.Next() // This is the recursive call
+			cmd := subManager.Next() // This is the recursive call
 			newFocus := subManager.focus
 
 			// If focus advanced and didn't wrap, we're done propagating.
 			if newFocus > oldFocus {
-				return blurred, cmd
+				return cmd
 			}
 		} else {
 			// For other FocusGroup implementations, we can't know if they
@@ -112,28 +113,27 @@ func (m *FocusManager) Next() (Focusable, tea.Cmd) {
 
 	// If the child is not a group, or if the subgroup wrapped,
 	// we advance the focus in the current group.
-	blurred := m.items[m.focus]
-	blurred.Blur()
+	m.items[m.focus].Blur()
 	m.focus = (m.focus + 1) % len(m.items)
-	return blurred, m.items[m.focus].Focus()
+	return m.items[m.focus].Focus()
 }
 
 // Prev moves focus to the previous item, handling nested focus groups.
-func (m *FocusManager) Prev() (Focusable, tea.Cmd) {
+func (m *FocusManager) Prev() tea.Cmd {
 	if len(m.items) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	// Try to move focus backward within a focused subgroup.
 	if subGroup, ok := m.items[m.focus].(FocusGroup); ok {
 		if subManager, ok := subGroup.(*FocusManager); ok {
 			oldFocus := subManager.focus
-			blurred, cmd := subManager.Prev()
+			cmd := subManager.Prev()
 			newFocus := subManager.focus
 
 			// If focus moved backward and didn't wrap, we're done.
 			if newFocus < oldFocus {
-				return blurred, cmd
+				return cmd
 			}
 		} else {
 			return subGroup.Prev()
@@ -142,8 +142,7 @@ func (m *FocusManager) Prev() (Focusable, tea.Cmd) {
 
 	// If the child is not a group, or if the subgroup wrapped,
 	// we move focus backward in the current group.
-	blurred := m.items[m.focus]
-	blurred.Blur()
+	m.items[m.focus].Blur()
 	m.focus--
 	if m.focus < 0 {
 		m.focus = len(m.items) - 1
@@ -152,12 +151,10 @@ func (m *FocusManager) Prev() (Focusable, tea.Cmd) {
 	// If the new item is a group, we need to focus its last element.
 	// We can do this by calling Prev() on it, which will cause it to wrap.
 	if subGroup, ok := m.items[m.focus].(FocusGroup); ok {
-		// We don't care about the blurred item from the subgroup here.
-		_, cmd := subGroup.Prev()
-		return blurred, cmd
+		return subGroup.Prev()
 	}
 
-	return blurred, m.items[m.focus].Focus()
+	return m.items[m.focus].Focus()
 }
 
 // Focused returns the currently focused element.
@@ -173,12 +170,10 @@ func (m *FocusManager) Focused() Focusable {
 // TextInputAdapter wraps a textinput.Model to make it conform to the Focusable interface.
 type TextInputAdapter struct {
 	textinput.Model
-	isPassword bool
-}
-
-// NewTextInputAdapter creates a new adapter for a textinput.Model.
-func NewTextInputAdapter(ti textinput.Model, isPassword bool) *TextInputAdapter {
-	return &TextInputAdapter{Model: ti, isPassword: isPassword}
+	label   string
+	focused bool
+	OnFocus func(*textinput.Model) tea.Cmd
+	OnBlur  func(*textinput.Model)
 }
 
 // Update wraps the textinput.Model's Update method.
@@ -190,21 +185,30 @@ func (a *TextInputAdapter) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 
 // Focus delegates to the underlying textinput.Model.
 func (a *TextInputAdapter) Focus() tea.Cmd {
-	if a.isPassword {
-		a.Model.EchoMode = textinput.EchoNormal
+	a.focused = true
+	a.Model.Focus()
+	if a.OnFocus != nil {
+		return a.OnFocus(&a.Model)
 	}
-	return a.Model.Focus()
+	return nil
 }
 
 // Blur delegates to the underlying textinput.Model.
 func (a *TextInputAdapter) Blur() {
-	if a.isPassword {
-		a.Model.EchoMode = textinput.EchoPassword
+	if a.OnBlur != nil {
+		a.OnBlur(&a.Model)
 	}
+	a.focused = false
 	a.Model.Blur()
 }
 
 // View delegates to the underlying textinput.Model.
 func (a *TextInputAdapter) View() string {
-	return a.Model.View()
+	style := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder(), true).
+		Padding(0, 1)
+	if a.focused {
+		style = style.BorderForeground(lipgloss.Color("205"))
+	}
+	return a.label + "\n" + style.Render(a.Model.View())
 }
