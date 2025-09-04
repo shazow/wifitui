@@ -237,6 +237,18 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 		Connection: c,
 		Secret:     password,
 	}
+
+	// Check if we are replacing an existing known connection, otherwise append.
+	for i, kc := range m.KnownConnections {
+		if kc.SSID == ssid {
+			m.KnownConnections[i] = newConnection
+			m.ActiveConnectionIndex = i
+			now := time.Now()
+			m.KnownConnections[i].LastConnected = &now
+			return nil
+		}
+	}
+
 	m.KnownConnections = append(m.KnownConnections, newConnection)
 	m.ActiveConnectionIndex = len(m.KnownConnections) - 1
 	now := time.Now()
