@@ -197,16 +197,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selectedItem = *m.pendingEditItem
 			m.pendingEditItem = nil
 		}
-		m.passwordInput.SetValue(string(msg))
-		m.passwordInput.CursorEnd()
+		// HACK: Re-create the textinput to avoid some weird state issues.
+		// For some reason, just updating the value of the existing textinput
+		// doesn't work correctly when the view is re-rendered.
+		newPasswordInput := textinput.New()
+		newPasswordInput.SetValue(string(msg))
+		newPasswordInput.CharLimit = 64
+		newPasswordInput.Width = 30
+		newPasswordInput.CursorEnd()
 		if string(msg) != "" {
-			m.passwordInput.EchoMode = textinput.EchoPassword
-			m.passwordInput.Placeholder = "(press * to reveal)"
-			m.passwordInput.Blur()
+			newPasswordInput.EchoMode = textinput.EchoPassword
+			newPasswordInput.Placeholder = "(press * to reveal)"
+			newPasswordInput.Blur()
 		} else {
-			m.passwordInput.EchoMode = textinput.EchoNormal
-			m.passwordInput.Placeholder = ""
+			newPasswordInput.EchoMode = textinput.EchoNormal
 		}
+		m.passwordInput = newPasswordInput
 		m.state = stateEditView
 		m.setupEditView()
 	case connectionSavedMsg:

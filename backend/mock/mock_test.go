@@ -275,6 +275,19 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 		t.Errorf("expected secret '%s', got '%s'", password, secret)
 	}
 
+	// 2a. Check BuildNetworkList output
+	networks, err := b.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("BuildNetworkList() failed: %v", err)
+	}
+	conn := findConnection(networks, ssid)
+	if conn == nil {
+		t.Fatalf("did not find network %s in list after first join", ssid)
+	}
+	if !conn.IsKnown {
+		t.Errorf("expected network %s to be known in list, but it was not", ssid)
+	}
+
 	// 3. Join the same network again with a new password
 	newPassword := "newPassword456"
 	err = b.JoinNetwork(ssid, newPassword, backend.SecurityWPA, false)
@@ -289,6 +302,19 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 	}
 	if secret != newPassword {
 		t.Errorf("expected secret to be updated to '%s', but got '%s'", newPassword, secret)
+	}
+
+	// 4a. Check BuildNetworkList output again
+	networks, err = b.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("BuildNetworkList() failed after second join: %v", err)
+	}
+	conn = findConnection(networks, ssid)
+	if conn == nil {
+		t.Fatalf("did not find network %s in list after second join", ssid)
+	}
+	if !conn.IsKnown {
+		t.Errorf("expected network %s to still be known in list, but it was not", ssid)
 	}
 
 	// 5. Check that no duplicate connection was created
