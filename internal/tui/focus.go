@@ -163,3 +163,14 @@ func (m *FocusManager) Focused() Focusable {
 	return m.items[m.focus]
 }
 
+// SetFocus sets the focus to the given focusable item.
+func (m *FocusManager) SetFocus(target Focusable) tea.Cmd {
+	for i, item := range m.items {
+		if item == target {
+			m.items[m.focus].Blur()
+			m.focus = i
+			return m.items[m.focus].Focus()
+		}
+	}
+	return nil
+}

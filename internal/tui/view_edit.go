@@ -116,7 +116,13 @@ func (m *model) setupEditView() {
 	items = append(items, m.buttonGroup)
 
 	m.editFocusManager = NewFocusManager(items...)
-	m.editFocusManager.Focus()
+
+	// If it's a known network, focus the buttons by default
+	if m.selectedItem.IsKnown {
+		m.editFocusManager.SetFocus(m.buttonGroup)
+	} else {
+		m.editFocusManager.Focus()
+	}
 }
 
 func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -132,6 +138,11 @@ func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.state = stateListView
 			return m, nil
+		case "enter":
+			// If password field is focused, move to the next field
+			if m.editFocusManager.Focused() == m.passwordAdapter {
+				return m, m.editFocusManager.Next()
+			}
 		}
 	}
 
