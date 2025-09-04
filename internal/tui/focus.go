@@ -163,3 +163,17 @@ func (m *FocusManager) Focused() Focusable {
 	return m.items[m.focus]
 }
 
+// SetFocus sets the focus to the item at the given index.
+func (m *FocusManager) SetFocus(index int) tea.Cmd {
+	if index < 0 || index >= len(m.items) {
+		return nil
+	}
+	if len(m.items) > 0 {
+		m.items[m.focus].Blur()
+	}
+	m.focus = index
+	if len(m.items) > 0 {
+		return m.items[m.focus].Focus()
+	}
+	return nil
+}

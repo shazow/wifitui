@@ -116,7 +116,28 @@ func (m *model) setupEditView() {
 	items = append(items, m.buttonGroup)
 
 	m.editFocusManager = NewFocusManager(items...)
-	m.editFocusManager.Focus()
+
+	// If it's a known network, focus the buttons by default
+	if m.selectedItem.IsKnown {
+		buttonIndex := findFocusableIndex(items, m.buttonGroup)
+		if buttonIndex != -1 {
+			m.editFocusManager.SetFocus(buttonIndex)
+		} else {
+			m.editFocusManager.Focus()
+		}
+	} else {
+		m.editFocusManager.Focus()
+	}
+}
+
+// findFocusableIndex returns the index of the focusable item in the slice.
+func findFocusableIndex(items []Focusable, target Focusable) int {
+	for i, item := range items {
+		if item == target {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -132,6 +153,11 @@ func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.state = stateListView
 			return m, nil
+		case "enter":
+			// If password field is focused, move to the next field
+			if m.editFocusManager.Focused() == m.passwordAdapter {
+				return m, m.editFocusManager.Next()
+			}
 		}
 	}
 
