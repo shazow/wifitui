@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/internal/debug"
 	"github.com/shazow/wifitui/internal/helpers"
 )
 
@@ -191,11 +192,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.SetItems(items)
 	case secretsLoadedMsg:
+		debug.Log("secretsLoadedMsg received with secret of length: %d", len(msg))
 		m.loading = false
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		if m.pendingEditItem != nil {
 			m.selectedItem = *m.pendingEditItem
 			m.pendingEditItem = nil
+			debug.Log("Restored pending edit item: %s", m.selectedItem.SSID)
 		}
 		// HACK: Re-create the textinput to avoid some weird state issues.
 		// For some reason, just updating the value of the existing textinput
@@ -213,6 +216,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			newPasswordInput.EchoMode = textinput.EchoNormal
 		}
 		m.passwordInput = newPasswordInput
+		debug.Log("Set passwordInput value from secret.")
 		m.state = stateEditView
 		m.setupEditView()
 	case connectionSavedMsg:

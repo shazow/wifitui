@@ -10,11 +10,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shazow/wifitui/backend"
+	"github.com/shazow/wifitui/internal/debug"
 	"github.com/shazow/wifitui/internal/helpers"
 	"github.com/shazow/wifitui/qrwifi"
 )
 
 func (m *model) setupEditView() {
+	debug.Log("--- setupEditView ---")
+	debug.Log("Selected SSID: '%s'", m.selectedItem.SSID)
+	debug.Log("IsKnown: %v", m.selectedItem.IsKnown)
+	debug.Log("Security: %s", m.selectedItem.Security)
+	debug.Log("Password input value: '%s'", m.passwordInput.Value())
+	debug.Log("Password input placeholder: '%s'", m.passwordInput.Placeholder)
+
 	isNew := m.selectedItem.SSID == ""
 	var items []Focusable
 
@@ -87,6 +95,9 @@ func (m *model) setupEditView() {
 			case 0: // Connect
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
+				if m.autoConnectCheckbox.Checked() != m.selectedItem.AutoConnect {
+					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked()))
+				}
 				cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 			case 1: // Save
 				m.loading = true
