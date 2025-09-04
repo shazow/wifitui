@@ -177,3 +177,69 @@ func TestFullWorkflow_JoinAndEdit(t *testing.T) {
 		t.Errorf("expected final state to be stateEditView, but got %v", m.state)
 	}
 }
+
+func TestTypingInPasswordField_IsSaved(t *testing.T) {
+	// 1. Setup
+	b, _ := mock.New()
+	m, _ := NewModel(b)
+	ssid := "GET off my LAN"
+	password := "typed-password"
+
+	// 2. Navigate to the edit view for an unknown network
+	m.state = stateEditView
+	m.selectedItem = connectionItem{Connection: backend.Connection{SSID: ssid, Security: backend.SecurityWPA}}
+	m.setupEditView()
+
+	// 3. Simulate focusing the password field by tabbing to it
+	// In this view, the password field is the first focusable element.
+	if m.editFocusManager.Focused() != m.passwordAdapter {
+		t.Fatalf("Password field was not focused by default")
+	}
+
+	// 4. Simulate typing a password
+	var newModel tea.Model = m
+	var cmd tea.Cmd
+	for _, char := range password {
+		newModel, cmd = newModel.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{char}})
+		if cmd != nil {
+			// handle commands if any, though typing shouldn't produce them
+			newModel.Update(cmd())
+		}
+	}
+	m = newModel.(*model)
+
+	// Assert that the adapter's model has the value
+	if m.passwordAdapter.Model.Value() != password {
+		t.Fatalf("password was not typed into adapter correctly, got: %q", m.passwordAdapter.Model.Value())
+	}
+
+	// 5. Simulate focusing the "Join" button
+	for m.editFocusManager.Focused() != m.buttonGroup {
+		newModel, _ = m.updateEditView(tea.KeyMsg{Type: tea.KeyTab})
+		m = newModel.(*model)
+	}
+	// Make sure "Join" is selected (it's the first button)
+	m.buttonGroup.selected = 0
+
+	// 6. Simulate clicking "Join"
+	newModel, joinCmd := m.updateEditView(tea.KeyMsg{Type: tea.KeyEnter})
+	m = newModel.(*model)
+	if joinCmd == nil {
+		t.Fatal("expected a join command")
+	}
+
+	// 7. Execute the command. It should return a `connectionSavedMsg`.
+	msg := joinCmd()
+	if _, ok := msg.(connectionSavedMsg); !ok {
+		t.Fatalf("expected connectionSavedMsg, got %T", msg)
+	}
+
+	// 8. Now, check the backend state directly
+	secret, err := b.GetSecrets(ssid)
+	if err != nil {
+		t.Fatalf("GetSecrets failed: %v", err)
+	}
+	if secret != password {
+		t.Errorf("expected secret in backend to be '%s', but got '%s'", password, secret)
+	}
+}

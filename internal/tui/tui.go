@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shazow/wifitui/backend"
-	"github.com/shazow/wifitui/internal/debug"
 	"github.com/shazow/wifitui/internal/helpers"
 )
 
@@ -192,31 +191,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.list.SetItems(items)
 	case secretsLoadedMsg:
-		debug.Log("secretsLoadedMsg received with secret of length: %d", len(msg))
 		m.loading = false
 		m.statusMessage = "Secret loaded. Press 'esc' to go back."
 		if m.pendingEditItem != nil {
 			m.selectedItem = *m.pendingEditItem
 			m.pendingEditItem = nil
-			debug.Log("Restored pending edit item: %s", m.selectedItem.SSID)
 		}
-		// HACK: Re-create the textinput to avoid some weird state issues.
-		// For some reason, just updating the value of the existing textinput
-		// doesn't work correctly when the view is re-rendered.
-		newPasswordInput := textinput.New()
-		newPasswordInput.SetValue(string(msg))
-		newPasswordInput.CharLimit = 64
-		newPasswordInput.Width = 30
-		newPasswordInput.CursorEnd()
+		m.passwordInput.SetValue(string(msg))
+		m.passwordInput.CursorEnd()
 		if string(msg) != "" {
-			newPasswordInput.EchoMode = textinput.EchoPassword
-			newPasswordInput.Placeholder = "(press * to reveal)"
-			newPasswordInput.Blur()
+			m.passwordInput.EchoMode = textinput.EchoPassword
+			m.passwordInput.Placeholder = "(press * to reveal)"
+			m.passwordInput.Blur()
 		} else {
-			newPasswordInput.EchoMode = textinput.EchoNormal
+			m.passwordInput.EchoMode = textinput.EchoNormal
+			m.passwordInput.Placeholder = ""
 		}
-		m.passwordInput = newPasswordInput
-		debug.Log("Set passwordInput value from secret.")
 		m.state = stateEditView
 		m.setupEditView()
 	case connectionSavedMsg:

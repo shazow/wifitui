@@ -10,19 +10,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shazow/wifitui/backend"
-	"github.com/shazow/wifitui/internal/debug"
 	"github.com/shazow/wifitui/internal/helpers"
 	"github.com/shazow/wifitui/qrwifi"
 )
 
 func (m *model) setupEditView() {
-	debug.Log("--- setupEditView ---")
-	debug.Log("Selected SSID: '%s'", m.selectedItem.SSID)
-	debug.Log("IsKnown: %v", m.selectedItem.IsKnown)
-	debug.Log("Security: %s", m.selectedItem.Security)
-	debug.Log("Password input value: '%s'", m.passwordInput.Value())
-	debug.Log("Password input placeholder: '%s'", m.passwordInput.Placeholder)
-
 	isNew := m.selectedItem.SSID == ""
 	var items []Focusable
 
@@ -86,7 +78,7 @@ func (m *model) setupEditView() {
 				m.loading = true
 				ssid := m.ssidInput.Value()
 				m.statusMessage = fmt.Sprintf("Joining '%s'...", ssid)
-				cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordInput.Value(), backend.SecurityType(m.securityGroup.Selected()), true))
+				cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordAdapter.Model.Value(), backend.SecurityType(m.securityGroup.Selected()), true))
 			case 1: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
@@ -102,7 +94,7 @@ func (m *model) setupEditView() {
 			case 1: // Save
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Saving settings for %s...", m.selectedItem.SSID)
-				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordAdapter.Model.Value()))
 				if m.autoConnectCheckbox.Checked() != m.selectedItem.AutoConnect {
 					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked()))
 				}
@@ -116,7 +108,7 @@ func (m *model) setupEditView() {
 			case 0: // Join
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value(), m.selectedItem.Security, m.selectedItem.IsHidden))
+				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordAdapter.Model.Value(), m.selectedItem.Security, m.selectedItem.IsHidden))
 			case 1: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
@@ -213,7 +205,7 @@ func (m model) viewEditView() string {
 	s.WriteString("\n\n(tab to switch fields, arrows to navigate, enter to select)")
 
 	if m.selectedItem.IsKnown {
-		password := m.passwordInput.Value()
+		password := m.passwordAdapter.Model.Value()
 		if m.passwordRevealed && password != "" {
 			qrCodeString, err := qrwifi.GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
 			if err == nil {

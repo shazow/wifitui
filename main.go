@@ -8,7 +8,6 @@ import (
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/shazow/wifitui/backend"
-	"github.com/shazow/wifitui/internal/debug"
 )
 
 var (
@@ -18,9 +17,6 @@ var (
 
 // main is the entry point of the application
 func main() {
-	debug.Init()
-	defer debug.Close()
-
 	var (
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
 		version     = rootFlagSet.Bool("version", false, "display version")
