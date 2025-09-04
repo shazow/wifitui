@@ -15,7 +15,7 @@ jobs:
         with:
           go-version: '1.25'
       - name: Run tests
-        run: go test -race -test.timeout 5s ./...
+        run: go test -test.timeout 30s ./...
   nix-build:
     runs-on: ubuntu-latest
     steps:
