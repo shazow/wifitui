@@ -37,22 +37,22 @@ func ago(duration time.Duration) *time.Time {
 // NewBackend creates a new mock.Backend with a list of fun wifi networks.
 func New() (backend.Backend, error) {
 	initialConnections := []backend.Connection{
-		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "GET off my LAN", Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "HideYoKidsHideYoWiFi", LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA},
+		{SSID: "GET off my LAN", Security: backend.SecurityWPA, LastConnected: ago(761 * time.Hour), IsKnown: true, AutoConnect: false},
 		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWEP, IsVisible: true},
 		{SSID: "Unencrypted_Honeypot", Security: backend.SecurityOpen, IsVisible: true},
-		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "I See Dead Packets", Security: backend.SecurityWEP, IsVisible: true},
+		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: backend.SecurityWPA},
+		{SSID: "I See Dead Packets", Security: backend.SecurityWEP, LastConnected: ago(8763 * time.Hour)},
 		{SSID: "Dunder MiffLAN", Security: backend.SecurityWPA, IsVisible: true},
 		{SSID: "Police Surveillance 2", Strength: 48, Security: backend.SecurityWPA, IsVisible: true},
 		{SSID: "I Believe Wi Can Fi", Security: backend.SecurityWEP, IsVisible: true},
 		{SSID: "Hot singles in your area", Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "Password is password", IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "Password is password", Strength: 87, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA, IsVisible: true},
 		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWEP, IsVisible: true},
-		{SSID: "xX_D4rkR0ut3r_Xx", Security: backend.SecurityWPA, IsVisible: true},
-		{SSID: "Luke I am your WiFi", Security: backend.SecurityWEP, IsVisible: true},
-		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWEP},
+		{SSID: "xX_D4rkR0ut3r_Xx", Security: backend.SecurityWPA},
+		{SSID: "Luke I am your WiFi", Security: backend.SecurityWEP},
+		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityWPA},
 	}
 	secrets := map[string]string{
 		"Password is password": "password",
