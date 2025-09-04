@@ -12,7 +12,7 @@ func (m *model) updateForgetView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "y":
+		case "y", "enter", "f":
 			m.loading = true
 			m.statusMessage = fmt.Sprintf("Forgetting '%s'...", m.selectedItem.SSID)
 			m.errorMessage = ""
