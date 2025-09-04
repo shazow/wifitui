@@ -37,22 +37,22 @@ func ago(duration time.Duration) *time.Time {
 // NewBackend creates a new mock.Backend with a list of fun wifi networks.
 func New() (backend.Backend, error) {
 	initialConnections := []backend.Connection{
-		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA},
-		{SSID: "GET off my LAN", Security: backend.SecurityWPA},
-		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWEP},
-		{SSID: "Unencrypted_Honeypot", Security: backend.SecurityOpen},
-		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: backend.SecurityWPA},
-		{SSID: "I See Dead Packets", Security: backend.SecurityWEP},
-		{SSID: "Dunder MiffLAN", Security: backend.SecurityWPA},
-		{SSID: "Police Surveillance 2", Strength: 48, Security: backend.SecurityWPA},
-		{SSID: "I Believe Wi Can Fi", Security: backend.SecurityWEP},
-		{SSID: "Hot singles in your area", Security: backend.SecurityWPA},
-		{SSID: "Password is password", IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA},
-		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: backend.SecurityWPA},
-		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWEP},
-		{SSID: "xX_D4rkR0ut3r_Xx", Security: backend.SecurityWPA},
-		{SSID: "Luke I am your WiFi", Security: backend.SecurityWEP},
-		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityWPA},
+		{SSID: "HideYoKidsHideYoWiFi", Strength: 75, LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "GET off my LAN", Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "NeverGonnaGiveYouIP", Security: backend.SecurityWEP, IsVisible: true},
+		{SSID: "Unencrypted_Honeypot", Security: backend.SecurityOpen, IsVisible: true},
+		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "I See Dead Packets", Security: backend.SecurityWEP, IsVisible: true},
+		{SSID: "Dunder MiffLAN", Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "Police Surveillance 2", Strength: 48, Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "I Believe Wi Can Fi", Security: backend.SecurityWEP, IsVisible: true},
+		{SSID: "Hot singles in your area", Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "Password is password", IsKnown: true, AutoConnect: true, Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "Wi-Fight the Feeling?", Security: backend.SecurityWEP, IsVisible: true},
+		{SSID: "xX_D4rkR0ut3r_Xx", Security: backend.SecurityWPA, IsVisible: true},
+		{SSID: "Luke I am your WiFi", Security: backend.SecurityWEP, IsVisible: true},
+		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: backend.SecurityWPA, IsVisible: true},
 	}
 	secrets := map[string]string{
 		"Password is password": "password",
@@ -88,6 +88,23 @@ func New() (backend.Backend, error) {
 	}, nil
 }
 
+// setActiveConnection sets the active connection and ensures all other connections are inactive.
+func (m *MockBackend) setActiveConnection(ssid string) {
+	m.ActiveConnectionIndex = -1
+	for i := range m.KnownConnections {
+		isActive := m.KnownConnections[i].SSID == ssid
+		m.KnownConnections[i].IsActive = isActive
+		if isActive {
+			m.ActiveConnectionIndex = i
+		}
+	}
+
+	// Also update the visible connections slice for consistency
+	for i := range m.VisibleConnections {
+		m.VisibleConnections[i].IsActive = (m.VisibleConnections[i].SSID == ssid)
+	}
+}
+
 func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, error) {
 	// For mock, we can re-randomize strengths on each scan
 	if shouldScan {
@@ -117,15 +134,11 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 		unified[conn.SSID] = conn
 	}
 
-	// Get the active SSID beforehand.
-	var activeSSID string
-	if m.ActiveConnectionIndex >= 0 && m.ActiveConnectionIndex < len(m.KnownConnections) {
-		activeSSID = m.KnownConnections[m.ActiveConnectionIndex].SSID
-	}
-
 	// Convert map back to a slice for the return value.
 	var result []backend.Connection
 	for _, c := range unified {
+		// IsActive is now stored on the connection object itself.
+		// We still need to determine IsKnown for networks that might only be in the visible list.
 		isKnown := false
 		for _, kc := range m.KnownConnections {
 			if kc.SSID == c.SSID {
@@ -134,7 +147,6 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]backend.Connection, e
 			}
 		}
 		c.IsKnown = isKnown
-		c.IsActive = (c.SSID == activeSSID)
 		if !isKnown {
 			c.AutoConnect = false
 		}
@@ -152,7 +164,7 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 	// "Act on first match" logic for ambiguity.
 	for i, c := range m.KnownConnections {
 		if c.SSID == ssid {
-			m.ActiveConnectionIndex = i
+			m.setActiveConnection(ssid)
 			now := time.Now()
 			m.KnownConnections[i].LastConnected = &now
 			return nil
@@ -187,21 +199,10 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 
 	m.KnownConnections = newKnownConnections
 
-	// Reset active connection if it was the one forgotten.
 	if activeSSID == ssid {
-		m.ActiveConnectionIndex = -1
-		return nil
-	}
-
-	// Otherwise, find the new index of the active connection.
-	m.ActiveConnectionIndex = -1
-	if activeSSID != "" {
-		for i, c := range m.KnownConnections {
-			if c.SSID == activeSSID {
-				m.ActiveConnectionIndex = i
-				break
-			}
-		}
+		m.setActiveConnection("") // Deactivate all
+	} else {
+		m.setActiveConnection(activeSSID) // Re-sync active connection
 	}
 
 	return nil
@@ -245,20 +246,23 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security backend
 	}
 
 	// Check if we are replacing an existing known connection, otherwise append.
+	foundInKnown := false
 	for i, kc := range m.KnownConnections {
 		if kc.SSID == ssid {
 			m.KnownConnections[i] = newConnection
-			m.ActiveConnectionIndex = i
-			now := time.Now()
-			m.KnownConnections[i].LastConnected = &now
-			return nil
+			foundInKnown = true
+			break
 		}
 	}
+	if !foundInKnown {
+		m.KnownConnections = append(m.KnownConnections, newConnection)
+	}
 
-	m.KnownConnections = append(m.KnownConnections, newConnection)
-	m.ActiveConnectionIndex = len(m.KnownConnections) - 1
+	m.setActiveConnection(ssid)
 	now := time.Now()
-	m.KnownConnections[m.ActiveConnectionIndex].LastConnected = &now
+	if m.ActiveConnectionIndex != -1 {
+		m.KnownConnections[m.ActiveConnectionIndex].LastConnected = &now
+	}
 
 	return nil
 }
