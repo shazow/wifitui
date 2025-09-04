@@ -78,7 +78,7 @@ func (m *model) setupEditView() {
 				m.loading = true
 				ssid := m.ssidInput.Value()
 				m.statusMessage = fmt.Sprintf("Joining '%s'...", ssid)
-				cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordInput.Value(), backend.SecurityType(m.securityGroup.Selected()), true))
+				cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordAdapter.Model.Value(), backend.SecurityType(m.securityGroup.Selected()), true))
 			case 1: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
@@ -87,16 +87,19 @@ func (m *model) setupEditView() {
 			case 0: // Connect
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
+				if m.autoConnectCheckbox.Checked() != m.selectedItem.AutoConnect {
+					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked()))
+				}
 				cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 			case 1: // Save
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Saving settings for %s...", m.selectedItem.SSID)
-				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordInput.Value()))
+				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordAdapter.Model.Value()))
 				if m.autoConnectCheckbox.Checked() != m.selectedItem.AutoConnect {
 					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked()))
 				}
 			case 2: // Forget
-				return func() tea.Msg { return changeViewMsg(stateForgetView) }
+				return func() tea.Msg { return showForgetViewMsg{} }
 			case 3: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
@@ -105,7 +108,7 @@ func (m *model) setupEditView() {
 			case 0: // Join
 				m.loading = true
 				m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordInput.Value(), m.selectedItem.Security, m.selectedItem.IsHidden))
+				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordAdapter.Model.Value(), m.selectedItem.Security, m.selectedItem.IsHidden))
 			case 1: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
@@ -202,7 +205,7 @@ func (m model) viewEditView() string {
 	s.WriteString("\n\n(tab to switch fields, arrows to navigate, enter to select)")
 
 	if m.selectedItem.IsKnown {
-		password := m.passwordInput.Value()
+		password := m.passwordAdapter.Model.Value()
 		if m.passwordRevealed && password != "" {
 			qrCodeString, err := qrwifi.GenerateWifiQRCode(m.selectedItem.SSID, password, m.selectedItem.IsSecure, m.selectedItem.IsHidden)
 			if err == nil {

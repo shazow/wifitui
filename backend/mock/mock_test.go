@@ -255,6 +255,81 @@ func TestSetAutoConnect(t *testing.T) {
 	}
 }
 
+func TestJoinNetwork_UpdatePassword(t *testing.T) {
+	b, _ := New()
+	ssid := "GET off my LAN" // A network that is visible but not known initially
+	password := "password123"
+
+	// 1. Join the network for the first time
+	err := b.JoinNetwork(ssid, password, backend.SecurityWPA, false)
+	if err != nil {
+		t.Fatalf("JoinNetwork() failed on first join: %v", err)
+	}
+
+	// 2. Check if the secret was saved correctly
+	secret, err := b.GetSecrets(ssid)
+	if err != nil {
+		t.Fatalf("GetSecrets() failed after first join: %v", err)
+	}
+	if secret != password {
+		t.Errorf("expected secret '%s', got '%s'", password, secret)
+	}
+
+	// 2a. Check BuildNetworkList output
+	networks, err := b.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("BuildNetworkList() failed: %v", err)
+	}
+	conn := findConnection(networks, ssid)
+	if conn == nil {
+		t.Fatalf("did not find network %s in list after first join", ssid)
+	}
+	if !conn.IsKnown {
+		t.Errorf("expected network %s to be known in list, but it was not", ssid)
+	}
+
+	// 3. Join the same network again with a new password
+	newPassword := "newPassword456"
+	err = b.JoinNetwork(ssid, newPassword, backend.SecurityWPA, false)
+	if err != nil {
+		t.Fatalf("JoinNetwork() failed on second join: %v", err)
+	}
+
+	// 4. Check if the secret was updated
+	secret, err = b.GetSecrets(ssid)
+	if err != nil {
+		t.Fatalf("GetSecrets() failed after second join: %v", err)
+	}
+	if secret != newPassword {
+		t.Errorf("expected secret to be updated to '%s', but got '%s'", newPassword, secret)
+	}
+
+	// 4a. Check BuildNetworkList output again
+	networks, err = b.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("BuildNetworkList() failed after second join: %v", err)
+	}
+	conn = findConnection(networks, ssid)
+	if conn == nil {
+		t.Fatalf("did not find network %s in list after second join", ssid)
+	}
+	if !conn.IsKnown {
+		t.Errorf("expected network %s to still be known in list, but it was not", ssid)
+	}
+
+	// 5. Check that no duplicate connection was created
+	mockBackend := b.(*MockBackend)
+	count := 0
+	for _, c := range mockBackend.KnownConnections {
+		if c.SSID == ssid {
+			count++
+		}
+	}
+	if count > 1 {
+		t.Errorf("expected only one known connection for SSID '%s', but found %d", ssid, count)
+	}
+}
+
 func TestMain(m *testing.M) {
 	DefaultConnectSleep = 0
 	m.Run()
