@@ -26,14 +26,15 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		return
 	}
 
-	// Get plain title and description
 	title := i.Title()
 
 	// Add icons for security
-	var icon string
+	var icon string = "  ️ "
 	switch i.Security {
 	case backend.SecurityUnknown:
-		icon = "❓ "
+		if i.IsVisible {
+			icon = "❓ "
+		}
 	case backend.SecurityOpen:
 		icon = "🔓 "
 	default:
@@ -95,7 +96,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		desc = finalSignalStyle.Render(strengthPart) + descStyle.Render(connectedPart)
 	} else {
 		// No strength, just use the base desc style
-		desc = descStyle.Render(strengthPart + connectedPart)
+		desc = descStyle.MarginLeft(1).Render(strengthPart + connectedPart)
 	}
 
 	// Render with padding to create columns

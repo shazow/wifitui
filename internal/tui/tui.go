@@ -202,11 +202,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.passwordInput.CursorEnd()
 		if string(msg) != "" {
 			m.passwordInput.EchoMode = textinput.EchoPassword
-			m.passwordInput.Placeholder = "(press * to reveal)"
 			m.passwordInput.Blur()
 		} else {
 			m.passwordInput.EchoMode = textinput.EchoNormal
-			m.passwordInput.Placeholder = ""
 		}
 		m.state = stateEditView
 		m.setupEditView()
@@ -223,7 +221,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = viewState(msg)
 	case showForgetViewMsg:
 		m.state = stateForgetView
-		m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
+		m.statusMessage = fmt.Sprintf("Forget network '%s'? (Y/n)", m.selectedItem.SSID)
 		m.errorMessage = ""
 
 	// Handle key presses
