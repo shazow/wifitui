@@ -119,25 +119,10 @@ func (m *model) setupEditView() {
 
 	// If it's a known network, focus the buttons by default
 	if m.selectedItem.IsKnown {
-		buttonIndex := findFocusableIndex(items, m.buttonGroup)
-		if buttonIndex != -1 {
-			m.editFocusManager.SetFocus(buttonIndex)
-		} else {
-			m.editFocusManager.Focus()
-		}
+		m.editFocusManager.SetFocus(m.buttonGroup)
 	} else {
 		m.editFocusManager.Focus()
 	}
-}
-
-// findFocusableIndex returns the index of the focusable item in the slice.
-func findFocusableIndex(items []Focusable, target Focusable) int {
-	for i, item := range items {
-		if item == target {
-			return i
-		}
-	}
-	return -1
 }
 
 func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
