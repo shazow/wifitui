@@ -99,7 +99,7 @@ func (m *model) setupEditView() {
 					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked()))
 				}
 			case 2: // Forget
-				return func() tea.Msg { return changeViewMsg(stateForgetView) }
+				return func() tea.Msg { return showForgetViewMsg{} }
 			case 3: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}

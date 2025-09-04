@@ -64,10 +64,11 @@ func (i connectionItem) FilterValue() string { return i.Title() }
 type (
 	connectionsLoadedMsg []backend.Connection // Sent when connections are fetched
 	scanFinishedMsg      []backend.Connection // Sent when a scan is finished
-	secretsLoadedMsg     string               // Sent when a password is fetched
-	connectionSavedMsg   struct{}             // Sent when a password is saved
+	secretsLoadedMsg     string // Sent when a password is fetched
+	connectionSavedMsg   struct{}
 	errorMsg             struct{ err error }
 	changeViewMsg        viewState
+	showForgetViewMsg    struct{}
 )
 
 // The main model for our TUI application
@@ -220,6 +221,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateErrorView
 	case changeViewMsg:
 		m.state = viewState(msg)
+	case showForgetViewMsg:
+		m.state = stateForgetView
+		m.statusMessage = fmt.Sprintf("Forget network '%s'? (y/n)", m.selectedItem.SSID)
+		m.errorMessage = ""
 
 	// Handle key presses
 	case tea.KeyMsg:
