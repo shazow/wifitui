@@ -2,7 +2,7 @@
 
 `wifitui` is a cute and fast replacement for `nmtui`.
 
-<img width="821.5" height="395.5" alt="image" src="https://github.com/user-attachments/assets/0982a201-0b41-4c52-a80e-7cf24915c763" />
+<img width="821.5" height="378.5" alt="image" src="https://github.com/user-attachments/assets/12c796b1-cefa-49ba-8be4-7abfb4bc8fa2" />
 
 ## Features
 
