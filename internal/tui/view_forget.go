@@ -27,7 +27,7 @@ func (m *model) updateForgetView(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewForgetView() string {
-	question := lipgloss.NewStyle().Width(50).Align(lipgloss.Center).Render(m.statusMessage)
-	dialog := dialogBoxStyle.Render(question)
+	question := CurrentTheme.QuestionStyle.Render(m.statusMessage)
+	dialog := CurrentTheme.DialogBoxStyle.Render(question)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, dialog)
 }

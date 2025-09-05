@@ -55,13 +55,13 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Apply custom styling based on connection state
 	if !i.IsVisible {
-		title = disabledStyle.Render(title)
+		title = CurrentTheme.DisabledStyle.Render(title)
 	} else if i.IsActive {
-		title = activeStyle.Render(title)
+		title = CurrentTheme.ActiveStyle.Render(title)
 	} else if i.IsKnown {
-		title = knownNetworkStyle.Render(title)
+		title = CurrentTheme.KnownNetworkStyle.Render(title)
 	} else {
-		title = unknownNetworkStyle.Render(title)
+		title = CurrentTheme.UnknownNetworkStyle.Render(title)
 	}
 
 	// Prepare description parts
@@ -89,8 +89,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Now construct the description string with styles
 	if i.Strength > 0 {
-		start, _ := colorful.Hex(colorSignalLow)
-		end, _ := colorful.Hex(colorSignalHigh)
+		start, _ := colorful.Hex(CurrentTheme.ColorSignalLow)
+		end, _ := colorful.Hex(CurrentTheme.ColorSignalHigh)
 		p := float64(i.Strength) / 100.0
 		blend := start.BlendRgb(end, p)
 		signalColor := lipgloss.Color(blend.Hex())
@@ -201,7 +201,7 @@ func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) viewListView() string {
 	var viewBuilder strings.Builder
-	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
+	viewBuilder.WriteString(CurrentTheme.ListBorderStyle.Render(m.list.View()))
 
 	// Custom status bar
 	statusText := ""
@@ -210,7 +210,7 @@ func (m model) viewListView() string {
 	}
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
-	return docStyle.Render(viewBuilder.String())
+	return CurrentTheme.DocStyle.Render(viewBuilder.String())
 }
 
 func shouldDisplayPasswordField(security wifi.SecurityType) bool {

@@ -9,29 +9,11 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/internal/helpers"
 )
 
-// Define some styles for the UI
-var (
-	docStyle            = lipgloss.NewStyle().Margin(1, 2)
-	statusStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Render
-	errorStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render
-	activeStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("46"))
-	knownNetworkStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("40"))
-	unknownNetworkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
-	disabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	listBorderStyle     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true)
-	dialogBoxStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).BorderForeground(lipgloss.Color("205"))
-)
-
-const (
-	colorSignalLow  = "#BC3C00"
-	colorSignalHigh = "#00FF00"
-)
 
 // viewState represents the current screen of the TUI
 type viewState int
@@ -99,7 +81,7 @@ func NewModel(b wifi.Backend) (*model, error) {
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = CurrentTheme.FocusedStyle
 
 	// Configure the password input field
 	ti := textinput.New()
@@ -135,9 +117,9 @@ func NewModel(b wifi.Backend) (*model, error) {
 
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
-	l.Styles.Title = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
-	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
-	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	l.Styles.Title = CurrentTheme.ListTitleStyle
+	l.Styles.FilterPrompt = CurrentTheme.ListFilterPromptStyle
+	l.Styles.FilterCursor = CurrentTheme.ListFilterCursorStyle
 
 	m := model{
 		state:            stateListView,
@@ -166,8 +148,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := docStyle.GetFrameSize()
-		bh, bv := listBorderStyle.GetFrameSize()
+		h, v := CurrentTheme.DocStyle.GetFrameSize()
+		bh, bv := CurrentTheme.ListBorderStyle.GetFrameSize()
 		// Account for title and status bar
 		extraVerticalSpace := 4
 		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
@@ -267,9 +249,9 @@ func (m model) View() string {
 	}
 
 	if m.loading {
-		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), statusStyle(m.statusMessage)))
+		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), CurrentTheme.StatusMessageStyle.Render(m.statusMessage)))
 	} else if m.statusMessage != "" {
-		s.WriteString(fmt.Sprintf("\n\n%s", statusStyle(m.statusMessage)))
+		s.WriteString(fmt.Sprintf("\n\n%s", CurrentTheme.StatusMessageStyle.Render(m.statusMessage)))
 	}
 
 	return s.String()

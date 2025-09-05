@@ -17,5 +17,5 @@ func (m *model) updateErrorView(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewErrorView() string {
-	return docStyle.Render(fmt.Sprintf("Error: %s", errorStyle(m.errorMessage)))
+	return CurrentTheme.DocStyle.Render(fmt.Sprintf("Error: %s", CurrentTheme.ErrorMessageStyle.Render(m.errorMessage)))
 }

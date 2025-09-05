@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/internal/helpers"
@@ -193,7 +192,7 @@ func (m model) viewEditView() string {
 		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
 			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
-		s.WriteString(lipgloss.NewStyle().Width(50).Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
+		s.WriteString(CurrentTheme.DetailsBoxStyle.Render(details.String()))
 		s.WriteString("\n\n")
 	}
 
