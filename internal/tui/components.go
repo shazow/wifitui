@@ -5,12 +5,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-)
-
-var (
-	focusedStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("205")).Bold(true)
-	blurredStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
 )
 
 // --- Checkbox ---
@@ -57,9 +51,9 @@ func (c *Checkbox) View() string {
 	}
 	label := " " + c.label
 	if c.focused {
-		return focusedStyle.Render(checkbox + label)
+		return CurrentTheme.Primary.Bold(true).Render(checkbox + label)
 	}
-	return blurredStyle.Render(checkbox + label)
+	return CurrentTheme.Subtle.Render(checkbox + label)
 }
 
 func (c *Checkbox) Checked() bool {
@@ -107,9 +101,9 @@ func (c *ChoiceComponent) View() string {
 	var s strings.Builder
 	s.WriteString(c.label + "\n")
 	for i, option := range c.options {
-		style := blurredStyle
+		style := CurrentTheme.Subtle
 		if c.focused && i == c.selected {
-			style = focusedStyle
+			style = CurrentTheme.Primary.Bold(true)
 		}
 		s.WriteString(style.Render("[ " + option + " ]"))
 		s.WriteString("  ")
@@ -160,11 +154,9 @@ func (a *TextInput) Blur() {
 
 // View delegates to the underlying textinput.Model.
 func (a *TextInput) View() string {
-	style := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder(), true).
-		Padding(0, 1)
+	style := CurrentTheme.Box.Padding(0, 1)
 	if a.focused {
-		style = style.BorderForeground(lipgloss.Color("205"))
+		style = style.BorderForeground(CurrentTheme.PrimaryColor)
 	}
 	return a.label + "\n" + style.Render(a.Model.View())
 }
@@ -213,9 +205,9 @@ func (b *MultiButtonComponent) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 func (b *MultiButtonComponent) View() string {
 	var s strings.Builder
 	for i, label := range b.buttons {
-		style := blurredStyle
+		style := CurrentTheme.Subtle
 		if b.focused && i == b.selected {
-			style = focusedStyle
+			style = CurrentTheme.Primary.Bold(true)
 		}
 		s.WriteString(style.Render("[ " + label + " ]"))
 		s.WriteString("  ")
