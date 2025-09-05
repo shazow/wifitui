@@ -55,13 +55,13 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Apply custom styling based on connection state
 	if !i.IsVisible {
-		title = CurrentTheme.DisabledStyle.Render(title)
+		title = CurrentTheme.Disabled.Render(title)
 	} else if i.IsActive {
-		title = CurrentTheme.ActiveStyle.Render(title)
+		title = CurrentTheme.Success.Render(title)
 	} else if i.IsKnown {
-		title = CurrentTheme.KnownNetworkStyle.Render(title)
+		title = CurrentTheme.Success.Render(title)
 	} else {
-		title = CurrentTheme.UnknownNetworkStyle.Render(title)
+		title = CurrentTheme.Subtle.Render(title)
 	}
 
 	// Prepare description parts
@@ -72,40 +72,30 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	}
 
 	var desc string
-	var descStyle lipgloss.Style
-
-	// Determine base styles
-	if index == m.Index() {
-		// For selected items, we render the title with the full selected style,
-		// which includes the border.
-		title = "▶" + d.Styles.SelectedTitle.Render(title)
-		// For the description, we'll use the selected style, but we need to
-		// remove the border to avoid rendering it multiple times.
-		descStyle = d.Styles.SelectedDesc.Copy().BorderStyle(lipgloss.HiddenBorder())
-	} else {
-		title = d.Styles.NormalTitle.MarginLeft(1).Render(title)
-		descStyle = d.Styles.NormalDesc
-	}
-
-	// Now construct the description string with styles
 	if i.Strength > 0 {
-		start, _ := colorful.Hex(CurrentTheme.ColorSignalLow)
-		end, _ := colorful.Hex(CurrentTheme.ColorSignalHigh)
+		start, _ := colorful.Hex(CurrentTheme.SignalLowColor)
+		end, _ := colorful.Hex(CurrentTheme.SignalHighColor)
 		p := float64(i.Strength) / 100.0
 		blend := start.BlendRgb(end, p)
 		signalColor := lipgloss.Color(blend.Hex())
 
 		// Style only the signal part with color
-		signalStyle := lipgloss.NewStyle().Foreground(signalColor)
-		// Render the full description with the base style
-		desc = descStyle.Render(signalStyle.Render(strengthPart) + connectedPart)
+		desc = lipgloss.NewStyle().Foreground(signalColor).Render(strengthPart) + connectedPart
 	} else {
-		// No strength, just use the base desc style
-		desc = descStyle.MarginLeft(1).Render(strengthPart + connectedPart)
+		desc = strengthPart + connectedPart
 	}
 
-	// Render with padding to create columns
-	fmt.Fprintf(w, "%s%s %s", title, padding, desc)
+	// Now combine and render the full line
+	var line string
+	if index == m.Index() {
+		// Selected item
+		line = "▶" + title + padding + " " + desc
+		fmt.Fprint(w, CurrentTheme.SelectedListItemStyle.Render(line))
+	} else {
+		// Normal item
+		line = " " + title + padding + " " + desc
+		fmt.Fprint(w, CurrentTheme.ListItemStyle.Render(line))
+	}
 }
 
 func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -210,7 +200,7 @@ func (m model) viewListView() string {
 	}
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
-	return CurrentTheme.DocStyle.Render(viewBuilder.String())
+	return CurrentTheme.Doc.Render(viewBuilder.String())
 }
 
 func shouldDisplayPasswordField(security wifi.SecurityType) bool {

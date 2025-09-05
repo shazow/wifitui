@@ -81,7 +81,7 @@ func NewModel(b wifi.Backend) (*model, error) {
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = CurrentTheme.FocusedStyle
+	s.Style = CurrentTheme.Primary
 
 	// Configure the password input field
 	ti := textinput.New()
@@ -98,8 +98,6 @@ func NewModel(b wifi.Backend) (*model, error) {
 
 	// Configure the list
 	delegate := itemDelegate{}
-	defaultDel := list.NewDefaultDelegate()
-	delegate.Styles = defaultDel.Styles
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
@@ -117,9 +115,9 @@ func NewModel(b wifi.Backend) (*model, error) {
 
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
-	l.Styles.Title = CurrentTheme.ListTitleStyle
-	l.Styles.FilterPrompt = CurrentTheme.ListFilterPromptStyle
-	l.Styles.FilterCursor = CurrentTheme.ListFilterCursorStyle
+	l.Styles.Title = CurrentTheme.Primary.Bold(true)
+	l.Styles.FilterPrompt = CurrentTheme.Normal
+	l.Styles.FilterCursor = CurrentTheme.Primary
 
 	m := model{
 		state:            stateListView,
@@ -148,7 +146,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := CurrentTheme.DocStyle.GetFrameSize()
+		h, v := CurrentTheme.Doc.GetFrameSize()
 		bh, bv := CurrentTheme.ListBorderStyle.GetFrameSize()
 		// Account for title and status bar
 		extraVerticalSpace := 4
@@ -249,9 +247,9 @@ func (m model) View() string {
 	}
 
 	if m.loading {
-		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), CurrentTheme.StatusMessageStyle.Render(m.statusMessage)))
+		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), CurrentTheme.Primary.Render(m.statusMessage)))
 	} else if m.statusMessage != "" {
-		s.WriteString(fmt.Sprintf("\n\n%s", CurrentTheme.StatusMessageStyle.Render(m.statusMessage)))
+		s.WriteString(fmt.Sprintf("\n\n%s", CurrentTheme.Primary.Render(m.statusMessage)))
 	}
 
 	return s.String()

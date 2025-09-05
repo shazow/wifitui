@@ -1,10 +1,11 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
-)
+	"fmt"
 
-import "fmt"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
 
 func (m *model) updateErrorView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg.(type) {
@@ -17,5 +18,6 @@ func (m *model) updateErrorView(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) viewErrorView() string {
-	return CurrentTheme.DocStyle.Render(fmt.Sprintf("Error: %s", CurrentTheme.ErrorMessageStyle.Render(m.errorMessage)))
+	errorViewStyle := CurrentTheme.Box.Border(lipgloss.DoubleBorder()).BorderForeground(CurrentTheme.ErrorColor)
+	return CurrentTheme.Doc.Render(errorViewStyle.Render(fmt.Sprintf("Error: %s", m.errorMessage)))
 }

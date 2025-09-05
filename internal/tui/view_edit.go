@@ -192,7 +192,7 @@ func (m model) viewEditView() string {
 		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
 			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
-		s.WriteString(CurrentTheme.DetailsBoxStyle.Render(details.String()))
+		s.WriteString(CurrentTheme.Box.Width(50).Render(details.String()))
 		s.WriteString("\n\n")
 	}
 

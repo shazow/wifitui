@@ -4,29 +4,33 @@ import "github.com/charmbracelet/lipgloss"
 
 // Theme contains the styles for the application.
 type Theme struct {
-	ListBorderStyle     lipgloss.Style
-	DocStyle            lipgloss.Style
-	DisabledStyle       lipgloss.Style
-	ActiveStyle         lipgloss.Style
-	KnownNetworkStyle   lipgloss.Style
-	UnknownNetworkStyle lipgloss.Style
-	StatusMessageStyle  lipgloss.Style
-	ErrorMessageStyle   lipgloss.Style
-	FocusedStyle        lipgloss.Style
-	BlurredStyle        lipgloss.Style
-	ErrorViewStyle      lipgloss.Style
-	TextInputStyle      lipgloss.Style
-	DialogBoxStyle        lipgloss.Style
-	DetailsBoxStyle       lipgloss.Style
-	ListTitleStyle        lipgloss.Style
-	ListFilterPromptStyle lipgloss.Style
-	ListFilterCursorStyle lipgloss.Style
-	QuestionStyle         lipgloss.Style
+	// Text styles
+	Primary   lipgloss.Style
+	Subtle    lipgloss.Style
+	Success   lipgloss.Style
+	Error     lipgloss.Style
+	Normal    lipgloss.Style
+	Disabled  lipgloss.Style
 
-	ColorSignalHigh string
-	ColorSignalLow  string
+	// Box styles
+	Box      lipgloss.Style
+	ListBorderStyle lipgloss.Style
 
-	FocusedColor lipgloss.TerminalColor
+	// List item styles
+	ListItemStyle         lipgloss.Style
+	SelectedListItemStyle lipgloss.Style
+
+	// Layout styles
+	Doc      lipgloss.Style
+	Question lipgloss.Style
+
+	// Colors for non-style contexts
+	SignalHighColor string
+	SignalLowColor  string
+
+	PrimaryColor lipgloss.TerminalColor
+	SubtleColor  lipgloss.TerminalColor
+	ErrorColor   lipgloss.TerminalColor
 }
 
 // CurrentTheme is the active theme for the application.
@@ -34,58 +38,39 @@ var CurrentTheme = NewDefaultTheme()
 
 // NewDefaultTheme creates a new default theme.
 func NewDefaultTheme() Theme {
+	primary := lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	subtle := lipgloss.NewStyle().Foreground(lipgloss.Color("250"))
+	success := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	normal := lipgloss.NewStyle().Foreground(lipgloss.Color("255"))
+
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2)
+
 	return Theme{
-		ListBorderStyle: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder(), true).
-			BorderForeground(lipgloss.Color("240")),
-		DocStyle: lipgloss.NewStyle().
-			Margin(1, 2),
-		DisabledStyle: lipgloss.NewStyle().
-			Strikethrough(true).
-			Foreground(lipgloss.Color("244")),
-		ActiveStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")), // A nice aqua
-		KnownNetworkStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("40")),
-		UnknownNetworkStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("250")),
-		StatusMessageStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")),
-		ErrorMessageStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")), // Red
-		FocusedStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")).Bold(true),
-		BlurredStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("250")),
-		ErrorViewStyle: lipgloss.NewStyle().
-			Border(lipgloss.DoubleBorder(), true).
-			BorderForeground(lipgloss.Color("9")). // Red
-			Padding(1, 2),
-		TextInputStyle: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder(), true).
-			Padding(0, 1),
-		DialogBoxStyle: lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			Padding(1, 2).
-			BorderForeground(lipgloss.Color("205")),
-		ListTitleStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")).
-			Bold(true),
-		ListFilterPromptStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("255")),
-		ListFilterCursorStyle: lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205")),
-		DetailsBoxStyle: lipgloss.NewStyle().
-			Width(50).
-			Border(lipgloss.RoundedBorder()).
-			Padding(1, 2),
-		QuestionStyle: lipgloss.NewStyle().
-			Width(50).
-			Align(lipgloss.Center),
+		Primary:   primary,
+		Subtle:    subtle,
+		Success:   success,
+		Error:     errorStyle,
+		Normal:    normal,
+		Disabled:  subtle.Strikethrough(true).Foreground(lipgloss.Color("244")),
 
-		ColorSignalHigh: "#00FF00",
-		ColorSignalLow:  "#BC3C00",
+		Box:      box,
+		ListBorderStyle: box.Border(lipgloss.RoundedBorder(), true).BorderForeground(lipgloss.Color("240")),
 
-		FocusedColor: lipgloss.Color("205"),
+		ListItemStyle: lipgloss.NewStyle().PaddingLeft(2),
+		SelectedListItemStyle: lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(lipgloss.Color("205")).
+			PaddingLeft(1),
+
+		Doc:      lipgloss.NewStyle().Margin(1, 2),
+		Question: lipgloss.NewStyle().Width(50).Align(lipgloss.Center),
+
+		SignalHighColor: "#00FF00",
+		SignalLowColor:  "#BC3C00",
+
+		PrimaryColor: lipgloss.Color("205"),
+		SubtleColor:  lipgloss.Color("240"),
+		ErrorColor:   lipgloss.Color("196"),
 	}
 }

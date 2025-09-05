@@ -51,9 +51,9 @@ func (c *Checkbox) View() string {
 	}
 	label := " " + c.label
 	if c.focused {
-		return CurrentTheme.FocusedStyle.Render(checkbox + label)
+		return CurrentTheme.Primary.Bold(true).Render(checkbox + label)
 	}
-	return CurrentTheme.BlurredStyle.Render(checkbox + label)
+	return CurrentTheme.Subtle.Render(checkbox + label)
 }
 
 func (c *Checkbox) Checked() bool {
@@ -101,9 +101,9 @@ func (c *ChoiceComponent) View() string {
 	var s strings.Builder
 	s.WriteString(c.label + "\n")
 	for i, option := range c.options {
-		style := CurrentTheme.BlurredStyle
+		style := CurrentTheme.Subtle
 		if c.focused && i == c.selected {
-			style = CurrentTheme.FocusedStyle
+			style = CurrentTheme.Primary.Bold(true)
 		}
 		s.WriteString(style.Render("[ " + option + " ]"))
 		s.WriteString("  ")
@@ -154,9 +154,9 @@ func (a *TextInput) Blur() {
 
 // View delegates to the underlying textinput.Model.
 func (a *TextInput) View() string {
-	style := CurrentTheme.TextInputStyle
+	style := CurrentTheme.Box.Padding(0, 1)
 	if a.focused {
-		style = style.BorderForeground(CurrentTheme.FocusedColor)
+		style = style.BorderForeground(CurrentTheme.PrimaryColor)
 	}
 	return a.label + "\n" + style.Render(a.Model.View())
 }
@@ -205,9 +205,9 @@ func (b *MultiButtonComponent) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 func (b *MultiButtonComponent) View() string {
 	var s strings.Builder
 	for i, label := range b.buttons {
-		style := CurrentTheme.BlurredStyle
+		style := CurrentTheme.Subtle
 		if b.focused && i == b.selected {
-			style = CurrentTheme.FocusedStyle
+			style = CurrentTheme.Primary.Bold(true)
 		}
 		s.WriteString(style.Render("[ " + label + " ]"))
 		s.WriteString("  ")
