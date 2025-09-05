@@ -76,8 +76,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Determine base styles
 	if index == m.Index() {
+		// For selected items, we render the title with the full selected style,
+		// which includes the border.
 		title = "▶" + d.Styles.SelectedTitle.Render(title)
-		descStyle = d.Styles.SelectedDesc
+		// For the description, we'll use the selected style, but we need to
+		// remove the border to avoid rendering it multiple times.
+		descStyle = d.Styles.SelectedDesc.Copy().BorderStyle(lipgloss.HiddenBorder())
 	} else {
 		title = d.Styles.NormalTitle.MarginLeft(1).Render(title)
 		descStyle = d.Styles.NormalDesc
@@ -91,9 +95,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		blend := start.BlendRgb(end, p)
 		signalColor := lipgloss.Color(blend.Hex())
 
-		// Combine base desc style with our signal color
-		finalSignalStyle := descStyle.Foreground(signalColor)
-		desc = finalSignalStyle.Render(strengthPart) + descStyle.Render(connectedPart)
+		// Style only the signal part with color
+		signalStyle := lipgloss.NewStyle().Foreground(signalColor)
+		// Render the full description with the base style
+		desc = descStyle.Render(signalStyle.Render(strengthPart) + connectedPart)
 	} else {
 		// No strength, just use the base desc style
 		desc = descStyle.MarginLeft(1).Render(strengthPart + connectedPart)
