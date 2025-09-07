@@ -12,8 +12,10 @@ type Theme struct {
 	Disabled  lipgloss.TerminalColor
 	Border    lipgloss.TerminalColor
 
-	SignalHigh string
-	SignalLow  string
+	SignalHighDark  string
+	SignalLowDark   string
+	SignalHighLight string
+	SignalLowLight  string
 }
 
 // CurrentTheme is the active theme for the application.
@@ -22,15 +24,17 @@ var CurrentTheme = NewDefaultTheme()
 // NewDefaultTheme creates a new default theme.
 func NewDefaultTheme() Theme {
 	return Theme{
-		Primary:   lipgloss.Color("205"),
-		Subtle:    lipgloss.Color("250"),
-		Success:   lipgloss.Color("86"),
-		Error:     lipgloss.Color("196"),
-		Normal:    lipgloss.Color("255"),
-		Disabled:  lipgloss.Color("244"),
-		Border:    lipgloss.Color("240"),
+		Primary:   lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#D359E3"}, // Purple/Pink
+		Subtle:    lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#616161"}, // Gray
+		Success:   lipgloss.AdaptiveColor{Light: "#388E3C", Dark: "#81C784"}, // Green
+		Error:     lipgloss.AdaptiveColor{Light: "#D32F2F", Dark: "#E57373"}, // Red
+		Normal:    lipgloss.AdaptiveColor{Light: "#212121", Dark: "#FFFFFF"}, // Black/White
+		Disabled:  lipgloss.AdaptiveColor{Light: "#E0E0E0", Dark: "#424242"}, // Lighter/Darker Gray
+		Border:    lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#616161"}, // Gray
 
-		SignalHigh: "#00FF00",
-		SignalLow:  "#BC3C00",
+		SignalHighDark:  "#00FF00",
+		SignalLowDark:   "#BC3C00",
+		SignalHighLight: "#00B300",
+		SignalLowLight:  "#D05F00",
 	}
 }
