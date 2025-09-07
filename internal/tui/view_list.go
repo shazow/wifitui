@@ -54,15 +54,17 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	padding := strings.Repeat(" ", ssidColumnWidth-titleLen)
 
 	// Apply custom styling based on connection state
+	var titleStyle lipgloss.Style
 	if !i.IsVisible {
-		title = CurrentTheme.Disabled.Render(title)
+		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Disabled).Strikethrough(true)
 	} else if i.IsActive {
-		title = CurrentTheme.Success.Render(title)
+		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Success)
 	} else if i.IsKnown {
-		title = CurrentTheme.Success.Render(title)
+		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Success)
 	} else {
-		title = CurrentTheme.Subtle.Render(title)
+		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
 	}
+	title = titleStyle.Render(title)
 
 	// Prepare description parts
 	strengthPart := i.Description()
@@ -73,8 +75,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	var desc string
 	if i.Strength > 0 {
-		start, _ := colorful.Hex(CurrentTheme.SignalLowColor)
-		end, _ := colorful.Hex(CurrentTheme.SignalHighColor)
+		start, _ := colorful.Hex(CurrentTheme.SignalLow)
+		end, _ := colorful.Hex(CurrentTheme.SignalHigh)
 		p := float64(i.Strength) / 100.0
 		blend := start.BlendRgb(end, p)
 		signalColor := lipgloss.Color(blend.Hex())
@@ -87,15 +89,20 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Now combine and render the full line
 	var line string
+	var lineStyle lipgloss.Style
 	if index == m.Index() {
 		// Selected item
 		line = "▶" + title + padding + " " + desc
-		fmt.Fprint(w, CurrentTheme.SelectedListItemStyle.Render(line))
+		lineStyle = lipgloss.NewStyle().
+			Border(lipgloss.NormalBorder(), false, false, false, true).
+			BorderForeground(CurrentTheme.Primary).
+			PaddingLeft(1)
 	} else {
 		// Normal item
 		line = " " + title + padding + " " + desc
-		fmt.Fprint(w, CurrentTheme.ListItemStyle.Render(line))
+		lineStyle = lipgloss.NewStyle().PaddingLeft(2)
 	}
+	fmt.Fprint(w, lineStyle.Render(line))
 }
 
 func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -191,7 +198,8 @@ func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m model) viewListView() string {
 	var viewBuilder strings.Builder
-	viewBuilder.WriteString(CurrentTheme.ListBorderStyle.Render(m.list.View()))
+	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
 
 	// Custom status bar
 	statusText := ""
@@ -200,7 +208,7 @@ func (m model) viewListView() string {
 	}
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
-	return CurrentTheme.Doc.Render(viewBuilder.String())
+	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
 }
 
 func shouldDisplayPasswordField(security wifi.SecurityType) bool {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // --- Checkbox ---
@@ -51,9 +52,9 @@ func (c *Checkbox) View() string {
 	}
 	label := " " + c.label
 	if c.focused {
-		return CurrentTheme.Primary.Bold(true).Render(checkbox + label)
+		return lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true).Render(checkbox + label)
 	}
-	return CurrentTheme.Subtle.Render(checkbox + label)
+	return lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(checkbox + label)
 }
 
 func (c *Checkbox) Checked() bool {
@@ -101,9 +102,9 @@ func (c *ChoiceComponent) View() string {
 	var s strings.Builder
 	s.WriteString(c.label + "\n")
 	for i, option := range c.options {
-		style := CurrentTheme.Subtle
+		style := lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
 		if c.focused && i == c.selected {
-			style = CurrentTheme.Primary.Bold(true)
+			style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 		}
 		s.WriteString(style.Render("[ " + option + " ]"))
 		s.WriteString("  ")
@@ -154,9 +155,9 @@ func (a *TextInput) Blur() {
 
 // View delegates to the underlying textinput.Model.
 func (a *TextInput) View() string {
-	style := CurrentTheme.Box.Padding(0, 1)
+	style := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
 	if a.focused {
-		style = style.BorderForeground(CurrentTheme.PrimaryColor)
+		style = style.BorderForeground(CurrentTheme.Primary)
 	}
 	return a.label + "\n" + style.Render(a.Model.View())
 }
@@ -205,9 +206,9 @@ func (b *MultiButtonComponent) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 func (b *MultiButtonComponent) View() string {
 	var s strings.Builder
 	for i, label := range b.buttons {
-		style := CurrentTheme.Subtle
+		style := lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
 		if b.focused && i == b.selected {
-			style = CurrentTheme.Primary.Bold(true)
+			style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 		}
 		s.WriteString(style.Render("[ " + label + " ]"))
 		s.WriteString("  ")

@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/internal/helpers"
@@ -81,7 +82,7 @@ func NewModel(b wifi.Backend) (*model, error) {
 	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = CurrentTheme.Primary
+	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
 	// Configure the password input field
 	ti := textinput.New()
@@ -115,9 +116,9 @@ func NewModel(b wifi.Backend) (*model, error) {
 
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
-	l.Styles.Title = CurrentTheme.Primary.Bold(true)
-	l.Styles.FilterPrompt = CurrentTheme.Normal
-	l.Styles.FilterCursor = CurrentTheme.Primary
+	l.Styles.Title = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
+	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
+	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
 	m := model{
 		state:            stateListView,
@@ -146,8 +147,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := CurrentTheme.Doc.GetFrameSize()
-		bh, bv := CurrentTheme.ListBorderStyle.GetFrameSize()
+		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+		bh, bv := listBorderStyle.GetFrameSize()
 		// Account for title and status bar
 		extraVerticalSpace := 4
 		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
@@ -247,9 +249,9 @@ func (m model) View() string {
 	}
 
 	if m.loading {
-		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), CurrentTheme.Primary.Render(m.statusMessage)))
+		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
 	} else if m.statusMessage != "" {
-		s.WriteString(fmt.Sprintf("\n\n%s", CurrentTheme.Primary.Render(m.statusMessage)))
+		s.WriteString(fmt.Sprintf("\n\n%s", lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
 	}
 
 	return s.String()
