@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/peterbourgon/ff/v3"
 	"github.com/peterbourgon/ff/v3/ffcli"
+	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/wifi"
 )
 
@@ -19,6 +21,7 @@ var (
 func main() {
 	var (
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
+		theme       = rootFlagSet.String("theme", "", "path to theme toml file (env: WIFITUI_THEME)")
 		version     = rootFlagSet.Bool("version", false, "display version")
 	)
 
@@ -88,8 +91,25 @@ func main() {
 		},
 	}
 
-	if err := root.Parse(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	// Parse flags using ff to get theme and version.
+	// We need to do this before root.Run so we can load the theme.
+	// root.Run will parse them again, but that's fine.
+	err = ff.Parse(rootFlagSet, os.Args[1:],
+		ff.WithEnvVarPrefix("WIFITUI"),
+		ff.WithIgnoreUndefined(true), // Ignore subcommand flags for now
+	)
+	if err != nil {
+		if err == flag.ErrHelp {
+			// ff.Parse doesn't print usage on ErrHelp, so we do it manually.
+			root.FlagSet.Usage()
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "error parsing flags: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := tui.LoadTheme(*theme); err != nil {
+		fmt.Fprintf(os.Stderr, "error loading theme: %v\n", err)
 		os.Exit(1)
 	}
 
