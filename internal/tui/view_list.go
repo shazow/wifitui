@@ -76,12 +76,16 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	var desc string
 	if i.Strength > 0 {
 		var signalHigh, signalLow string
-		if lipgloss.HasDarkBackground() {
-			signalHigh = CurrentTheme.SignalHighDark
-			signalLow = CurrentTheme.SignalLowDark
-		} else {
-			signalHigh = CurrentTheme.SignalHighLight
-			signalLow = CurrentTheme.SignalLowLight
+		if adaptiveHigh, ok := CurrentTheme.SignalHigh.(lipgloss.AdaptiveColor); ok {
+			if adaptiveLow, ok := CurrentTheme.SignalLow.(lipgloss.AdaptiveColor); ok {
+				if lipgloss.HasDarkBackground() {
+					signalHigh = adaptiveHigh.Dark
+					signalLow = adaptiveLow.Dark
+				} else {
+					signalHigh = adaptiveHigh.Light
+					signalLow = adaptiveLow.Light
+				}
+			}
 		}
 		start, _ := colorful.Hex(signalLow)
 		end, _ := colorful.Hex(signalHigh)
