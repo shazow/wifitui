@@ -23,11 +23,11 @@ var CurrentTheme = NewDefaultTheme()
 func NewDefaultTheme() Theme {
 	return Theme{
 		Primary:   lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#D359E3"}, // Purple/Pink
-		Subtle:    lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#616161"}, // Gray
+		Subtle:    lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#919191"}, // Gray
 		Success:   lipgloss.AdaptiveColor{Light: "#388E3C", Dark: "#81C784"}, // Green
 		Error:     lipgloss.AdaptiveColor{Light: "#D32F2F", Dark: "#E57373"}, // Red
-		Normal:    lipgloss.AdaptiveColor{Light: "#212121", Dark: "#FFFFFF"}, // Black/White
-		Disabled:  lipgloss.AdaptiveColor{Light: "#E0E0E0", Dark: "#424242"}, // Lighter/Darker Gray
+		Normal:    lipgloss.AdaptiveColor{Light: "#212121", Dark: "#EEEEEE"}, // Black/White
+		Disabled:  lipgloss.AdaptiveColor{Light: "#E0E0E0", Dark: "#626262"}, // Lighter/Darker Gray
 		Border:    lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#616161"}, // Gray
 
 		SignalHigh: lipgloss.AdaptiveColor{Light: "#00B300", Dark: "#00FF00"},

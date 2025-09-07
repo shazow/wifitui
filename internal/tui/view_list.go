@@ -56,13 +56,13 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	// Apply custom styling based on connection state
 	var titleStyle lipgloss.Style
 	if !i.IsVisible {
-		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Disabled).Strikethrough(true)
+		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Disabled)
 	} else if i.IsActive {
 		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Success)
 	} else if i.IsKnown {
 		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Success)
 	} else {
-		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
 	}
 	title = titleStyle.Render(title)
 
@@ -75,6 +75,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	var desc string
 	if i.Strength > 0 {
+		// FIXME: This can be simplified
 		var signalHigh, signalLow string
 		if adaptiveHigh, ok := CurrentTheme.SignalHigh.(lipgloss.AdaptiveColor); ok {
 			if adaptiveLow, ok := CurrentTheme.SignalLow.(lipgloss.AdaptiveColor); ok {
@@ -96,7 +97,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		// Style only the signal part with color
 		desc = lipgloss.NewStyle().Foreground(signalColor).Render(strengthPart) + connectedPart
 	} else {
-		desc = strengthPart + connectedPart
+		desc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(strengthPart + connectedPart)
 	}
 
 	// Now combine and render the full line
