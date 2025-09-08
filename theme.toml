@@ -23,8 +23,6 @@ Disabled = ["#E0E0E0", "#626262"] # Lighter/Darker Gray
 # Border color for UI elements.
 Border = ["#BDBDBD", "#616161"] # Gray
 
-# Color for high signal strength.
+# Signal color is a gradient from SignalHigh to SignalLow.
 SignalHigh = ["#00B300", "#00FF00"]
-
-# Color for low signal strength.
 SignalLow = ["#D05F00", "#BC3C00"]
