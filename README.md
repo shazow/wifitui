@@ -15,9 +15,9 @@
 - [x] Initiate a scan (`s` key)
 - [x] Multiple backends (experimental `iwd` and darwin support, untested)
 - [x] Non-interactive modes (`list` `show` `connect` commands)
+- [x] Bring your own color scheme and theme (`--theme=./theme.toml` or set `WIFITUI_THEME=./theme.toml`)
 
 More things I'd like to do:
-- [ ] Bring your own color scheme and theme
 - [ ] More stats about the current network
 - [ ] Maybe a better name?
 
