@@ -98,9 +98,11 @@ func main() {
 					return fmt.Errorf("failed to open theme file: %w", err)
 				}
 				defer f.Close()
-				if err := tui.LoadTheme(f); err != nil {
+				loadedTheme, err := tui.LoadTheme(f)
+				if err != nil {
 					return fmt.Errorf("failed to load theme: %w", err)
 				}
+				tui.CurrentTheme = loadedTheme
 			}
 			return runTUI(b)
 		},
