@@ -3,11 +3,11 @@ package tui
 import (
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/shazow/wifitui/wifi"
@@ -41,17 +41,6 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		icon = "🔒 "
 	}
 	title = icon + title
-
-	// Define column width for SSID
-	ssidColumnWidth := 30
-	titleLen := len(title)
-
-	// Truncate title if it's too long
-	if titleLen > ssidColumnWidth {
-		title = title[:ssidColumnWidth-1] + "…"
-		titleLen = ssidColumnWidth
-	}
-	padding := strings.Repeat(" ", ssidColumnWidth-titleLen)
 
 	// Apply custom styling based on connection state
 	var titleStyle lipgloss.Style
@@ -100,21 +89,23 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		desc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(strengthPart + connectedPart)
 	}
 
-	// Now combine and render the full line
-	var line string
-	var lineStyle lipgloss.Style
-	if index == m.Index() {
-		// Selected item
-		line = title + padding + " " + desc
-		lineStyle = lipgloss.NewStyle().
-			Border(lipgloss.ThickBorder(), false, false, false, true). // Left border
-			BorderForeground(CurrentTheme.Primary)
-	} else {
-		// Normal item
-		line = title + padding + " " + desc
-		lineStyle = lipgloss.NewStyle().PaddingLeft(1)
-	}
-	fmt.Fprint(w, lineStyle.Render(line))
+	// Use a table to render the row
+	row := []string{title, desc}
+	t := table.New().
+		Rows([][]string{row}...).
+		Border(lipgloss.HiddenBorder()).
+		Width(m.Width() - 2). // Subtract padding
+		StyleFunc(func(row, col int) lipgloss.Style {
+			if index == m.Index() {
+				return lipgloss.NewStyle().
+					Border(lipgloss.ThickBorder(), false, false, false, true).
+					BorderForeground(CurrentTheme.Primary).
+					Padding(0, 1)
+			}
+			return lipgloss.NewStyle().Padding(0, 1)
+		})
+
+	fmt.Fprint(w, t.Render())
 }
 
 func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
