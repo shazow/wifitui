@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
+	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/wifi"
 )
 
@@ -19,6 +20,7 @@ var (
 func main() {
 	var (
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
+		theme       = rootFlagSet.String("theme", "", "path to theme toml file (env: WIFITUI_THEME)")
 		version     = rootFlagSet.Bool("version", false, "display version")
 	)
 
@@ -84,6 +86,24 @@ func main() {
 		FlagSet:     rootFlagSet,
 		Subcommands: []*ffcli.Command{listCmd, showCmd, connectCmd},
 		Exec: func(ctx context.Context, args []string) error {
+			// Get theme path from flag or environment variable.
+			themePath := *theme
+			if themePath == "" {
+				themePath = os.Getenv("WIFITUI_THEME")
+			}
+
+			if themePath != "" {
+				f, err := os.Open(themePath)
+				if err != nil {
+					return fmt.Errorf("failed to open theme file: %w", err)
+				}
+				defer f.Close()
+				loadedTheme, err := tui.LoadTheme(f)
+				if err != nil {
+					return fmt.Errorf("failed to load theme: %w", err)
+				}
+				tui.CurrentTheme = loadedTheme
+			}
 			return runTUI(b)
 		},
 	}

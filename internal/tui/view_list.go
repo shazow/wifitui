@@ -77,8 +77,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if i.Strength > 0 {
 		// FIXME: This can be simplified
 		var signalHigh, signalLow string
-		if adaptiveHigh, ok := CurrentTheme.SignalHigh.(lipgloss.AdaptiveColor); ok {
-			if adaptiveLow, ok := CurrentTheme.SignalLow.(lipgloss.AdaptiveColor); ok {
+		if adaptiveHigh, ok := CurrentTheme.SignalHigh.TerminalColor.(lipgloss.AdaptiveColor); ok {
+			if adaptiveLow, ok := CurrentTheme.SignalLow.TerminalColor.(lipgloss.AdaptiveColor); ok {
 				if lipgloss.HasDarkBackground() {
 					signalHigh = adaptiveHigh.Dark
 					signalLow = adaptiveLow.Dark

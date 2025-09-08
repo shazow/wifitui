@@ -1,19 +1,55 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"io"
+
+	"github.com/BurntSushi/toml"
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Color is a wrapper around lipgloss.TerminalColor that can be unmarshaled
+// from a TOML file as either a single color string or a pair of strings for light/dark themes.
+type Color struct {
+	lipgloss.TerminalColor
+}
+
+// UnmarshalTOML implements the toml.Unmarshaler interface.
+func (c *Color) UnmarshalTOML(data interface{}) error {
+	switch value := data.(type) {
+	case string:
+		c.TerminalColor = lipgloss.Color(value)
+		return nil
+	case []interface{}:
+		if len(value) != 2 {
+			return fmt.Errorf("color must be a pair of two strings, but got %d", len(value))
+		}
+		s := make([]string, 2)
+		for i, item := range value {
+			var ok bool
+			s[i], ok = item.(string)
+			if !ok {
+				return fmt.Errorf("color pair must contain strings, but got %T", item)
+			}
+		}
+		c.TerminalColor = lipgloss.AdaptiveColor{Light: s[0], Dark: s[1]}
+		return nil
+	}
+
+	return fmt.Errorf("unsupported type for Color: %T", data)
+}
 
 // Theme contains the colors for the application.
 type Theme struct {
-	Primary   lipgloss.TerminalColor
-	Subtle    lipgloss.TerminalColor
-	Success   lipgloss.TerminalColor
-	Error     lipgloss.TerminalColor
-	Normal    lipgloss.TerminalColor
-	Disabled  lipgloss.TerminalColor
-	Border    lipgloss.TerminalColor
-
-	SignalHigh lipgloss.TerminalColor
-	SignalLow  lipgloss.TerminalColor
+	Primary    Color
+	Subtle     Color
+	Success    Color
+	Error      Color
+	Normal     Color
+	Disabled   Color
+	Border     Color
+	SignalHigh Color
+	SignalLow  Color
 }
 
 // CurrentTheme is the active theme for the application.
@@ -22,15 +58,33 @@ var CurrentTheme = NewDefaultTheme()
 // NewDefaultTheme creates a new default theme.
 func NewDefaultTheme() Theme {
 	return Theme{
-		Primary:   lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#D359E3"}, // Purple/Pink
-		Subtle:    lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#919191"}, // Gray
-		Success:   lipgloss.AdaptiveColor{Light: "#388E3C", Dark: "#81C784"}, // Green
-		Error:     lipgloss.AdaptiveColor{Light: "#D32F2F", Dark: "#E57373"}, // Red
-		Normal:    lipgloss.AdaptiveColor{Light: "#212121", Dark: "#EEEEEE"}, // Black/White
-		Disabled:  lipgloss.AdaptiveColor{Light: "#E0E0E0", Dark: "#626262"}, // Lighter/Darker Gray
-		Border:    lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#616161"}, // Gray
-
-		SignalHigh: lipgloss.AdaptiveColor{Light: "#00B300", Dark: "#00FF00"},
-		SignalLow:  lipgloss.AdaptiveColor{Light: "#D05F00", Dark: "#BC3C00"},
+		Primary:    Color{lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#D359E3"}}, // Purple/Pink
+		Subtle:     Color{lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#919191"}}, // Gray
+		Success:    Color{lipgloss.AdaptiveColor{Light: "#388E3C", Dark: "#81C784"}}, // Green
+		Error:      Color{lipgloss.AdaptiveColor{Light: "#D32F2F", Dark: "#E57373"}}, // Red
+		Normal:     Color{lipgloss.AdaptiveColor{Light: "#212121", Dark: "#EEEEEE"}}, // Black/White
+		Disabled:   Color{lipgloss.AdaptiveColor{Light: "#E0E0E0", Dark: "#626262"}}, // Lighter/Darker Gray
+		Border:     Color{lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#616161"}}, // Gray
+		SignalHigh: Color{lipgloss.AdaptiveColor{Light: "#00B300", Dark: "#00FF00"}},
+		SignalLow:  Color{lipgloss.AdaptiveColor{Light: "#D05F00", Dark: "#BC3C00"}},
 	}
+}
+
+// LoadTheme loads a theme from the given reader and returns a Theme object.
+func LoadTheme(r io.Reader) (Theme, error) {
+	if r == nil {
+		return Theme{}, fmt.Errorf("reader cannot be nil")
+	}
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return Theme{}, err
+	}
+
+	var theme Theme
+	if err := toml.Unmarshal(data, &theme); err != nil {
+		return Theme{}, err
+	}
+
+	return theme, nil
 }
