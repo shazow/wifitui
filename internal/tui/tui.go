@@ -4,17 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/internal/helpers"
+	"github.com/shazow/wifitui/wifi"
 )
-
 
 // viewState represents the current screen of the TUI
 type viewState int
@@ -45,92 +42,70 @@ func (i connectionItem) FilterValue() string { return i.Title() }
 
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
+	// From backend
 	connectionsLoadedMsg []wifi.Connection // Sent when connections are fetched
 	scanFinishedMsg      []wifi.Connection // Sent when a scan is finished
-	secretsLoadedMsg     string // Sent when a password is fetched
-	connectionSavedMsg   struct{}
-	errorMsg             struct{ err error }
-	changeViewMsg        viewState
-	showForgetViewMsg    struct{}
+	secretsLoadedMsg     struct {
+		item   connectionItem
+		secret string
+	}
+	connectionSavedMsg struct{}
+	errorMsg           struct{ err error }
+
+	// To main model
+	changeViewMsg    viewState
+	showForgetViewMsg struct{ item connectionItem }
+	showEditViewMsg  struct{ item *connectionItem }
+	scanMsg          struct{}
+	connectMsg       struct {
+		item        connectionItem
+		autoConnect bool
+	}
+	joinNetworkMsg struct {
+		ssid     string
+		password string
+		security wifi.SecurityType
+		isHidden bool
+	}
+	loadSecretsMsg struct{ item connectionItem }
+	updateSecretMsg struct {
+		item        connectionItem
+		newPassword string
+		autoConnect bool
+	}
+	forgetNetworkMsg struct{ item connectionItem }
 )
 
 // The main model for our TUI application
 type model struct {
-	state                 viewState
-	list                  list.Model
-	passwordInput         textinput.Model
-	ssidInput             textinput.Model
-	spinner               spinner.Model
-	backend               wifi.Backend
-	loading               bool
-	statusMessage         string
-	errorMessage          string
-	selectedItem          connectionItem
-	width, height         int
-	editFocusManager      *FocusManager
-	ssidAdapter           *TextInput
-	passwordAdapter       *TextInput
-	securityGroup         *ChoiceComponent
-	autoConnectCheckbox   *Checkbox
-	buttonGroup           *MultiButtonComponent
-	passwordRevealed      bool
-	pendingEditItem       *connectionItem
+	state       viewState
+	listModel   ListModel
+	editModel   EditModel
+	forgetModel ForgetModel
+	errorModel  ErrorModel
+
+	spinner       spinner.Model
+	backend       wifi.Backend
+	loading       bool
+	statusMessage string
+	width, height int
 }
 
 // NewModel creates the starting state of our application
 func NewModel(b wifi.Backend) (*model, error) {
-	// Configure the spinner
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
-	// Configure the password input field
-	ti := textinput.New()
-	ti.Focus()
-	ti.CharLimit = 64
-	ti.Width = 30
-	ti.EchoMode = textinput.EchoNormal // Show password visibly
-
-	// Configure the SSID input field
-	si := textinput.New()
-	si.Focus()
-	si.CharLimit = 32
-	si.Width = 30
-
-	// Configure the list
-	delegate := itemDelegate{}
-	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
-	l.SetShowStatusBar(false)
-	l.AdditionalShortHelpKeys = func() []key.Binding {
-		return []key.Binding{
-			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
-			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
-			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
-			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
-		}
-	}
-	// Make 'q' the only quit key
-	l.KeyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
-	l.AdditionalFullHelpKeys = l.AdditionalShortHelpKeys
-
-	// Enable the fuzzy finder
-	l.SetFilteringEnabled(true)
-	l.Styles.Title = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
-	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
-	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	listModel := NewListModel()
 
 	m := model{
-		state:            stateListView,
-		list:             l,
-		passwordInput:    ti,
-		ssidInput:        si,
-		spinner:          s,
-		backend:          b,
-		loading:          true,
-		statusMessage:    "Loading connections...",
-		passwordRevealed: false,
-		pendingEditItem:  nil,
+		state:         stateListView,
+		listModel:     listModel,
+		spinner:       s,
+		backend:       b,
+		loading:       true,
+		statusMessage: "Loading connections...",
 	}
 	return &m, nil
 }
@@ -147,14 +122,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		// Account for title and status bar
 		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 		bh, bv := listBorderStyle.GetFrameSize()
-		// Account for title and status bar
 		extraVerticalSpace := 4
-		m.list.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
-		m.width = msg.Width
-		m.height = msg.Height
+		m.listModel.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
 
 	// Custom messages from our backend commands
 	case connectionsLoadedMsg:
@@ -164,7 +139,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, c := range msg {
 			items[i] = connectionItem{Connection: c}
 		}
-		m.list.SetItems(items)
+		m.listModel.SetItems(items)
 	case scanFinishedMsg:
 		m.loading = false
 		m.statusMessage = "Scan finished."
@@ -172,61 +147,88 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i, c := range msg {
 			items[i] = connectionItem{Connection: c}
 		}
-		m.list.SetItems(items)
+		m.listModel.SetItems(items)
 	case secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = "Network loaded. Press 'esc' to go back."
-		if m.pendingEditItem != nil {
-			m.selectedItem = *m.pendingEditItem
-			m.pendingEditItem = nil
-		}
-		m.passwordInput.SetValue(string(msg))
-		m.passwordInput.CursorEnd()
-		if string(msg) != "" {
-			m.passwordInput.EchoMode = textinput.EchoPassword
-			m.passwordInput.Blur()
-		} else {
-			m.passwordInput.EchoMode = textinput.EchoNormal
-		}
+		m.editModel = NewEditModel(&msg.item)
+		m.editModel.SetPassword(msg.secret)
 		m.state = stateEditView
-		m.setupEditView()
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
-		m.statusMessage = fmt.Sprintf("Successfully updated '%s'. Refreshing list...", m.selectedItem.SSID)
+		m.statusMessage = "Successfully updated. Refreshing list..."
 		m.state = stateListView
 		return m, refreshNetworks(m.backend)
 	case errorMsg:
 		m.loading = false
-		m.errorMessage = msg.err.Error()
+		m.errorModel = NewErrorModel(msg.err)
 		m.state = stateErrorView
 	case changeViewMsg:
 		m.state = viewState(msg)
 	case showForgetViewMsg:
 		m.state = stateForgetView
-		m.statusMessage = fmt.Sprintf("Forget network '%s'? (Y/n)", m.selectedItem.SSID)
-		m.errorMessage = ""
-
-	// Handle key presses
+		m.forgetModel = NewForgetModel(msg.item, m.width, m.height)
+	case showEditViewMsg:
+		m.state = stateEditView
+		m.editModel = NewEditModel(msg.item)
+	case scanMsg:
+		m.loading = true
+		m.statusMessage = "Scanning for networks..."
+		return m, scanNetworks(m.backend)
+	case connectMsg:
+		m.loading = true
+		m.statusMessage = fmt.Sprintf("Connecting to '%s'...", msg.item.SSID)
+		var batch []tea.Cmd
+		if msg.autoConnect != msg.item.AutoConnect {
+			batch = append(batch, updateAutoConnect(m.backend, msg.item.SSID, msg.autoConnect))
+		}
+		batch = append(batch, activateConnection(m.backend, msg.item.SSID))
+		return m, tea.Batch(batch...)
+	case joinNetworkMsg:
+		m.loading = true
+		m.statusMessage = fmt.Sprintf("Joining '%s'...", msg.ssid)
+		return m, joinNetwork(m.backend, msg.ssid, msg.password, msg.security, msg.isHidden)
+	case loadSecretsMsg:
+		m.loading = true
+		m.statusMessage = fmt.Sprintf("Loading details for %s...", msg.item.SSID)
+		return m, getSecrets(m.backend, msg.item)
+	case updateSecretMsg:
+		m.loading = true
+		m.statusMessage = fmt.Sprintf("Saving settings for %s...", msg.item.SSID)
+		var batch []tea.Cmd
+		batch = append(batch, updateSecret(m.backend, msg.item.SSID, msg.newPassword))
+		if msg.autoConnect != msg.item.AutoConnect {
+			batch = append(batch, updateAutoConnect(m.backend, msg.item.SSID, msg.autoConnect))
+		}
+		return m, tea.Batch(batch...)
+	case forgetNetworkMsg:
+		m.loading = true
+		m.statusMessage = fmt.Sprintf("Forgetting '%s'...", msg.item.SSID)
+		return m, forgetNetwork(m.backend, msg.item.SSID)
 	case tea.KeyMsg:
-		// Global quit
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
 	}
 
 	// Pass messages to the active view to handle
+	var newModel tea.Model
 	switch m.state {
 	case stateListView:
-		return m.updateListView(msg)
+		newModel, cmd = m.listModel.Update(msg)
+		m.listModel = newModel.(ListModel)
 	case stateEditView:
-		return m.updateEditView(msg)
+		newModel, cmd = m.editModel.Update(msg)
+		m.editModel = newModel.(EditModel)
 	case stateForgetView:
-		return m.updateForgetView(msg)
+		newModel, cmd = m.forgetModel.Update(msg)
+		m.forgetModel = newModel.(ForgetModel)
 	case stateErrorView:
-		return m.updateErrorView(msg)
+		newModel, cmd = m.errorModel.Update(msg)
+		m.errorModel = newModel.(ErrorModel)
 	}
+	cmds = append(cmds, cmd)
 
-	// Always update the spinner. It will handle its own tick messages.
 	m.spinner, cmd = m.spinner.Update(msg)
 	cmds = append(cmds, cmd)
 
@@ -239,13 +241,13 @@ func (m model) View() string {
 
 	switch m.state {
 	case stateListView:
-		s.WriteString(m.viewListView())
+		s.WriteString(m.listModel.View())
 	case stateEditView:
-		s.WriteString(m.viewEditView())
+		s.WriteString(m.editModel.View())
 	case stateForgetView:
-		s.WriteString(m.viewForgetView())
+		s.WriteString(m.forgetModel.View())
 	case stateErrorView:
-		s.WriteString(m.viewErrorView())
+		s.WriteString(m.errorModel.View())
 	}
 
 	if m.loading {
@@ -317,18 +319,17 @@ func updateAutoConnect(b wifi.Backend, ssid string, autoConnect bool) tea.Cmd {
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
 		}
-		// We can reuse connectionSavedMsg to trigger a refresh
 		return connectionSavedMsg{}
 	}
 }
 
-func getSecrets(b wifi.Backend, ssid string) tea.Cmd {
+func getSecrets(b wifi.Backend, item connectionItem) tea.Cmd {
 	return func() tea.Msg {
-		secret, err := b.GetSecrets(ssid)
+		secret, err := b.GetSecrets(item.SSID)
 		if err != nil {
 			return errorMsg{fmt.Errorf("failed to get secrets: %w", err)}
 		}
-		return secretsLoadedMsg(secret)
+		return secretsLoadedMsg{item: item, secret: secret}
 	}
 }
 

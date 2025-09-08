@@ -9,17 +9,47 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/internal/helpers"
 	"github.com/shazow/wifitui/qrwifi"
+	"github.com/shazow/wifitui/wifi"
 )
 
-func (m *model) setupEditView() {
-	isNew := m.selectedItem.SSID == ""
+type EditModel struct {
+	focusManager      *FocusManager
+	ssidAdapter       *TextInput
+	passwordAdapter   *TextInput
+	securityGroup     *ChoiceComponent
+	autoConnectCheckbox *Checkbox
+	buttonGroup       *MultiButtonComponent
+	passwordRevealed  bool
+	selectedItem      connectionItem
+}
+
+func NewEditModel(item *connectionItem) EditModel {
+	if item == nil {
+		item = &connectionItem{}
+	}
+	isNew := item.SSID == ""
 	var items []Focusable
 
+	ssidInput := textinput.New()
+	ssidInput.Focus()
+	ssidInput.CharLimit = 32
+	ssidInput.Width = 30
+	if !isNew {
+		ssidInput.SetValue(item.SSID)
+	}
+
+	passwordInput := textinput.New()
+	passwordInput.Focus()
+	passwordInput.CharLimit = 64
+	passwordInput.Width = 30
+	passwordInput.EchoMode = textinput.EchoPassword
+
+	m := EditModel{selectedItem: *item}
+
 	m.ssidAdapter = &TextInput{
-		Model: m.ssidInput,
+		Model: ssidInput,
 		label: "SSID:",
 	}
 	onPasswordFocus := func(ti *textinput.Model) tea.Cmd {
@@ -32,7 +62,7 @@ func (m *model) setupEditView() {
 		m.passwordRevealed = false
 	}
 	m.passwordAdapter = &TextInput{
-		Model:   m.passwordInput,
+		Model:   passwordInput,
 		label:   "Passphrase:",
 		OnFocus: onPasswordFocus,
 		OnBlur:  onPasswordBlur,
@@ -48,7 +78,7 @@ func (m *model) setupEditView() {
 		security = wifi.SecurityType(m.securityGroup.Selected())
 	}
 
-	if shouldDisplayPasswordField(security) {
+	if ShouldDisplayPasswordField(security) {
 		items = append(items, m.passwordAdapter)
 	}
 
@@ -70,100 +100,123 @@ func (m *model) setupEditView() {
 		buttons = []string{"Join", "Cancel"}
 	}
 	buttonAction := func(index int) tea.Cmd {
-		var cmds []tea.Cmd
 		isNew := m.selectedItem.SSID == ""
 		if isNew {
 			switch index {
 			case 0: // Join
-				m.loading = true
-				ssid := m.ssidInput.Value()
-				m.statusMessage = fmt.Sprintf("Joining '%s'...", ssid)
-				cmds = append(cmds, joinNetwork(m.backend, ssid, m.passwordAdapter.Model.Value(), wifi.SecurityType(m.securityGroup.Selected()), true))
+				return func() tea.Msg {
+					return joinNetworkMsg{
+						ssid:       m.ssidAdapter.Model.Value(),
+						password:   m.passwordAdapter.Model.Value(),
+						security:   wifi.SecurityType(m.securityGroup.Selected()),
+						isHidden:   true,
+					}
+				}
 			case 1: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
 		} else if m.selectedItem.IsKnown {
 			switch index {
 			case 0: // Connect
-				m.loading = true
-				m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
-				if m.autoConnectCheckbox.Checked() != m.selectedItem.AutoConnect {
-					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked()))
+				return func() tea.Msg {
+					return connectMsg{
+						item: m.selectedItem,
+						autoConnect: m.autoConnectCheckbox.Checked(),
+					}
 				}
-				cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
 			case 1: // Save
-				m.loading = true
-				m.statusMessage = fmt.Sprintf("Saving settings for %s...", m.selectedItem.SSID)
-				cmds = append(cmds, updateSecret(m.backend, m.selectedItem.SSID, m.passwordAdapter.Model.Value()))
-				if m.autoConnectCheckbox.Checked() != m.selectedItem.AutoConnect {
-					cmds = append(cmds, updateAutoConnect(m.backend, m.selectedItem.SSID, m.autoConnectCheckbox.Checked()))
+				return func() tea.Msg {
+					return updateSecretMsg{
+						item: m.selectedItem,
+						newPassword: m.passwordAdapter.Model.Value(),
+						autoConnect: m.autoConnectCheckbox.Checked(),
+					}
 				}
 			case 2: // Forget
-				return func() tea.Msg { return showForgetViewMsg{} }
+				return func() tea.Msg { return showForgetViewMsg{item: m.selectedItem} }
 			case 3: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
-		} else {
+		} else { // Unknown network
 			switch index {
 			case 0: // Join
-				m.loading = true
-				m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-				cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, m.passwordAdapter.Model.Value(), m.selectedItem.Security, m.selectedItem.IsHidden))
+				return func() tea.Msg {
+					return joinNetworkMsg{
+						ssid:       m.selectedItem.SSID,
+						password:   m.passwordAdapter.Model.Value(),
+						security:   m.selectedItem.Security,
+						isHidden:   m.selectedItem.IsHidden,
+					}
+				}
 			case 1: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
 		}
-		return tea.Batch(cmds...)
+		return nil
 	}
 	m.buttonGroup = NewMultiButtonComponent(buttons, buttonAction)
 	items = append(items, m.buttonGroup)
 
-	m.editFocusManager = NewFocusManager(items...)
+	m.focusManager = NewFocusManager(items...)
 
-	// If it's a known network, focus the buttons by default
 	if m.selectedItem.IsKnown {
-		m.editFocusManager.SetFocus(m.buttonGroup)
+		m.focusManager.SetFocus(m.buttonGroup)
 	} else {
-		m.editFocusManager.Focus()
+		m.focusManager.Focus()
+	}
+	return m
+}
+
+func (m *EditModel) SetPassword(password string) {
+	m.passwordAdapter.Model.SetValue(password)
+	m.passwordAdapter.Model.CursorEnd()
+	if password != "" {
+		m.passwordAdapter.Model.EchoMode = textinput.EchoPassword
+		m.passwordAdapter.Model.Blur()
+	} else {
+		m.passwordAdapter.Model.EchoMode = textinput.EchoNormal
 	}
 }
 
-func (m *model) updateEditView(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m EditModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m EditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":
-			return m, m.editFocusManager.Next()
+			return m, m.focusManager.Next()
 		case "shift+tab":
-			return m, m.editFocusManager.Prev()
+			return m, m.focusManager.Prev()
 		case "esc":
-			m.state = stateListView
-			return m, nil
+			return m, func() tea.Msg { return changeViewMsg(stateListView) }
 		case "enter":
-			// If password field is focused, move to the next field
-			if m.editFocusManager.Focused() == m.passwordAdapter {
-				return m, m.editFocusManager.Next()
+			if m.focusManager.Focused() == m.passwordAdapter {
+				return m, m.focusManager.Next()
 			}
 		}
 	}
 
-	newFocusable, cmd := m.editFocusManager.Update(msg)
+	newFocusable, cmd := m.focusManager.Update(msg)
 	cmds = append(cmds, cmd)
 
+	// FIXME: This is a hack to update the underlying models
 	if ta, ok := newFocusable.(*TextInput); ok {
-		if ta == m.ssidAdapter {
-			m.ssidInput = ta.Model
-		} else if ta == m.passwordAdapter {
-			m.passwordInput = ta.Model
+		if ta.label == "SSID:" {
+			m.ssidAdapter.Model = ta.Model
+		} else if ta.label == "Passphrase:" {
+			m.passwordAdapter.Model = ta.Model
 		}
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) viewEditView() string {
+func (m EditModel) View() string {
 	var s strings.Builder
 	s.WriteString(fmt.Sprintf("\n%s\n\n", "Wi-Fi Connection"))
 
@@ -197,7 +250,7 @@ func (m model) viewEditView() string {
 		s.WriteString("\n\n")
 	}
 
-	for _, item := range m.editFocusManager.items {
+	for _, item := range m.focusManager.items {
 		s.WriteString(item.View())
 		s.WriteString("\n\n")
 	}
@@ -216,4 +269,8 @@ func (m model) viewEditView() string {
 	}
 
 	return s.String()
+}
+
+func ShouldDisplayPasswordField(security wifi.SecurityType) bool {
+	return security != wifi.SecurityOpen
 }

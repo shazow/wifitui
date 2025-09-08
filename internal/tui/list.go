@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -117,62 +118,80 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	fmt.Fprint(w, lineStyle.Render(line))
 }
 
-func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
+type ListModel struct {
+	list list.Model
+}
+
+func NewListModel() ListModel {
+	delegate := itemDelegate{}
+	l := list.New([]list.Item{}, delegate, 0, 0)
+	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
+	l.SetShowStatusBar(false)
+	l.AdditionalShortHelpKeys = func() []key.Binding {
+		return []key.Binding{
+			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
+			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
+			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
+			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
+		}
+	}
+	// Make 'q' the only quit key
+	l.KeyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
+	l.AdditionalFullHelpKeys = l.AdditionalShortHelpKeys
+
+	// Enable the fuzzy finder
+	l.SetFilteringEnabled(true)
+	l.Styles.Title = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
+	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
+	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+
+	return ListModel{list: l}
+}
+
+func (m *ListModel) SetSize(w, h int) {
+	m.list.SetSize(w, h)
+}
+
+func (m *ListModel) SetItems(items []list.Item) {
+	m.list.SetItems(items)
+}
+
+func (m ListModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		// Handle quit and enter in list view
+		if m.list.FilterState() == list.Filtering {
+			break
+		}
 		switch msg.String() {
 		case "q":
 			if m.list.FilterState() != list.Filtering {
 				return m, tea.Quit
 			}
 		case "n":
-			m.state = stateEditView
-			m.statusMessage = "Enter details for new network"
-			m.errorMessage = ""
-			m.selectedItem = connectionItem{}
-			m.passwordInput.SetValue("")
-			m.ssidInput.SetValue("")
-			m.setupEditView()
+			return m, func() tea.Msg { return showEditViewMsg{item: nil} }
 		case "s":
-			m.loading = true
-			m.statusMessage = "Scanning for networks..."
-			cmds = append(cmds, scanNetworks(m.backend))
+			return m, func() tea.Msg { return scanMsg{} }
 		case "f":
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
 				if ok && selected.IsKnown {
-					m.selectedItem = selected
-					m.state = stateForgetView
-					m.statusMessage = fmt.Sprintf("Forget network '%s'? (Y/n)", m.selectedItem.SSID)
-					m.errorMessage = ""
+					return m, func() tea.Msg { return showForgetViewMsg{item: selected} }
 				}
 			}
 		case "c":
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
 				if ok {
-					m.selectedItem = selected
 					if selected.IsKnown {
-						m.loading = true
-						m.statusMessage = fmt.Sprintf("Connecting to '%s'...", m.selectedItem.SSID)
-						cmds = append(cmds, activateConnection(m.backend, m.selectedItem.SSID))
+						return m, func() tea.Msg { return connectMsg{item: selected} }
 					} else {
-						// For unknown networks, 'connect' is the same as 'join'
-						if shouldDisplayPasswordField(selected.Security) {
-							m.state = stateEditView
-							m.statusMessage = fmt.Sprintf("Enter password for %s", m.selectedItem.SSID)
-							m.errorMessage = ""
-							m.passwordInput.SetValue("")
-							m.setupEditView()
-						} else {
-							m.loading = true
-							m.statusMessage = fmt.Sprintf("Joining '%s'...", m.selectedItem.SSID)
-							m.errorMessage = ""
-							cmds = append(cmds, joinNetwork(m.backend, m.selectedItem.SSID, "", wifi.SecurityOpen, false))
-						}
+						return m, func() tea.Msg { return showEditViewMsg{item: &selected} }
 					}
 				}
 			}
@@ -182,33 +201,25 @@ func (m *model) updateListView(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !ok {
 					break
 				}
-				m.selectedItem = selected
 				if selected.IsKnown {
-					m.loading = true
-					m.statusMessage = fmt.Sprintf("Loading details for %s...", m.selectedItem.SSID)
-					m.errorMessage = ""
-					m.pendingEditItem = &m.selectedItem
-					cmds = append(cmds, getSecrets(m.backend, m.selectedItem.SSID))
+					return m, func() tea.Msg { return loadSecretsMsg{item: selected} }
 				} else {
-					// For unknown networks, 'enter' should open the edit view
-					m.state = stateEditView
-					m.statusMessage = fmt.Sprintf("Editing network %s", m.selectedItem.SSID)
-					m.errorMessage = ""
-					m.passwordInput.SetValue("")
-					m.setupEditView()
+					return m, func() tea.Msg { return showEditViewMsg{item: &selected} }
 				}
 			}
 		}
 	}
 
 	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
+	var newModel list.Model
+	newModel, cmd = m.list.Update(msg)
+	m.list = newModel
 	cmds = append(cmds, cmd)
 
 	return m, tea.Batch(cmds...)
 }
 
-func (m model) viewListView() string {
+func (m ListModel) View() string {
 	var viewBuilder strings.Builder
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
@@ -221,8 +232,4 @@ func (m model) viewListView() string {
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
 	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
-}
-
-func shouldDisplayPasswordField(security wifi.SecurityType) bool {
-	return security != wifi.SecurityOpen
 }
