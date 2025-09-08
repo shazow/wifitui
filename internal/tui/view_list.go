@@ -105,15 +105,14 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	var lineStyle lipgloss.Style
 	if index == m.Index() {
 		// Selected item
-		line = "▶" + title + padding + " " + desc
+		line = title + padding + " " + desc
 		lineStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(CurrentTheme.Primary).
-			PaddingLeft(1)
+			Border(lipgloss.ThickBorder(), false, false, false, true). // Left border
+			BorderForeground(CurrentTheme.Primary)
 	} else {
 		// Normal item
-		line = " " + title + padding + " " + desc
-		lineStyle = lipgloss.NewStyle().PaddingLeft(2)
+		line = title + padding + " " + desc
+		lineStyle = lipgloss.NewStyle().PaddingLeft(1)
 	}
 	fmt.Fprint(w, lineStyle.Render(line))
 }
