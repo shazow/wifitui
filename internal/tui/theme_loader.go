@@ -1,35 +1,66 @@
 package tui
 
 import (
-	"os"
+	"fmt"
+	"io"
 
 	"github.com/BurntSushi/toml"
 	"github.com/charmbracelet/lipgloss"
 )
 
-// themeFile represents the structure of the theme TOML file.
-// We use pointers to strings so we can distinguish between a missing value
-// and an empty string. This allows users to override only the colors they want.
-type themeFile struct {
-	Primary    *string `toml:"Primary,omitempty"`
-	Subtle     *string `toml:"Subtle,omitempty"`
-	Success    *string `toml:"Success,omitempty"`
-	Error      *string `toml:"Error,omitempty"`
-	Normal     *string `toml:"Normal,omitempty"`
-	Disabled   *string `toml:"Disabled,omitempty"`
-	Border     *string `toml:"Border,omitempty"`
-	SignalHigh *string `toml:"SignalHigh,omitempty"`
-	SignalLow  *string `toml:"SignalLow,omitempty"`
+// adaptiveColor is a wrapper around lipgloss.TerminalColor that can be unmarshaled
+// from a TOML file as either a single color string or a pair of strings for light/dark themes.
+type adaptiveColor struct {
+	lipgloss.TerminalColor
 }
 
-// LoadTheme loads a theme from the given path and overrides the default theme.
-// If the path is empty, it does nothing.
-func LoadTheme(path string) error {
-	if path == "" {
+// UnmarshalTOML implements the toml.Unmarshaler interface.
+func (ac *adaptiveColor) UnmarshalTOML(data interface{}) error {
+	switch value := data.(type) {
+	case string:
+		ac.TerminalColor = lipgloss.Color(value)
+		return nil
+	case []interface{}:
+		if len(value) != 2 {
+			return fmt.Errorf("adaptive color must be a pair of two strings, but got %d", len(value))
+		}
+		s := make([]string, 2)
+		for i, item := range value {
+			var ok bool
+			s[i], ok = item.(string)
+			if !ok {
+				return fmt.Errorf("adaptive color pair must contain strings, but got %T", item)
+			}
+		}
+		ac.TerminalColor = lipgloss.AdaptiveColor{Light: s[0], Dark: s[1]}
 		return nil
 	}
 
-	data, err := os.ReadFile(path)
+	return fmt.Errorf("unsupported type for adaptiveColor: %T", data)
+}
+
+// themeFile is a private struct used for unmarshaling the TOML theme file.
+// It uses the adaptiveColor type to handle flexible color definitions.
+type themeFile struct {
+	Primary    adaptiveColor `toml:"Primary"`
+	Subtle     adaptiveColor `toml:"Subtle"`
+	Success    adaptiveColor `toml:"Success"`
+	Error      adaptiveColor `toml:"Error"`
+	Normal     adaptiveColor `toml:"Normal"`
+	Disabled   adaptiveColor `toml:"Disabled"`
+	Border     adaptiveColor `toml:"Border"`
+	SignalHigh adaptiveColor `toml:"SignalHigh"`
+	SignalLow  adaptiveColor `toml:"SignalLow"`
+}
+
+// LoadTheme loads a theme from the given reader and overrides the default theme.
+// If the reader is nil, it does nothing.
+func LoadTheme(r io.Reader) error {
+	if r == nil {
+		return nil
+	}
+
+	data, err := io.ReadAll(r)
 	if err != nil {
 		return err
 	}
@@ -39,37 +70,19 @@ func LoadTheme(path string) error {
 		return err
 	}
 
-	// Start with the default theme and override it with the loaded values.
-	theme := NewDefaultTheme()
-
-	if tf.Primary != nil {
-		theme.Primary = lipgloss.Color(*tf.Primary)
-	}
-	if tf.Subtle != nil {
-		theme.Subtle = lipgloss.Color(*tf.Subtle)
-	}
-	if tf.Success != nil {
-		theme.Success = lipgloss.Color(*tf.Success)
-	}
-	if tf.Error != nil {
-		theme.Error = lipgloss.Color(*tf.Error)
-	}
-	if tf.Normal != nil {
-		theme.Normal = lipgloss.Color(*tf.Normal)
-	}
-	if tf.Disabled != nil {
-		theme.Disabled = lipgloss.Color(*tf.Disabled)
-	}
-	if tf.Border != nil {
-		theme.Border = lipgloss.Color(*tf.Border)
-	}
-	if tf.SignalHigh != nil {
-		theme.SignalHigh = lipgloss.Color(*tf.SignalHigh)
-	}
-	if tf.SignalLow != nil {
-		theme.SignalLow = lipgloss.Color(*tf.SignalLow)
+	// Create a new Theme and populate it from the themeFile.
+	// This keeps the main Theme struct clean and unchanged.
+	CurrentTheme = Theme{
+		Primary:    tf.Primary.TerminalColor,
+		Subtle:     tf.Subtle.TerminalColor,
+		Success:    tf.Success.TerminalColor,
+		Error:      tf.Error.TerminalColor,
+		Normal:     tf.Normal.TerminalColor,
+		Disabled:   tf.Disabled.TerminalColor,
+		Border:     tf.Border.TerminalColor,
+		SignalHigh: tf.SignalHigh.TerminalColor,
+		SignalLow:  tf.SignalLow.TerminalColor,
 	}
 
-	CurrentTheme = theme
 	return nil
 }
