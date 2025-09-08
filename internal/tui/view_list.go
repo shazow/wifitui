@@ -95,6 +95,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		Rows([][]string{row}...).
 		Border(lipgloss.HiddenBorder()).
 		Width(m.Width() - 2). // Subtract padding
+		Wrap(false).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if index == m.Index() {
 				return lipgloss.NewStyle().
