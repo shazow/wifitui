@@ -26,3 +26,6 @@ Border = ["#BDBDBD", "#616161"] # Gray
 # Signal color is a gradient from SignalHigh to SignalLow.
 SignalHigh = ["#00B300", "#00FF00"]
 SignalLow = ["#D05F00", "#BC3C00"]
+
+# Color for saved networks
+Saved = ["#00459E", "#54A5F6"]

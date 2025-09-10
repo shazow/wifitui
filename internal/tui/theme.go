@@ -41,15 +41,19 @@ func (c *Color) UnmarshalTOML(data interface{}) error {
 
 // Theme contains the colors for the application.
 type Theme struct {
-	Primary    Color
-	Subtle     Color
-	Success    Color
-	Error      Color
-	Normal     Color
-	Disabled   Color
-	Border     Color
+	// Generic color scheme
+	Primary  Color
+	Subtle   Color
+	Success  Color
+	Error    Color
+	Normal   Color
+	Disabled Color
+	Border   Color
+
+	// Feature-specific colors
 	SignalHigh Color
 	SignalLow  Color
+	Saved      Color
 }
 
 // CurrentTheme is the active theme for the application.
@@ -67,6 +71,7 @@ func NewDefaultTheme() Theme {
 		Border:     Color{lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#616161"}}, // Gray
 		SignalHigh: Color{lipgloss.AdaptiveColor{Light: "#00B300", Dark: "#00FF00"}},
 		SignalLow:  Color{lipgloss.AdaptiveColor{Light: "#D05F00", Dark: "#BC3C00"}},
+		Saved:      Color{lipgloss.AdaptiveColor{Light: "#00459E", Dark: "#54A5F6"}},
 	}
 }
 

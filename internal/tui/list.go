@@ -41,6 +41,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	default:
 		icon = "🔒 "
 	}
+	if i.IsKnown {
+		icon = "💾 "
+	}
 	title = icon + title
 
 	// Define column width for SSID
@@ -61,7 +64,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	} else if i.IsActive {
 		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Success)
 	} else if i.IsKnown {
-		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Success)
+		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Saved)
 	} else {
 		titleStyle = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
 	}
