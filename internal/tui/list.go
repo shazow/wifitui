@@ -111,7 +111,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if index == m.Index() {
 		// Selected item
 		line = title + padding + " " + desc
-		if d.listModel.forgettingItem != nil && d.listModel.forgettingItem.SSID == i.SSID {
+		if d.listModel.isForgetting {
 			forgetPrompt := lipgloss.NewStyle().Foreground(CurrentTheme.Error).Render(" Forget? (Y/n)")
 			line += forgetPrompt
 		}
@@ -127,8 +127,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type ListModel struct {
-	list           list.Model
-	forgettingItem *connectionItem
+	list         list.Model
+	isForgetting bool
 }
 
 func NewListModel() ListModel {
@@ -175,15 +175,16 @@ func (m ListModel) Init() tea.Cmd {
 func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
-	if m.forgettingItem != nil {
+	oldIndex := m.list.Index()
+
+	if m.isForgetting {
 		selected, ok := m.list.SelectedItem().(connectionItem)
-		if !ok || selected.SSID != m.forgettingItem.SSID {
-			// Selection changed, cancel forget
-			m.forgettingItem = nil
+		if !ok {
+			m.isForgetting = false
 		} else {
-			finished, cmd := forgetHandler(msg, *m.forgettingItem)
+			finished, cmd := forgetHandler(msg, selected)
 			if finished {
-				m.forgettingItem = nil
+				m.isForgetting = false
 				return m, cmd
 			}
 		}
@@ -207,7 +208,7 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
 				if ok && selected.IsKnown {
-					m.forgettingItem = &selected
+					m.isForgetting = true
 					return m, nil
 				}
 			}
@@ -242,6 +243,10 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	newModel, cmd = m.list.Update(msg)
 	m.list = newModel
 	cmds = append(cmds, cmd)
+
+	if m.isForgetting && m.list.Index() != oldIndex {
+		m.isForgetting = false
+	}
 
 	return m, tea.Batch(cmds...)
 }

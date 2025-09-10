@@ -21,18 +21,17 @@ func TestListModel_NewKey(t *testing.T) {
 
 func TestListModel_ForgetFlow(t *testing.T) {
 	m := NewListModel()
-	item := connectionItem{
-		Connection: wifi.Connection{SSID: "TestNetwork", IsKnown: true},
-	}
-	m.list.SetItems([]list.Item{item})
+	item1 := connectionItem{Connection: wifi.Connection{SSID: "TestNetwork1", IsKnown: true}}
+	item2 := connectionItem{Connection: wifi.Connection{SSID: "TestNetwork2", IsKnown: true}}
+	m.list.SetItems([]list.Item{item1, item2})
 
 	// Press 'f' to start forgetting
 	fKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")}
 	updatedModel, _ := m.Update(fKeyMsg)
 	m = updatedModel.(ListModel)
 
-	if m.forgettingItem == nil || m.forgettingItem.SSID != "TestNetwork" {
-		t.Fatal("forgettingItem was not set correctly")
+	if !m.isForgetting {
+		t.Fatal("isForgetting was not set to true")
 	}
 
 	// Press 'n' to cancel
@@ -40,9 +39,27 @@ func TestListModel_ForgetFlow(t *testing.T) {
 	updatedModel, _ = m.Update(nKeyMsg)
 	m = updatedModel.(ListModel)
 
-	if m.forgettingItem != nil {
-		t.Fatal("forgettingItem was not cleared after pressing 'n'")
+	if m.isForgetting {
+		t.Fatal("isForgetting was not cleared after pressing 'n'")
 	}
+
+	// Press 'f' again
+	updatedModel, _ = m.Update(fKeyMsg)
+	m = updatedModel.(ListModel)
+
+	// Move selection down, should cancel forget
+	downKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
+	updatedModel, _ = m.Update(downKeyMsg)
+	m = updatedModel.(ListModel)
+
+	if m.isForgetting {
+		t.Fatal("isForgetting was not cleared after changing selection")
+	}
+
+	// Move selection back up
+	upKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}
+	updatedModel, _ = m.Update(upKeyMsg)
+	m = updatedModel.(ListModel)
 
 	// Press 'f' again
 	updatedModel, _ = m.Update(fKeyMsg)
@@ -53,16 +70,16 @@ func TestListModel_ForgetFlow(t *testing.T) {
 	updatedModel, cmd := m.Update(yKeyMsg)
 	m = updatedModel.(ListModel)
 
-	if m.forgettingItem != nil {
-		t.Fatal("forgettingItem was not cleared after pressing 'y'")
+	if m.isForgetting {
+		t.Fatal("isForgetting was not cleared after pressing 'y'")
 	}
 
 	msg := cmd()
 	if forgetMsg, ok := msg.(forgetNetworkMsg); !ok {
 		t.Errorf("expected a forgetNetworkMsg but got %T", msg)
 	} else {
-		if forgetMsg.item.SSID != "TestNetwork" {
-			t.Errorf("expected forgetNetworkMsg for 'TestNetwork' but got for '%s'", forgetMsg.item.SSID)
+		if forgetMsg.item.SSID != "TestNetwork1" {
+			t.Errorf("expected forgetNetworkMsg for 'TestNetwork1' but got for '%s'", forgetMsg.item.SSID)
 		}
 	}
 }
