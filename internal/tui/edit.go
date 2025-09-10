@@ -189,18 +189,10 @@ func (m EditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	if m.isForgetting {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "y", "enter":
-				m.isForgetting = false
-				return m, func() tea.Msg {
-					return forgetNetworkMsg{item: m.selectedItem}
-				}
-			case "n", "esc":
-				m.isForgetting = false
-				return m, nil
-			}
+		finished, cmd := forgetHandler(msg, m.selectedItem)
+		if finished {
+			m.isForgetting = false
+			return m, cmd
 		}
 	}
 

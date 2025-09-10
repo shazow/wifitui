@@ -176,16 +176,15 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	if m.forgettingItem != nil {
-		switch msg := msg.(type) {
-		case tea.KeyMsg:
-			switch msg.String() {
-			case "y":
-				itemToForget := *m.forgettingItem
+		selected, ok := m.list.SelectedItem().(connectionItem)
+		if !ok || selected.SSID != m.forgettingItem.SSID {
+			// Selection changed, cancel forget
+			m.forgettingItem = nil
+		} else {
+			finished, cmd := forgetHandler(msg, *m.forgettingItem)
+			if finished {
 				m.forgettingItem = nil
-				return m, func() tea.Msg { return forgetNetworkMsg{item: itemToForget} }
-			case "n", "esc":
-				m.forgettingItem = nil
-				return m, nil
+				return m, cmd
 			}
 		}
 	}
