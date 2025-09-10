@@ -14,15 +14,18 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
+type startForgettingMsg struct{}
+
 type EditModel struct {
-	focusManager      *FocusManager
-	ssidAdapter       *TextInput
-	passwordAdapter   *TextInput
-	securityGroup     *ChoiceComponent
+	focusManager        *FocusManager
+	ssidAdapter         *TextInput
+	passwordAdapter     *TextInput
+	securityGroup       *ChoiceComponent
 	autoConnectCheckbox *Checkbox
-	buttonGroup       *MultiButtonComponent
-	passwordRevealed  bool
-	selectedItem      connectionItem
+	buttonGroup         *MultiButtonComponent
+	passwordRevealed    bool
+	isForgetting        bool
+	selectedItem        connectionItem
 }
 
 func NewEditModel(item *connectionItem) EditModel {
@@ -133,7 +136,7 @@ func NewEditModel(item *connectionItem) EditModel {
 					}
 				}
 			case 2: // Forget
-				return func() tea.Msg { return showForgetViewMsg{item: m.selectedItem} }
+				return func() tea.Msg { return startForgettingMsg{} }
 			case 3: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
@@ -185,7 +188,26 @@ func (m EditModel) Init() tea.Cmd {
 func (m EditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	if m.isForgetting {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "y", "enter":
+				m.isForgetting = false
+				return m, func() tea.Msg {
+					return forgetNetworkMsg{item: m.selectedItem}
+				}
+			case "n", "esc":
+				m.isForgetting = false
+				return m, nil
+			}
+		}
+	}
+
 	switch msg := msg.(type) {
+	case startForgettingMsg:
+		m.isForgetting = true
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":
@@ -252,6 +274,11 @@ func (m EditModel) View() string {
 
 	for _, item := range m.focusManager.items {
 		s.WriteString(item.View())
+		s.WriteString("\n\n")
+	}
+
+	if m.isForgetting {
+		s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Error).Render("Forget this network? (Y/n)"))
 		s.WriteString("\n\n")
 	}
 

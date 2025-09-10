@@ -17,6 +17,7 @@ import (
 // itemDelegate is our custom list delegate
 type itemDelegate struct {
 	list.DefaultDelegate
+	listModel *ListModel
 }
 
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
@@ -110,6 +111,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if index == m.Index() {
 		// Selected item
 		line = title + padding + " " + desc
+		if d.listModel.forgettingItem != nil && d.listModel.forgettingItem.SSID == i.SSID {
+			forgetPrompt := lipgloss.NewStyle().Foreground(CurrentTheme.Error).Render(" Forget? (Y/n)")
+			line += forgetPrompt
+		}
 		lineStyle = lipgloss.NewStyle().
 			Border(lipgloss.ThickBorder(), false, false, false, true). // Left border
 			BorderForeground(CurrentTheme.Primary)
@@ -122,11 +127,15 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type ListModel struct {
-	list list.Model
+	list           list.Model
+	forgettingItem *connectionItem
 }
 
 func NewListModel() ListModel {
-	delegate := itemDelegate{}
+	m := ListModel{}
+	delegate := itemDelegate{
+		listModel: &m,
+	}
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
@@ -147,8 +156,8 @@ func NewListModel() ListModel {
 	l.Styles.Title = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
-
-	return ListModel{list: l}
+	m.list = l
+	return m
 }
 
 func (m *ListModel) SetSize(w, h int) {
@@ -165,6 +174,21 @@ func (m ListModel) Init() tea.Cmd {
 
 func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	if m.forgettingItem != nil {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "y":
+				itemToForget := *m.forgettingItem
+				m.forgettingItem = nil
+				return m, func() tea.Msg { return forgetNetworkMsg{item: itemToForget} }
+			case "n", "esc":
+				m.forgettingItem = nil
+				return m, nil
+			}
+		}
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -184,7 +208,8 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
 				if ok && selected.IsKnown {
-					return m, func() tea.Msg { return showForgetViewMsg{item: selected} }
+					m.forgettingItem = &selected
+					return m, nil
 				}
 			}
 		case "c":

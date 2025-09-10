@@ -69,3 +69,65 @@ func TestEditModel_CancelButton(t *testing.T) {
 		t.Errorf("expected a changeViewMsg but got %T", msg)
 	}
 }
+
+func TestEditModel_ForgetFlow(t *testing.T) {
+	item := &connectionItem{
+		Connection: wifi.Connection{SSID: "TestNetwork", IsKnown: true},
+	}
+	m := NewEditModel(item)
+
+	// Focus the buttons
+	for m.focusManager.Focused() != m.buttonGroup {
+		updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
+		m = updatedModel.(EditModel)
+	}
+
+	// Select the forget button
+	m.buttonGroup.selected = 2
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updatedModel, cmd := m.Update(enterMsg)
+	m = updatedModel.(EditModel)
+
+	msg := cmd()
+	updatedModel, _ = m.Update(msg)
+	m = updatedModel.(EditModel)
+
+	if !m.isForgetting {
+		t.Fatal("isForgetting was not set to true")
+	}
+
+	// Press 'n' to cancel
+	nKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}
+	updatedModel, _ = m.Update(nKeyMsg)
+	m = updatedModel.(EditModel)
+
+	if m.isForgetting {
+		t.Fatal("isForgetting was not set to false after pressing 'n'")
+	}
+
+	// Select the forget button again
+	updatedModel, cmd = m.Update(enterMsg)
+	m = updatedModel.(EditModel)
+
+	msg = cmd()
+	updatedModel, _ = m.Update(msg)
+	m = updatedModel.(EditModel)
+
+	// Press 'y' to confirm
+	yKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
+	updatedModel, cmd = m.Update(yKeyMsg)
+	m = updatedModel.(EditModel)
+
+	if m.isForgetting {
+		t.Fatal("isForgetting was not set to false after pressing 'y'")
+	}
+
+	msg = cmd()
+	if forgetMsg, ok := msg.(forgetNetworkMsg); !ok {
+		t.Errorf("expected a forgetNetworkMsg but got %T", msg)
+	} else {
+		if forgetMsg.item.SSID != "TestNetwork" {
+			t.Errorf("expected forgetNetworkMsg for 'TestNetwork' but got for '%s'", forgetMsg.item.SSID)
+		}
+	}
+}

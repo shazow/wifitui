@@ -19,7 +19,6 @@ type viewState int
 const (
 	stateListView viewState = iota
 	stateEditView
-	stateForgetView
 	stateErrorView
 )
 
@@ -53,10 +52,9 @@ type (
 	errorMsg           struct{ err error }
 
 	// To main model
-	changeViewMsg    viewState
-	showForgetViewMsg struct{ item connectionItem }
-	showEditViewMsg  struct{ item *connectionItem }
-	scanMsg          struct{}
+	changeViewMsg   viewState
+	showEditViewMsg struct{ item *connectionItem }
+	scanMsg         struct{}
 	connectMsg       struct {
 		item        connectionItem
 		autoConnect bool
@@ -78,13 +76,12 @@ type (
 
 // The main model for our TUI application
 type model struct {
-	state       viewState
-	listModel   ListModel
-	editModel   EditModel
-	forgetModel ForgetModel
-	errorModel  ErrorModel
+	state      viewState
+	listModel  ListModel
+	editModel  EditModel
+	errorModel ErrorModel
 
-	spinner       spinner.Model
+	spinner spinner.Model
 	backend       wifi.Backend
 	loading       bool
 	statusMessage string
@@ -165,9 +162,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateErrorView
 	case changeViewMsg:
 		m.state = viewState(msg)
-	case showForgetViewMsg:
-		m.state = stateForgetView
-		m.forgetModel = NewForgetModel(msg.item, m.width, m.height)
 	case showEditViewMsg:
 		m.state = stateEditView
 		m.editModel = NewEditModel(msg.item)
@@ -220,9 +214,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case stateEditView:
 		newModel, cmd = m.editModel.Update(msg)
 		m.editModel = newModel.(EditModel)
-	case stateForgetView:
-		newModel, cmd = m.forgetModel.Update(msg)
-		m.forgetModel = newModel.(ForgetModel)
 	case stateErrorView:
 		newModel, cmd = m.errorModel.Update(msg)
 		m.errorModel = newModel.(ErrorModel)
@@ -244,8 +235,6 @@ func (m model) View() string {
 		s.WriteString(m.listModel.View())
 	case stateEditView:
 		s.WriteString(m.editModel.View())
-	case stateForgetView:
-		s.WriteString(m.forgetModel.View())
 	case stateErrorView:
 		s.WriteString(m.errorModel.View())
 	}
