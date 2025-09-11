@@ -187,6 +187,8 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isForgetting = false
 				return m, cmd
 			}
+			// Don't consume other events if we're not finished
+			return m, nil
 		}
 	}
 

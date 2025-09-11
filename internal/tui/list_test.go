@@ -47,23 +47,14 @@ func TestListModel_ForgetFlow(t *testing.T) {
 	updatedModel, _ = m.Update(fKeyMsg)
 	m = updatedModel.(ListModel)
 
-	// Move selection down, should cancel forget
+	// Press 'j' to navigate, should be ignored
 	downKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
 	updatedModel, _ = m.Update(downKeyMsg)
 	m = updatedModel.(ListModel)
 
-	if m.isForgetting {
-		t.Fatal("isForgetting was not cleared after changing selection")
+	if !m.isForgetting {
+		t.Fatal("isForgetting should not be cleared after pressing a navigation key")
 	}
-
-	// Move selection back up
-	upKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}
-	updatedModel, _ = m.Update(upKeyMsg)
-	m = updatedModel.(ListModel)
-
-	// Press 'f' again
-	updatedModel, _ = m.Update(fKeyMsg)
-	m = updatedModel.(ListModel)
 
 	// Press 'y' to confirm
 	yKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
