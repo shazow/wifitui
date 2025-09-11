@@ -110,11 +110,10 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	var lineStyle lipgloss.Style
 	if index == m.Index() {
 		// Selected item
-		line = title + padding + " " + desc
 		if d.listModel.isForgetting {
-			forgetPrompt := lipgloss.NewStyle().Foreground(CurrentTheme.Error).Render(" Forget? (Y/n)")
-			line += forgetPrompt
+			desc = lipgloss.NewStyle().Foreground(CurrentTheme.Error).Render("Forget? (Y/n)")
 		}
+		line = title + padding + " " + desc
 		lineStyle = lipgloss.NewStyle().
 			Border(lipgloss.ThickBorder(), false, false, false, true). // Left border
 			BorderForeground(CurrentTheme.Primary)
