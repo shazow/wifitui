@@ -182,11 +182,9 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !ok {
 			m.isForgetting = false
 		} else {
-			finished, cmd := forgetHandler(msg, selected)
-			if finished {
-				m.isForgetting = false
-				return m, cmd
-			}
+			cmd := forgetHandler(msg, selected)
+			m.isForgetting = false
+			return m, cmd
 		}
 	}
 

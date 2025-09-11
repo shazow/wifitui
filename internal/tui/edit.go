@@ -189,11 +189,9 @@ func (m EditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	if m.isForgetting {
-		finished, cmd := forgetHandler(msg, m.selectedItem)
-		if finished {
-			m.isForgetting = false
-			return m, cmd
-		}
+		cmd := forgetHandler(msg, m.selectedItem)
+		m.isForgetting = false
+		return m, cmd
 	}
 
 	switch msg := msg.(type) {
@@ -292,4 +290,18 @@ func (m EditModel) View() string {
 
 func ShouldDisplayPasswordField(security wifi.SecurityType) bool {
 	return security != wifi.SecurityOpen
+}
+
+// forgetHandler handles the key presses for the forget confirmation.
+func forgetHandler(msg tea.Msg, item connectionItem) tea.Cmd {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "y", "enter":
+			return func() tea.Msg {
+				return forgetNetworkMsg{item: item}
+			}
+		}
+	}
+	return nil
 }
