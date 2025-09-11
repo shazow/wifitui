@@ -14,15 +14,18 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
+type startForgettingMsg struct{}
+
 type EditModel struct {
-	focusManager      *FocusManager
-	ssidAdapter       *TextInput
-	passwordAdapter   *TextInput
-	securityGroup     *ChoiceComponent
+	focusManager        *FocusManager
+	ssidAdapter         *TextInput
+	passwordAdapter     *TextInput
+	securityGroup       *ChoiceComponent
 	autoConnectCheckbox *Checkbox
-	buttonGroup       *MultiButtonComponent
-	passwordRevealed  bool
-	selectedItem      connectionItem
+	buttonGroup         *MultiButtonComponent
+	passwordRevealed    bool
+	isForgetting        bool
+	selectedItem        connectionItem
 }
 
 func NewEditModel(item *connectionItem) EditModel {
@@ -133,7 +136,7 @@ func NewEditModel(item *connectionItem) EditModel {
 					}
 				}
 			case 2: // Forget
-				return func() tea.Msg { return showForgetViewMsg{item: m.selectedItem} }
+				return func() tea.Msg { return startForgettingMsg{} }
 			case 3: // Cancel
 				return func() tea.Msg { return changeViewMsg(stateListView) }
 			}
@@ -185,7 +188,20 @@ func (m EditModel) Init() tea.Cmd {
 func (m EditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
+	if m.isForgetting {
+		finished, cmd := forgetHandler(msg, m.selectedItem)
+		if finished {
+			m.isForgetting = false
+			return m, cmd
+		}
+		// Don't consume other events if we're not finished
+		return m, nil
+	}
+
 	switch msg := msg.(type) {
+	case startForgettingMsg:
+		m.isForgetting = true
+		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":
@@ -255,6 +271,11 @@ func (m EditModel) View() string {
 		s.WriteString("\n\n")
 	}
 
+	if m.isForgetting {
+		s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Error).Render("Forget this network? (Y/n)"))
+		s.WriteString("\n\n")
+	}
+
 	s.WriteString("\n\n(tab to switch fields, arrows to navigate, enter to select)")
 
 	if m.selectedItem.IsKnown {
@@ -273,4 +294,21 @@ func (m EditModel) View() string {
 
 func ShouldDisplayPasswordField(security wifi.SecurityType) bool {
 	return security != wifi.SecurityOpen
+}
+
+// forgetHandler handles the key presses for the forget confirmation.
+// It returns whether the forget flow is finished, and a command to execute.
+func forgetHandler(msg tea.Msg, item connectionItem) (finished bool, cmd tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "y", "enter":
+			return true, func() tea.Msg {
+				return forgetNetworkMsg{item: item}
+			}
+		case "n", "esc":
+			return true, nil
+		}
+	}
+	return false, nil
 }

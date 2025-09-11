@@ -17,6 +17,7 @@ import (
 // itemDelegate is our custom list delegate
 type itemDelegate struct {
 	list.DefaultDelegate
+	listModel *ListModel
 }
 
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
@@ -109,6 +110,9 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	var lineStyle lipgloss.Style
 	if index == m.Index() {
 		// Selected item
+		if d.listModel.isForgetting {
+			desc = lipgloss.NewStyle().Foreground(CurrentTheme.Error).Render("Forget? (Y/n)")
+		}
 		line = title + padding + " " + desc
 		lineStyle = lipgloss.NewStyle().
 			Border(lipgloss.ThickBorder(), false, false, false, true). // Left border
@@ -122,11 +126,16 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type ListModel struct {
-	list list.Model
+	list         list.Model
+	isForgetting bool
 }
 
-func NewListModel() ListModel {
-	delegate := itemDelegate{}
+func NewListModel() *ListModel {
+	// m needs to be a pointer to be assigned to listModel
+	m := &ListModel{}
+	delegate := itemDelegate{
+		listModel: m,
+	}
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
@@ -147,8 +156,8 @@ func NewListModel() ListModel {
 	l.Styles.Title = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
-
-	return ListModel{list: l}
+	m.list = l
+	return m
 }
 
 func (m *ListModel) SetSize(w, h int) {
@@ -159,12 +168,29 @@ func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
 }
 
-func (m ListModel) Init() tea.Cmd {
+func (m *ListModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
+
+	oldIndex := m.list.Index()
+
+	if m.isForgetting {
+		selected, ok := m.list.SelectedItem().(connectionItem)
+		if !ok {
+			m.isForgetting = false
+		} else {
+			finished, cmd := forgetHandler(msg, selected)
+			if finished {
+				m.isForgetting = false
+				return m, cmd
+			}
+		}
+		// Don't let other events pass through while forgetting
+		return m, nil
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -184,7 +210,8 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
 				if ok && selected.IsKnown {
-					return m, func() tea.Msg { return showForgetViewMsg{item: selected} }
+					m.isForgetting = true
+					return m, nil
 				}
 			}
 		case "c":
@@ -213,16 +240,19 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	var cmd tea.Cmd
-	var newModel list.Model
-	newModel, cmd = m.list.Update(msg)
-	m.list = newModel
-	cmds = append(cmds, cmd)
+	// The list bubble needs to be updated.
+	newList, newCmd := m.list.Update(msg)
+	m.list = newList
+	cmds = append(cmds, newCmd)
+
+	if m.isForgetting && m.list.Index() != oldIndex {
+		m.isForgetting = false
+	}
 
 	return m, tea.Batch(cmds...)
 }
 
-func (m ListModel) View() string {
+func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
