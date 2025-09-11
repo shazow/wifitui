@@ -28,7 +28,7 @@ func TestListModel_ForgetFlow(t *testing.T) {
 	// Press 'f' to start forgetting
 	fKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")}
 	updatedModel, _ := m.Update(fKeyMsg)
-	m = updatedModel.(ListModel)
+	m = updatedModel.(*ListModel)
 
 	if !m.isForgetting {
 		t.Fatal("isForgetting was not set to true")
@@ -37,7 +37,7 @@ func TestListModel_ForgetFlow(t *testing.T) {
 	// Press 'n' to cancel
 	nKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}
 	updatedModel, _ = m.Update(nKeyMsg)
-	m = updatedModel.(ListModel)
+	m = updatedModel.(*ListModel)
 
 	if m.isForgetting {
 		t.Fatal("isForgetting was not cleared after pressing 'n'")
@@ -45,12 +45,12 @@ func TestListModel_ForgetFlow(t *testing.T) {
 
 	// Press 'f' again
 	updatedModel, _ = m.Update(fKeyMsg)
-	m = updatedModel.(ListModel)
+	m = updatedModel.(*ListModel)
 
 	// Press 'j' to navigate, should be ignored
 	downKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")}
 	updatedModel, _ = m.Update(downKeyMsg)
-	m = updatedModel.(ListModel)
+	m = updatedModel.(*ListModel)
 
 	if !m.isForgetting {
 		t.Fatal("isForgetting should not be cleared after pressing a navigation key")
@@ -59,7 +59,7 @@ func TestListModel_ForgetFlow(t *testing.T) {
 	// Press 'y' to confirm
 	yKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
 	updatedModel, cmd := m.Update(yKeyMsg)
-	m = updatedModel.(ListModel)
+	m = updatedModel.(*ListModel)
 
 	if m.isForgetting {
 		t.Fatal("isForgetting was not cleared after pressing 'y'")

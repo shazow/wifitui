@@ -131,10 +131,11 @@ type ListModel struct {
 	isForgetting bool
 }
 
-func NewListModel() ListModel {
-	m := ListModel{}
+func NewListModel() *ListModel {
+	// m needs to be a pointer to be assigned to listModel
+	m := &ListModel{}
 	delegate := itemDelegate{
-		listModel: &m,
+		listModel: m,
 	}
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
@@ -168,11 +169,11 @@ func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
 }
 
-func (m ListModel) Init() tea.Cmd {
+func (m *ListModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	oldIndex := m.list.Index()
@@ -187,9 +188,9 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isForgetting = false
 				return m, cmd
 			}
-			// Don't consume other events if we're not finished
-			return m, nil
 		}
+		// Don't let other events pass through while forgetting
+		return m, nil
 	}
 
 	switch msg := msg.(type) {
@@ -240,11 +241,10 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	var cmd tea.Cmd
-	var newModel list.Model
-	newModel, cmd = m.list.Update(msg)
-	m.list = newModel
-	cmds = append(cmds, cmd)
+	// The list bubble needs to be updated.
+	newList, newCmd := m.list.Update(msg)
+	m.list = newList
+	cmds = append(cmds, newCmd)
 
 	if m.isForgetting && m.list.Index() != oldIndex {
 		m.isForgetting = false
@@ -253,7 +253,7 @@ func (m ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m ListModel) View() string {
+func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))

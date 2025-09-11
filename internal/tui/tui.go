@@ -77,7 +77,7 @@ type (
 // The main model for our TUI application
 type model struct {
 	state      viewState
-	listModel  ListModel
+	listModel  *ListModel
 	editModel  EditModel
 	errorModel ErrorModel
 
@@ -210,7 +210,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.state {
 	case stateListView:
 		newModel, cmd = m.listModel.Update(msg)
-		m.listModel = newModel.(ListModel)
+		m.listModel = newModel.(*ListModel)
 	case stateEditView:
 		newModel, cmd = m.editModel.Update(msg)
 		m.editModel = newModel.(EditModel)
