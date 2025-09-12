@@ -168,11 +168,19 @@ func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
 }
 
+func (m *ListModel) Resize(width, height int) {
+	h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+	bh, bv := listBorderStyle.GetFrameSize()
+	extraVerticalSpace := 4
+	m.SetSize(width-h-bh, height-v-bv-extraVerticalSpace)
+}
+
 func (m *ListModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	oldIndex := m.list.Index()
@@ -193,6 +201,24 @@ func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case connectionsLoadedMsg:
+		items := make([]list.Item, len(msg))
+		for i, c := range msg {
+			items[i] = connectionItem{Connection: c}
+		}
+		m.list.SetItems(items)
+		return m, nil
+	case scanFinishedMsg:
+		items := make([]list.Item, len(msg))
+		for i, c := range msg {
+			items[i] = connectionItem{Connection: c}
+		}
+		m.list.SetItems(items)
+		return m, nil
+	case secretsLoadedMsg:
+		editModel := NewEditModel(&msg.item)
+		editModel.SetPassword(msg.secret)
+		return editModel, nil
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {
 			break
@@ -203,7 +229,8 @@ func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "n":
-			return m, func() tea.Msg { return showEditViewMsg{item: nil} }
+			editModel := NewEditModel(nil)
+			return editModel, nil
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
 		case "f":
@@ -221,7 +248,8 @@ func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if selected.IsKnown {
 						return m, func() tea.Msg { return connectMsg{item: selected} }
 					} else {
-						return m, func() tea.Msg { return showEditViewMsg{item: &selected} }
+						editModel := NewEditModel(&selected)
+						return editModel, nil
 					}
 				}
 			}
@@ -234,7 +262,8 @@ func (m *ListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if selected.IsKnown {
 					return m, func() tea.Msg { return loadSecretsMsg{item: selected} }
 				} else {
-					return m, func() tea.Msg { return showEditViewMsg{item: &selected} }
+					editModel := NewEditModel(&selected)
+					return editModel, nil
 				}
 			}
 		}

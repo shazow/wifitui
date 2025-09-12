@@ -28,7 +28,7 @@ type EditModel struct {
 	selectedItem        connectionItem
 }
 
-func NewEditModel(item *connectionItem) EditModel {
+func NewEditModel(item *connectionItem) *EditModel {
 	if item == nil {
 		item = &connectionItem{}
 	}
@@ -116,7 +116,7 @@ func NewEditModel(item *connectionItem) EditModel {
 					}
 				}
 			case 1: // Cancel
-				return func() tea.Msg { return changeViewMsg(stateListView) }
+				return func() tea.Msg { return popViewMsg{} }
 			}
 		} else if m.selectedItem.IsKnown {
 			switch index {
@@ -138,7 +138,7 @@ func NewEditModel(item *connectionItem) EditModel {
 			case 2: // Forget
 				return func() tea.Msg { return startForgettingMsg{} }
 			case 3: // Cancel
-				return func() tea.Msg { return changeViewMsg(stateListView) }
+				return func() tea.Msg { return popViewMsg{} }
 			}
 		} else { // Unknown network
 			switch index {
@@ -152,7 +152,7 @@ func NewEditModel(item *connectionItem) EditModel {
 					}
 				}
 			case 1: // Cancel
-				return func() tea.Msg { return changeViewMsg(stateListView) }
+				return func() tea.Msg { return popViewMsg{} }
 			}
 		}
 		return nil
@@ -167,7 +167,7 @@ func NewEditModel(item *connectionItem) EditModel {
 	} else {
 		m.focusManager.Focus()
 	}
-	return m
+	return &m
 }
 
 func (m *EditModel) SetPassword(password string) {
@@ -181,11 +181,20 @@ func (m *EditModel) SetPassword(password string) {
 	}
 }
 
-func (m EditModel) Init() tea.Cmd {
+func (m *EditModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m EditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *EditModel) Resize(width, height int) {
+	newWidth := int(float64(width) * 0.8)
+	if newWidth > 80 {
+		newWidth = 80
+	}
+	m.ssidAdapter.Model.Width = newWidth
+	m.passwordAdapter.Model.Width = newWidth
+}
+
+func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	if m.isForgetting {
@@ -209,7 +218,7 @@ func (m EditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab":
 			return m, m.focusManager.Prev()
 		case "esc":
-			return m, func() tea.Msg { return changeViewMsg(stateListView) }
+			return m, func() tea.Msg { return popViewMsg{} }
 		case "enter":
 			if m.focusManager.Focused() == m.passwordAdapter {
 				return m, m.focusManager.Next()
@@ -232,7 +241,7 @@ func (m EditModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m EditModel) View() string {
+func (m *EditModel) View() string {
 	var s strings.Builder
 	s.WriteString(fmt.Sprintf("\n%s\n\n", "Wi-Fi Connection"))
 

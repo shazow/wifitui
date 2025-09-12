@@ -14,7 +14,7 @@ func TestErrorModel_AnyKey(t *testing.T) {
 	_, cmd := m.Update(anyKeyMsg)
 
 	msg := cmd()
-	if _, ok := msg.(changeViewMsg); !ok {
-		t.Errorf("expected a changeViewMsg but got %T", msg)
+	if _, ok := msg.(popViewMsg); !ok {
+		t.Errorf("expected a popViewMsg but got %T", msg)
 	}
 }

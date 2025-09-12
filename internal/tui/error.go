@@ -11,24 +11,26 @@ type ErrorModel struct {
 	err error
 }
 
-func NewErrorModel(err error) ErrorModel {
-	return ErrorModel{err: err}
+func NewErrorModel(err error) *ErrorModel {
+	return &ErrorModel{err: err}
 }
 
-func (m ErrorModel) Init() tea.Cmd {
+func (m *ErrorModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m ErrorModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *ErrorModel) Resize(width, height int) {}
+
+func (m *ErrorModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	switch msg.(type) {
 	case tea.KeyMsg:
 		// Any key press dismisses the error
-		return m, func() tea.Msg { return changeViewMsg(stateListView) }
+		return m, func() tea.Msg { return popViewMsg{} }
 	}
 	return m, nil
 }
 
-func (m ErrorModel) View() string {
+func (m *ErrorModel) View() string {
 	errorViewStyle := lipgloss.NewStyle().
 		Border(lipgloss.DoubleBorder(), true).
 		BorderForeground(CurrentTheme.Error).
