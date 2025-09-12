@@ -13,7 +13,6 @@ type Component interface {
 	Init() tea.Cmd
 	Update(msg tea.Msg) (Component, tea.Cmd)
 	View() string
-	Resize(width, height int)
 }
 
 // popViewMsg is a message to pop the current view from the stack.

@@ -185,15 +185,6 @@ func (m *EditModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m *EditModel) Resize(width, height int) {
-	newWidth := int(float64(width) * 0.8)
-	if newWidth > 80 {
-		newWidth = 80
-	}
-	m.ssidAdapter.Model.Width = newWidth
-	m.passwordAdapter.Model.Width = newWidth
-}
-
 func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -208,6 +199,14 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		newWidth := int(float64(msg.Width) * 0.8)
+		if newWidth > 80 {
+			newWidth = 80
+		}
+		m.ssidAdapter.Model.Width = newWidth
+		m.passwordAdapter.Model.Width = newWidth
+		return m, nil
 	case startForgettingMsg:
 		m.isForgetting = true
 		return m, nil

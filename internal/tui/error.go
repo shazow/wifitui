@@ -19,8 +19,6 @@ func (m *ErrorModel) Init() tea.Cmd {
 	return nil
 }
 
-func (m *ErrorModel) Resize(width, height int) {}
-
 func (m *ErrorModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	switch msg.(type) {
 	case tea.KeyMsg:

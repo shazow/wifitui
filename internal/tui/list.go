@@ -168,14 +168,6 @@ func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
 }
 
-func (m *ListModel) Resize(width, height int) {
-	h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	bh, bv := listBorderStyle.GetFrameSize()
-	extraVerticalSpace := 4
-	m.SetSize(width-h-bh, height-v-bv-extraVerticalSpace)
-}
-
 func (m *ListModel) Init() tea.Cmd {
 	return nil
 }
@@ -201,6 +193,13 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+		bh, bv := listBorderStyle.GetFrameSize()
+		extraVerticalSpace := 4
+		m.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
+		return m, nil
 	case connectionsLoadedMsg:
 		items := make([]list.Item, len(msg))
 		for i, c := range msg {

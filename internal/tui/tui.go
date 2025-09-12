@@ -61,12 +61,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		for _, c := range m.componentStack {
-			c.Resize(msg.Width, msg.Height)
-		}
 	case popViewMsg:
 		if len(m.componentStack) > 1 {
 			m.componentStack = m.componentStack[:len(m.componentStack)-1]
