@@ -42,17 +42,14 @@ func NewModel(b wifi.Backend) (*model, error) {
 
 // Init is the first command that is run when the program starts
 func (m *model) Init() tea.Cmd {
-	if len(m.componentStack) > 0 {
-		return tea.Batch(m.spinner.Tick, m.componentStack[0].Init(), func() tea.Msg {
-			connections, err := m.backend.BuildNetworkList(false)
-			if err != nil {
-				return errorMsg{err}
-			}
-			wifi.SortConnections(connections)
-			return connectionsLoadedMsg(connections)
-		})
-	}
-	return m.spinner.Tick
+	return tea.Batch(m.spinner.Tick, func() tea.Msg {
+		connections, err := m.backend.BuildNetworkList(false)
+		if err != nil {
+			return errorMsg{err}
+		}
+		wifi.SortConnections(connections)
+		return connectionsLoadedMsg(connections)
+	})
 }
 
 // Update handles all incoming messages and updates the model accordingly
@@ -183,7 +180,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if newComp != top {
 		m.componentStack = append(m.componentStack, newComp)
-		cmds = append(cmds, newComp.Init())
 	}
 
 	// Spinner update

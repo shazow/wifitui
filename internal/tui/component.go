@@ -10,7 +10,6 @@ import (
 
 // Component is the interface for a TUI component.
 type Component interface {
-	Init() tea.Cmd
 	Update(msg tea.Msg) (Component, tea.Cmd)
 	View() string
 }

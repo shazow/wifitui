@@ -181,10 +181,6 @@ func (m *EditModel) SetPassword(password string) {
 	}
 }
 
-func (m *EditModel) Init() tea.Cmd {
-	return nil
-}
-
 func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	var cmds []tea.Cmd
 

@@ -168,10 +168,6 @@ func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
 }
 
-func (m *ListModel) Init() tea.Cmd {
-	return nil
-}
-
 func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	var cmds []tea.Cmd
 
