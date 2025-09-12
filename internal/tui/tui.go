@@ -43,7 +43,14 @@ func NewModel(b wifi.Backend) (*model, error) {
 // Init is the first command that is run when the program starts
 func (m *model) Init() tea.Cmd {
 	if len(m.componentStack) > 0 {
-		return tea.Batch(m.spinner.Tick, m.componentStack[0].Init(), refreshNetworks(m.backend))
+		return tea.Batch(m.spinner.Tick, m.componentStack[0].Init(), func() tea.Msg {
+			connections, err := m.backend.BuildNetworkList(false)
+			if err != nil {
+				return errorMsg{err}
+			}
+			wifi.SortConnections(connections)
+			return connectionsLoadedMsg(connections)
+		})
 	}
 	return m.spinner.Tick
 }
@@ -73,37 +80,86 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanMsg:
 		m.loading = true
 		m.statusMessage = "Scanning for networks..."
-		return m, scanNetworks(m.backend)
+		return m, func() tea.Msg {
+			connections, err := m.backend.BuildNetworkList(true)
+			if err != nil {
+				return errorMsg{err}
+			}
+			wifi.SortConnections(connections)
+			return scanFinishedMsg(connections)
+		}
 	case connectMsg:
 		m.loading = true
 		m.statusMessage = fmt.Sprintf("Connecting to '%s'...", msg.item.SSID)
 		var batch []tea.Cmd
 		if msg.autoConnect != msg.item.AutoConnect {
-			batch = append(batch, updateAutoConnect(m.backend, msg.item.SSID, msg.autoConnect))
+			batch = append(batch, func() tea.Msg {
+				err := m.backend.SetAutoConnect(msg.item.SSID, msg.autoConnect)
+				if err != nil {
+					return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
+				}
+				return connectionSavedMsg{}
+			})
 		}
-		batch = append(batch, activateConnection(m.backend, msg.item.SSID))
+		batch = append(batch, func() tea.Msg {
+			err := m.backend.ActivateConnection(msg.item.SSID)
+			if err != nil {
+				return errorMsg{fmt.Errorf("failed to activate connection: %w", err)}
+			}
+			return connectionSavedMsg{} // Re-use this to trigger a refresh
+		})
 		return m, tea.Batch(batch...)
 	case joinNetworkMsg:
 		m.loading = true
 		m.statusMessage = fmt.Sprintf("Joining '%s'...", msg.ssid)
-		return m, joinNetwork(m.backend, msg.ssid, msg.password, msg.security, msg.isHidden)
+		return m, func() tea.Msg {
+			err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden)
+			if err != nil {
+				return errorMsg{fmt.Errorf("failed to join network: %w", err)}
+			}
+			return connectionSavedMsg{}
+		}
 	case loadSecretsMsg:
 		m.loading = true
 		m.statusMessage = fmt.Sprintf("Loading details for %s...", msg.item.SSID)
-		return m, getSecrets(m.backend, msg.item)
+		return m, func() tea.Msg {
+			secret, err := m.backend.GetSecrets(msg.item.SSID)
+			if err != nil {
+				return errorMsg{fmt.Errorf("failed to get secrets: %w", err)}
+			}
+			return secretsLoadedMsg{item: msg.item, secret: secret}
+		}
 	case updateSecretMsg:
 		m.loading = true
 		m.statusMessage = fmt.Sprintf("Saving settings for %s...", msg.item.SSID)
 		var batch []tea.Cmd
-		batch = append(batch, updateSecret(m.backend, msg.item.SSID, msg.newPassword))
+		batch = append(batch, func() tea.Msg {
+			err := m.backend.UpdateSecret(msg.item.SSID, msg.newPassword)
+			if err != nil {
+				return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
+			}
+			return connectionSavedMsg{}
+		})
 		if msg.autoConnect != msg.item.AutoConnect {
-			batch = append(batch, updateAutoConnect(m.backend, msg.item.SSID, msg.autoConnect))
+			batch = append(batch, func() tea.Msg {
+				err := m.backend.SetAutoConnect(msg.item.SSID, msg.autoConnect)
+				if err != nil {
+					return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
+				}
+				return connectionSavedMsg{}
+			})
 		}
 		return m, tea.Batch(batch...)
 	case forgetNetworkMsg:
 		m.loading = true
 		m.statusMessage = fmt.Sprintf("Forgetting '%s'...", msg.item.SSID)
-		return m, forgetNetwork(m.backend, msg.item.SSID)
+		return m, func() tea.Msg {
+			err := m.backend.ForgetNetwork(msg.item.SSID)
+			if err != nil {
+				return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
+			}
+			return connectionSavedMsg{} // Re-use this to trigger a refresh
+		}
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -115,7 +171,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = "Successfully updated. Refreshing list..."
-		return m, tea.Batch(func() tea.Msg { return popViewMsg{} }, refreshNetworks(m.backend))
+		return m, tea.Batch(func() tea.Msg { return popViewMsg{} }, func() tea.Msg {
+			connections, err := m.backend.BuildNetworkList(false)
+			if err != nil {
+				return errorMsg{err}
+			}
+			wifi.SortConnections(connections)
+			return connectionsLoadedMsg(connections)
+		})
 
 	}
 
