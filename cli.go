@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/shazow/wifitui/wifi"
-	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/internal/helpers"
+	wifilog "github.com/shazow/wifitui/internal/log"
+	"github.com/shazow/wifitui/internal/tui"
+	"github.com/shazow/wifitui/wifi"
 )
 
 func runTUI(b wifi.Backend) error {
@@ -18,6 +20,18 @@ func runTUI(b wifi.Backend) error {
 		return fmt.Errorf("error initializing model: %w", err)
 	}
 	p := tea.NewProgram(m, tea.WithAltScreen())
+
+	// Feed all log messages into the program
+	ch := make(chan tea.Msg, 10)
+	wifilog.SetOutput(ch)
+	defer wifilog.SetOutput(nil) //
+	go func() {
+		for msg := range ch {
+			p.Send(msg)
+		}
+	}()
+
+	slog.Info("Starting TUI...")
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("error running program: %w", err)
 	}
@@ -74,6 +88,7 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 				if c.IsKnown {
 					return fmt.Errorf("failed to get network secret: %w", err)
 				}
+				slog.Debug("no secret for network", "ssid", c.SSID)
 				secret = "" // No secret available
 			}
 
@@ -112,10 +127,10 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 
 func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, b wifi.Backend) error {
 	if passphrase != "" || isHidden {
-		fmt.Fprintf(w, "Joining network %q...\n", ssid)
+		slog.Info("joining network", "ssid", ssid)
 		return b.JoinNetwork(ssid, passphrase, security, isHidden)
 	}
 
-	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
+	slog.Info("activating existing network", "ssid", ssid)
 	return b.ActivateConnection(ssid)
 }

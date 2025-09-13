@@ -2,12 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-
+	wifilog "github.com/shazow/wifitui/internal/log"
 	"github.com/shazow/wifitui/wifi"
 )
 
@@ -15,11 +16,12 @@ import (
 type model struct {
 	componentStack []Component
 
-	spinner       spinner.Model
-	backend       wifi.Backend
-	loading       bool
-	statusMessage string
-	width, height int
+	spinner   spinner.Model
+	backend   wifi.Backend
+	loading   bool
+	latestLog slog.Record
+	width     int
+	height    int
 }
 
 // NewModel creates the starting state of our application
@@ -35,7 +37,6 @@ func NewModel(b wifi.Backend) (*model, error) {
 		spinner:        s,
 		backend:        b,
 		loading:        true,
-		statusMessage:  "Loading connections...",
 	}
 	return &m, nil
 }
@@ -58,6 +59,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
+	case wifilog.LogMsg:
+		m.latestLog = slog.Record(msg)
+		if m.latestLog.Level >= slog.LevelInfo {
+			m.loading = false
+		}
+		return m, nil
 	case popViewMsg:
 		if len(m.componentStack) > 1 {
 			m.componentStack = m.componentStack[:len(m.componentStack)-1]
@@ -70,7 +77,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case scanMsg:
 		m.loading = true
-		m.statusMessage = "Scanning for networks..."
 		return m, func() tea.Msg {
 			connections, err := m.backend.BuildNetworkList(true)
 			if err != nil {
@@ -81,7 +87,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case connectMsg:
 		m.loading = true
-		m.statusMessage = fmt.Sprintf("Connecting to '%s'...", msg.item.SSID)
 		var batch []tea.Cmd
 		if msg.autoConnect != msg.item.AutoConnect {
 			batch = append(batch, func() tea.Msg {
@@ -102,7 +107,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(batch...)
 	case joinNetworkMsg:
 		m.loading = true
-		m.statusMessage = fmt.Sprintf("Joining '%s'...", msg.ssid)
 		return m, func() tea.Msg {
 			err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden)
 			if err != nil {
@@ -112,7 +116,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case loadSecretsMsg:
 		m.loading = true
-		m.statusMessage = fmt.Sprintf("Loading details for %s...", msg.item.SSID)
 		return m, func() tea.Msg {
 			secret, err := m.backend.GetSecrets(msg.item.SSID)
 			if err != nil {
@@ -122,7 +125,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case updateSecretMsg:
 		m.loading = true
-		m.statusMessage = fmt.Sprintf("Saving settings for %s...", msg.item.SSID)
 		var batch []tea.Cmd
 		batch = append(batch, func() tea.Msg {
 			err := m.backend.UpdateSecret(msg.item.SSID, msg.newPassword)
@@ -143,7 +145,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(batch...)
 	case forgetNetworkMsg:
 		m.loading = true
-		m.statusMessage = fmt.Sprintf("Forgetting '%s'...", msg.item.SSID)
 		return m, func() tea.Msg {
 			err := m.backend.ForgetNetwork(msg.item.SSID)
 			if err != nil {
@@ -152,16 +153,18 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return connectionSavedMsg{} // Re-use this to trigger a refresh
 		}
 	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" {
+		switch msg.String() {
+		case "ctrl+c":
 			return m, tea.Quit
+		case "l":
+			logModel := NewLogViewModel()
+			m.componentStack = append(m.componentStack, logModel)
 		}
 	// Clear loading status on some messages
 	case connectionsLoadedMsg, scanFinishedMsg, secretsLoadedMsg:
 		m.loading = false
-		m.statusMessage = ""
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
-		m.statusMessage = "Successfully updated. Refreshing list..."
 		return m, tea.Batch(func() tea.Msg { return popViewMsg{} }, func() tea.Msg {
 			connections, err := m.backend.BuildNetworkList(false)
 			if err != nil {
@@ -199,10 +202,24 @@ func (m model) View() string {
 		s.WriteString(top.View())
 	}
 
+	// Status bar
+	var status string
 	if m.loading {
-		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
-	} else if m.statusMessage != "" {
-		s.WriteString(fmt.Sprintf("\n\n%s", lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
+		status = m.spinner.View()
+	}
+
+	if !m.latestLog.Time.IsZero() {
+		var style lipgloss.Style
+		switch m.latestLog.Level {
+		case slog.LevelError:
+			style = lipgloss.NewStyle().Foreground(CurrentTheme.Error)
+		default:
+			style = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
+		}
+		status += style.Render(m.latestLog.Message)
+	}
+	if status != "" {
+		s.WriteString("\n\n" + status)
 	}
 
 	return s.String()
