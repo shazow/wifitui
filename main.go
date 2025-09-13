@@ -4,9 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
+	wifilog "github.com/shazow/wifitui/internal/log"
 	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/wifi"
 )
@@ -109,23 +112,29 @@ func main() {
 	}
 
 	if err := root.Parse(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		slog.Error("failed to parse arguments", "error", err)
 		os.Exit(1)
 	}
+
+	var logOutput io.Writer = os.Stderr
+	level := slog.LevelDebug
+
+	handler := slog.NewTextHandler(logOutput, &slog.HandlerOptions{Level: level})
+	logger := wifilog.Init(handler)
 
 	if *version {
 		fmt.Println(Version)
 		os.Exit(0)
 	}
 
-	b, err = GetBackend()
+	b, err = GetBackend(logger)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		slog.Error("failed to get backend", "error", err)
 		os.Exit(1)
 	}
 
 	if err := root.Run(context.Background()); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		slog.Error("failed to run", "error", err)
 		os.Exit(1)
 	}
 }

@@ -2,6 +2,8 @@ package mock
 
 import (
 	"fmt"
+	"io"
+	"log/slog"
 	"math/rand"
 	"time"
 
@@ -34,8 +36,16 @@ func ago(duration time.Duration) *time.Time {
 	return &t
 }
 
+var logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+// SetLogger sets the logger for the package.
+func SetLogger(l *slog.Logger) {
+	logger = l.With("backend", "mock")
+}
+
 // NewBackend creates a new mock.Backend with a list of fun wifi networks.
 func New() (wifi.Backend, error) {
+	logger.Debug("initializing mock backend")
 	initialConnections := []wifi.Connection{
 		{SSID: "HideYoKidsHideYoWiFi", LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA},
 		{SSID: "GET off my LAN", Security: wifi.SecurityWPA, LastConnected: ago(761 * time.Hour), IsKnown: true, AutoConnect: false},
@@ -108,6 +118,7 @@ func (m *MockBackend) setActiveConnection(ssid string) {
 func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	// For mock, we can re-randomize strengths on each scan
 	if shouldScan {
+		logger.Debug("scanning for networks")
 		s := rand.NewSource(time.Now().Unix())
 		r := rand.New(s)
 		for i := range m.VisibleConnections {
@@ -157,6 +168,7 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 }
 
 func (m *MockBackend) ActivateConnection(ssid string) error {
+	logger.Info("activating connection", "ssid", ssid)
 	if m.ActivateError != nil {
 		return m.ActivateError
 	}
@@ -174,6 +186,7 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 }
 
 func (m *MockBackend) ForgetNetwork(ssid string) error {
+	logger.Info("forgetting network", "ssid", ssid)
 	if m.ForgetError != nil {
 		return m.ForgetError
 	}
@@ -209,6 +222,7 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 }
 
 func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+	logger.Info("joining network", "ssid", ssid, "hidden", isHidden, "security", security)
 	if m.JoinError != nil {
 		return m.JoinError
 	}
@@ -281,6 +295,7 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 }
 
 func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
+	logger.Info("updating secret", "ssid", ssid)
 	if m.UpdateSecretError != nil {
 		return m.UpdateSecretError
 	}
@@ -295,6 +310,7 @@ func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
 }
 
 func (m *MockBackend) SetAutoConnect(ssid string, autoConnect bool) error {
+	logger.Info("setting autoconnect", "ssid", ssid, "autoConnect", autoConnect)
 	// "Act on first match" logic for ambiguity.
 	for i, c := range m.KnownConnections {
 		if c.SSID == ssid {

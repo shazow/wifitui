@@ -6,6 +6,8 @@ package darwin
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -36,14 +38,21 @@ func runOnly(c *exec.Cmd) error {
 	return nil
 }
 
+var logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+// SetLogger sets the logger for the package.
+func SetLogger(l *slog.Logger) {
+	logger = l.With("backend", "darwin")
+}
+
 // Backend implements the wifi.Backend interface for macOS.
 type Backend struct {
 	WifiInterface string
 }
 
-
 // New creates a new darwin.Backend.
 func New() (wifi.Backend, error) {
+	logger.Debug("initializing darwin backend")
 	// Find the Wi-Fi interface name (e.g., en0)
 	cmd := exec.Command("networksetup", "-listallhardwareports")
 	out, err := runWithOutput(cmd)
@@ -55,13 +64,17 @@ func New() (wifi.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-  
-	return &Backend{WifiInterface: device}, nil
+
+	logger.Debug("found wifi interface", "device", device)
+	return &Backend{
+		WifiInterface: device,
+	}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
 func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	// Get current network
+	logger.Debug("getting current network")
 	cmd := exec.Command("networksetup", "-getairportnetwork", b.WifiInterface)
 	out, err := runWithOutput(cmd)
 	var currentSSID string
@@ -71,8 +84,11 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		if len(matches) > 1 {
 			currentSSID = matches[1]
 		}
+	} else {
+		logger.Warn("failed to get current network", "error", err)
 	}
 
+	logger.Debug("listing preferred networks", "current", currentSSID)
 	// Get known networks
 	cmd = exec.Command("networksetup", "-listpreferredwirelessnetworks", b.WifiInterface)
 	out, err = runWithOutput(cmd)
@@ -88,6 +104,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 	}
 
+	logger.Debug("scanning for networks")
 	// Scan for visible networks
 	cmd = exec.Command("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-s")
 	out, err = runWithOutput(cmd)
@@ -165,9 +182,11 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 // ActivateConnection activates a known network.
 func (b *Backend) ActivateConnection(ssid string) error {
+	logger.Info("activating connection", "ssid", ssid)
 	password, err := b.GetSecrets(ssid)
 	if err != nil {
 		// This will fail for open networks, but that's ok
+		logger.Debug("no secret found for network", "ssid", ssid, "error", err)
 		password = ""
 	}
 
@@ -177,12 +196,14 @@ func (b *Backend) ActivateConnection(ssid string) error {
 
 // ForgetNetwork removes a known network configuration.
 func (b *Backend) ForgetNetwork(ssid string) error {
+	logger.Info("forgetting network", "ssid", ssid)
 	cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.WifiInterface, ssid)
 	return runOnly(cmd)
 }
 
 // JoinNetwork connects to a new network, potentially creating a new configuration.
 func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+	logger.Info("joining network", "ssid", ssid, "hidden", isHidden, "security", security)
 	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
 	if err := runOnly(cmd); err != nil {
 		return err
@@ -197,6 +218,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 	default:
 		securityType = "WPA2" // Default to WPA2 for WPA/WPA2
 	}
+	logger.Debug("adding to preferred networks", "ssid", ssid, "security", securityType)
 	cmd = exec.Command("networksetup", "-addpreferredwirelessnetworkatindex", b.WifiInterface, ssid, "0", securityType)
 	return runOnly(cmd)
 }
@@ -213,6 +235,7 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 
 // UpdateSecret changes the password for a known connection.
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
+	logger.Info("updating secret", "ssid", ssid)
 	// In macOS, we need to delete the old password and add a new one.
 	// The -U flag in add-generic-password updates the item if it exists,
 	// but it's safer to delete and add.
@@ -225,6 +248,7 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 
 // SetAutoConnect sets the autoconnect property for a known connection.
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
+	logger.Info("setting autoconnect", "ssid", ssid, "autoconnect", autoConnect)
 	if autoConnect {
 		// FIXME: Re-adding a network to preferred requires security type, which we don't have here.
 		return fmt.Errorf("enabling autoconnect is not yet supported on darwin: %w", wifi.ErrNotSupported)
