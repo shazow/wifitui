@@ -19,15 +19,26 @@ var (
 	Version string = "dev"
 )
 
+type countFlag int
+
+func (c *countFlag) String() string {
+	return fmt.Sprintf("%d", *c)
+}
+
+func (c *countFlag) Set(s string) error {
+	*c++
+	return nil
+}
+
 // main is the entry point of the application
 func main() {
 	var (
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
 		theme       = rootFlagSet.String("theme", "", "path to theme toml file (env: WIFITUI_THEME)")
 		version     = rootFlagSet.Bool("version", false, "display version")
-		logLevel    = rootFlagSet.String("log-level", "info", "log level (debug, info, warn, error)")
-		logFile     = rootFlagSet.String("log-file", "", "path to log file (default: stderr)")
+		verbose     countFlag
 	)
+	rootFlagSet.Var(&verbose, "v", "enable verbose logging (can be repeated: -vv)")
 
 	var b wifi.Backend
 	var err error
@@ -119,29 +130,14 @@ func main() {
 	}
 
 	var logOutput io.Writer = os.Stderr
-	if *logFile != "" {
-		f, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-		if err != nil {
-			slog.Error("failed to open log file", "error", err)
-			os.Exit(1)
-		}
-		defer f.Close()
-		logOutput = f
-	}
-
 	var level slog.Level
-	switch *logLevel {
-	case "debug":
-		level = slog.LevelDebug
-	case "info":
-		level = slog.LevelInfo
-	case "warn":
+	switch verbose {
+	case 0:
 		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
+	case 1:
+		level = slog.LevelInfo
 	default:
-		slog.Error("invalid log level", "level", *logLevel)
-		os.Exit(1)
+		level = slog.LevelDebug
 	}
 
 	handler := slog.NewTextHandler(logOutput, &slog.HandlerOptions{Level: level})

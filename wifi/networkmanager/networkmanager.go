@@ -4,6 +4,7 @@ package networkmanager
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -11,6 +12,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/shazow/wifitui/wifi"
 )
+
+var logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+// SetLogger sets the logger for the package.
+func SetLogger(l *slog.Logger) {
+	logger = l.With("backend", "networkmanager")
+}
 
 const connectionTimeout = 30 * time.Second
 
@@ -20,12 +28,10 @@ type Backend struct {
 	Settings     gonetworkmanager.Settings
 	Connections  map[string]gonetworkmanager.Connection
 	AccessPoints map[string]gonetworkmanager.AccessPoint
-	logger       *slog.Logger
 }
 
 // New creates a new dbus.Backend.
-func New(logger *slog.Logger) (wifi.Backend, error) {
-	logger = logger.With("backend", "networkmanager")
+func New() (wifi.Backend, error) {
 	logger.Debug("initializing networkmanager backend")
 
 	nm, err := gonetworkmanager.NewNetworkManager()
@@ -43,7 +49,6 @@ func New(logger *slog.Logger) (wifi.Backend, error) {
 		Settings:     settings,
 		Connections:  make(map[string]gonetworkmanager.Connection),
 		AccessPoints: make(map[string]gonetworkmanager.AccessPoint),
-		logger:       logger,
 	}, nil
 }
 
@@ -52,7 +57,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	b.Connections = make(map[string]gonetworkmanager.Connection)
 	b.AccessPoints = make(map[string]gonetworkmanager.AccessPoint)
 
-	b.logger.Debug("getting devices")
+	logger.Debug("getting devices")
 	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return nil, err
@@ -70,20 +75,20 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	}
 
 	if shouldScan {
-		b.logger.Debug("requesting scan")
+		logger.Debug("requesting scan")
 		err = wirelessDevice.RequestScan()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	b.logger.Debug("listing known connections")
+	logger.Debug("listing known connections")
 	knownConnections, err := b.Settings.ListConnections()
 	if err != nil {
 		return nil, err
 	}
 
-	b.logger.Debug("getting access points")
+	logger.Debug("getting access points")
 	accessPoints, err := wirelessDevice.GetAccessPoints()
 	if err != nil {
 		return nil, err
@@ -92,7 +97,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	var conns []wifi.Connection
 	processedSSIDs := make(map[string]bool)
 
-	b.logger.Debug("getting active connections")
+	logger.Debug("getting active connections")
 	activeConnections, err := b.NM.GetPropertyActiveConnections()
 	if err != nil {
 		return nil, err
@@ -117,7 +122,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	for _, ap := range accessPoints {
 		ssid, err := ap.GetPropertySSID()
 		if err != nil {
-			b.logger.Warn("failed to get ap ssid", "error", err)
+			logger.Warn("failed to get ap ssid", "error", err)
 			continue
 		}
 		if ssid == "" {
@@ -128,7 +133,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		if existing, exists := b.AccessPoints[ssid]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
 			if strength <= exStrength {
-				b.logger.Debug("skipping ap with weaker signal", "ssid", ssid, "strength", strength, "existing", exStrength)
+				logger.Debug("skipping ap with weaker signal", "ssid", ssid, "strength", strength, "existing", exStrength)
 				continue
 			}
 		}
@@ -154,7 +159,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		for _, kc := range knownConnections {
 			s, err := kc.GetSettings()
 			if err != nil {
-				b.logger.Warn("failed to get known connection settings", "error", err)
+				logger.Warn("failed to get known connection settings", "error", err)
 				continue
 			}
 			if wireless, ok := s["802-11-wireless"]; ok {
@@ -251,8 +256,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 }
 
 func (b *Backend) ActivateConnection(ssid string) error {
-	logger := b.logger.With("ssid", ssid)
-	logger.Info("activating connection")
+	l := logger.With("ssid", ssid)
+	l.Info("activating connection")
 	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
@@ -263,7 +268,7 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
-	logger.Debug("getting wireless device")
+	l.Debug("getting wireless device")
 	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return err
@@ -283,13 +288,13 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 	}
 
-	logger.Debug("activating wireless connection")
+	l.Debug("activating wireless connection")
 	activeConn, err := b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
 	if err != nil {
 		return err
 	}
 
-	logger.Debug("subscribing to state changes")
+	l.Debug("subscribing to state changes")
 	// Now, block until the connection is fully activated.
 	stateChanges := make(chan gonetworkmanager.StateChange, 1)
 	done := make(chan struct{})
@@ -305,14 +310,14 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return err
 	}
 	if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
-		logger.Debug("connection already activated")
+		l.Debug("connection already activated")
 		return nil
 	}
 
 	for {
 		select {
 		case change := <-stateChanges:
-			logger.Debug("connection state changed", "state", change.State)
+			l.Debug("connection state changed", "state", change.State)
 			if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
 				return nil
 			}
@@ -326,7 +331,7 @@ func (b *Backend) ActivateConnection(ssid string) error {
 }
 
 func (b *Backend) ForgetNetwork(ssid string) error {
-	b.logger.Info("forgetting network", "ssid", ssid)
+	logger.Info("forgetting network", "ssid", ssid)
 	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
@@ -335,8 +340,8 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 }
 
 func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
-	logger := b.logger.With("ssid", ssid, "hidden", isHidden, "security", security)
-	logger.Info("joining network")
+	l := logger.With("ssid", ssid, "hidden", isHidden, "security", security)
+	l.Info("joining network")
 	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return err
@@ -391,10 +396,10 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 
 	var activeConn gonetworkmanager.ActiveConnection
 	if isHidden {
-		logger.Debug("joining hidden network")
+		l.Debug("joining hidden network")
 		activeConn, err = b.NM.AddAndActivateConnection(connection, wirelessDevice)
 	} else {
-		logger.Debug("joining visible network")
+		l.Debug("joining visible network")
 		ap, ok := b.AccessPoints[ssid]
 		if !ok {
 			return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
@@ -405,7 +410,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 
-	logger.Debug("subscribing to state changes")
+	l.Debug("subscribing to state changes")
 	// Now, block until the connection is fully activated.
 	stateChanges := make(chan gonetworkmanager.StateChange, 1)
 	done := make(chan struct{})
@@ -421,14 +426,14 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 	if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
-		logger.Debug("connection already activated")
+		l.Debug("connection already activated")
 		return nil
 	}
 
 	for {
 		select {
 		case change := <-stateChanges:
-			logger.Debug("connection state changed", "state", change.State)
+			l.Debug("connection state changed", "state", change.State)
 			if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
 				return nil
 			}
@@ -493,7 +498,7 @@ func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
 }
 
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
-	b.logger.Info("updating secret", "ssid", ssid)
+	logger.Info("updating secret", "ssid", ssid)
 	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
@@ -514,7 +519,7 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 }
 
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
-	b.logger.Info("setting autoconnect", "ssid", ssid, "autoconnect", autoConnect)
+	logger.Info("setting autoconnect", "ssid", ssid, "autoconnect", autoConnect)
 	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)

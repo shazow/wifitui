@@ -5,6 +5,7 @@ package iwd
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -25,14 +26,19 @@ const (
 	iwdKnownNetworkIface = "net.connman.iwd.KnownNetwork"
 )
 
+var logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+
+// SetLogger sets the logger for the package.
+func SetLogger(l *slog.Logger) {
+	logger = l.With("backend", "iwd")
+}
+
 // Backend implements the backend.Backend interface using iwd.
 type Backend struct {
-	logger *slog.Logger
 }
 
 // New creates a new iwd.Backend.
-func New(logger *slog.Logger) (wifi.Backend, error) {
-	logger = logger.With("backend", "iwd")
+func New() (wifi.Backend, error) {
 	logger.Debug("initializing iwd backend")
 	conn, err := dbus.SystemBus()
 	if err != nil {
@@ -50,9 +56,7 @@ func New(logger *slog.Logger) (wifi.Backend, error) {
 		return nil, fmt.Errorf("iwd is not available: %w", wifi.ErrNotAvailable)
 	}
 
-	return &Backend{
-		logger: logger,
-	}, nil
+	return &Backend{}, nil
 }
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
@@ -63,7 +67,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	}
 
 	if shouldScan {
-		b.logger.Debug("requesting scan")
+		logger.Debug("requesting scan")
 		station, err := b.getStationDevice(conn)
 		if err == nil {
 			// Best effort scan
@@ -71,7 +75,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 	}
 
-	b.logger.Debug("getting devices")
+	logger.Debug("getting devices")
 	devices, err := b.getDevices(conn)
 	if err != nil {
 		return nil, err
@@ -83,10 +87,10 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	for _, devicePath := range devices {
 		deviceObj := conn.Object(iwdDest, devicePath)
 		var networkPaths []dbus.ObjectPath
-		b.logger.Debug("getting ordered networks", "device", devicePath)
+		logger.Debug("getting ordered networks", "device", devicePath)
 		err := deviceObj.Call(iwdStationIface+".GetOrderedNetworks", 0).Store(&networkPaths)
 		if err != nil {
-			b.logger.Warn("failed to get ordered networks", "device", devicePath, "error", err)
+			logger.Warn("failed to get ordered networks", "device", devicePath, "error", err)
 			continue
 		}
 
@@ -139,10 +143,10 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	}
 
 	// Get known networks
-	b.logger.Debug("getting known networks")
+	logger.Debug("getting known networks")
 	knownPaths, err := b.getKnownNetworks(conn)
 	if err != nil {
-		b.logger.Warn("failed to get known networks", "error", err)
+		logger.Warn("failed to get known networks", "error", err)
 		// Don't fail if we can't get known networks
 	} else {
 		for _, path := range knownPaths {
@@ -185,7 +189,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 }
 
 func (b *Backend) ActivateConnection(ssid string) error {
-	b.logger.Info("activating connection", "ssid", ssid)
+	logger.Info("activating connection", "ssid", ssid)
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -202,7 +206,7 @@ func (b *Backend) ActivateConnection(ssid string) error {
 }
 
 func (b *Backend) ForgetNetwork(ssid string) error {
-	b.logger.Info("forgetting network", "ssid", ssid)
+	logger.Info("forgetting network", "ssid", ssid)
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -218,8 +222,8 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 }
 
 func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
-	logger := b.logger.With("ssid", ssid, "hidden", isHidden, "security", security)
-	logger.Info("joining network")
+	l := logger.With("ssid", ssid, "hidden", isHidden, "security", security)
+	l.Info("joining network")
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -256,7 +260,7 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 }
 
 func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
-	b.logger.Info("updating secret", "ssid", ssid)
+	logger.Info("updating secret", "ssid", ssid)
 	// To "update" a secret, we have to forget the network and then re-join it.
 	err := b.ForgetNetwork(ssid)
 	if err != nil {
@@ -270,7 +274,7 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 
 
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
-	b.logger.Info("setting autoconnect", "ssid", ssid, "autoconnect", autoConnect)
+	logger.Info("setting autoconnect", "ssid", ssid, "autoconnect", autoConnect)
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -289,7 +293,7 @@ func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 }
 
 func (b *Backend) waitForConnection(ssid string) error {
-	b.logger.Debug("waiting for connection", "ssid", ssid)
+	logger.Debug("waiting for connection", "ssid", ssid)
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -323,7 +327,7 @@ func (b *Backend) waitForConnection(ssid string) error {
 					if name, ok := nameVar.Value().(string); ok && name == ssid {
 						connectedVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Connected")
 						if connected, ok := connectedVar.Value().(bool); ok && connected {
-							b.logger.Debug("connected!", "ssid", ssid)
+							logger.Debug("connected!", "ssid", ssid)
 							return nil // Connected!
 						}
 					}

@@ -10,5 +10,6 @@ import (
 )
 
 func GetBackend(logger *slog.Logger) (wifi.Backend, error) {
-	return darwin.New(logger)
+	darwin.SetLogger(logger)
+	return darwin.New()
 }
