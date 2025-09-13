@@ -14,8 +14,7 @@ func TestEditModel_TabKey(t *testing.T) {
 	initialFocus := m.focusManager.Focused()
 	tabMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")}
 
-	updatedModel, _ := m.Update(tabMsg)
-	m = updatedModel.(EditModel)
+	m.Update(tabMsg)
 
 	newFocus := m.focusManager.Focused()
 	if newFocus == initialFocus {
@@ -32,8 +31,7 @@ func TestEditModel_PasswordReveal(t *testing.T) {
 
 	// Focus the password field
 	for m.focusManager.Focused() != m.passwordAdapter {
-		updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
-		m = updatedModel.(EditModel)
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
 	}
 
 	if m.passwordAdapter.Model.EchoMode != textinput.EchoNormal {
@@ -41,8 +39,7 @@ func TestEditModel_PasswordReveal(t *testing.T) {
 	}
 
 	// Blur the password field
-	updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
-	m = updatedModel.(EditModel)
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
 
 	if m.passwordAdapter.Model.EchoMode != textinput.EchoPassword {
 		t.Errorf("expected password to be hidden on blur")
@@ -54,8 +51,7 @@ func TestEditModel_CancelButton(t *testing.T) {
 
 	// Focus the buttons
 	for m.focusManager.Focused() != m.buttonGroup {
-		updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
-		m = updatedModel.(EditModel)
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
 	}
 
 	// Select the cancel button
@@ -65,8 +61,8 @@ func TestEditModel_CancelButton(t *testing.T) {
 
 	// Check that the correct message was sent
 	msg := cmd()
-	if _, ok := msg.(changeViewMsg); !ok {
-		t.Errorf("expected a changeViewMsg but got %T", msg)
+	if _, ok := msg.(popViewMsg); !ok {
+		t.Errorf("expected a popViewMsg but got %T", msg)
 	}
 }
 
@@ -78,19 +74,16 @@ func TestEditModel_ForgetFlow(t *testing.T) {
 
 	// Focus the buttons
 	for m.focusManager.Focused() != m.buttonGroup {
-		updatedModel, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
-		m = updatedModel.(EditModel)
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
 	}
 
 	// Select the forget button
 	m.buttonGroup.selected = 2
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
-	updatedModel, cmd := m.Update(enterMsg)
-	m = updatedModel.(EditModel)
+	_, cmd := m.Update(enterMsg)
 
 	msg := cmd()
-	updatedModel, _ = m.Update(msg)
-	m = updatedModel.(EditModel)
+	m.Update(msg)
 
 	if !m.isForgetting {
 		t.Fatal("isForgetting was not set to true")
@@ -98,25 +91,21 @@ func TestEditModel_ForgetFlow(t *testing.T) {
 
 	// Press 'n' to cancel
 	nKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}
-	updatedModel, _ = m.Update(nKeyMsg)
-	m = updatedModel.(EditModel)
+	m.Update(nKeyMsg)
 
 	if m.isForgetting {
 		t.Fatal("isForgetting was not set to false after pressing 'n'")
 	}
 
 	// Select the forget button again
-	updatedModel, cmd = m.Update(enterMsg)
-	m = updatedModel.(EditModel)
+	_, cmd = m.Update(enterMsg)
 
 	msg = cmd()
-	updatedModel, _ = m.Update(msg)
-	m = updatedModel.(EditModel)
+	m.Update(msg)
 
 	// Press 'y' to confirm
 	yKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}
-	updatedModel, cmd = m.Update(yKeyMsg)
-	m = updatedModel.(EditModel)
+	_, cmd = m.Update(yKeyMsg)
 
 	if m.isForgetting {
 		t.Fatal("isForgetting was not set to false after pressing 'y'")
