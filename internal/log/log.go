@@ -137,10 +137,12 @@ var (
 )
 
 // Init initializes the default logger.
-func Init(handler slog.Handler) {
+func Init(handler slog.Handler) *slog.Logger {
 	bufferHandler = NewBufferedLogHandler(handler, 20)
 	tuiHandler = NewTUIProxyHandler(bufferHandler, nil)
-	slog.SetDefault(slog.New(tuiHandler))
+	logger := slog.New(tuiHandler)
+	slog.SetDefault(logger)
+	return logger
 }
 
 // SetOutput sets the output channel for the default logger.

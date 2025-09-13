@@ -141,9 +141,7 @@ func main() {
 	}
 
 	handler := slog.NewTextHandler(logOutput, &slog.HandlerOptions{Level: level})
-	wifilog.Init(handler)
-
-	logger := slog.New(handler)
+	logger := wifilog.Init(handler)
 
 	if *version {
 		fmt.Println(Version)
