@@ -19,26 +19,13 @@ var (
 	Version string = "dev"
 )
 
-type countFlag int
-
-func (c *countFlag) String() string {
-	return fmt.Sprintf("%d", *c)
-}
-
-func (c *countFlag) Set(s string) error {
-	*c++
-	return nil
-}
-
 // main is the entry point of the application
 func main() {
 	var (
 		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
 		theme       = rootFlagSet.String("theme", "", "path to theme toml file (env: WIFITUI_THEME)")
 		version     = rootFlagSet.Bool("version", false, "display version")
-		verbose     countFlag
 	)
-	rootFlagSet.Var(&verbose, "v", "enable verbose logging (can be repeated: -vv)")
 
 	var b wifi.Backend
 	var err error
@@ -130,15 +117,7 @@ func main() {
 	}
 
 	var logOutput io.Writer = os.Stderr
-	var level slog.Level
-	switch verbose {
-	case 0:
-		level = slog.LevelWarn
-	case 1:
-		level = slog.LevelInfo
-	default:
-		level = slog.LevelDebug
-	}
+	level := slog.LevelDebug
 
 	handler := slog.NewTextHandler(logOutput, &slog.HandlerOptions{Level: level})
 	logger := wifilog.Init(handler)
