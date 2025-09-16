@@ -1,6 +1,6 @@
 # wifitui 🫣
 
-`wifitui` is a cute and fast replacement for `nmtui`.
+`wifitui` is a fast, featureful, and friendly replacement for `nmtui`.
 
 <img width="821.5" height="378.5" alt="image" src="https://github.com/user-attachments/assets/12c796b1-cefa-49ba-8be4-7abfb4bc8fa2" />
 
