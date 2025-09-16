@@ -3,7 +3,7 @@
 # Colors can be a single hex string, or a pair of [light, dark] hex strings.
 
 # Primary color, used for selection highlights.
-Primary = ["#5A56E0", "#D359E3"] # Purple/Pink
+Primary = ["#FFA500", "#FFA500"] # Orange
 
 # Subtle color, used for less important text.
 Subtle = ["#BDBDBD", "#919191"] # Gray

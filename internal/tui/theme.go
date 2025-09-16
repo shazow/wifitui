@@ -62,7 +62,7 @@ var CurrentTheme = NewDefaultTheme()
 // NewDefaultTheme creates a new default theme.
 func NewDefaultTheme() Theme {
 	return Theme{
-		Primary:    Color{lipgloss.AdaptiveColor{Light: "#5A56E0", Dark: "#D359E3"}}, // Purple/Pink
+		Primary:    Color{lipgloss.AdaptiveColor{Light: "#FFA500", Dark: "#FFA500"}}, // Orange
 		Subtle:     Color{lipgloss.AdaptiveColor{Light: "#BDBDBD", Dark: "#919191"}}, // Gray
 		Success:    Color{lipgloss.AdaptiveColor{Light: "#388E3C", Dark: "#81C784"}}, // Green
 		Error:      Color{lipgloss.AdaptiveColor{Light: "#D32F2F", Dark: "#E57373"}}, // Red
