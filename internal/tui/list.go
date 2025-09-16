@@ -132,7 +132,7 @@ func NewListModel() *ListModel {
 		listModel: m,
 	}
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = fmt.Sprintf("%-26s %s", "🛜 WiFi Network", "Signal")
+	l.Title = fmt.Sprintf("%-27s %s", "🛜 WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
