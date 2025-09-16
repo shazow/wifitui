@@ -107,22 +107,17 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Now combine and render the full line
 	var line string
-	var lineStyle lipgloss.Style
 	if index == m.Index() {
 		// Selected item
 		if d.listModel.isForgetting {
 			desc = lipgloss.NewStyle().Foreground(CurrentTheme.Error).Render("Forget? (Y/n)")
 		}
-		line = title + padding + " " + desc
-		lineStyle = lipgloss.NewStyle().
-			Border(lipgloss.ThickBorder(), false, false, false, true). // Left border
-			BorderForeground(CurrentTheme.Primary)
+		line = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render("▶ ") + title + padding + " " + desc
 	} else {
 		// Normal item
-		line = title + padding + " " + desc
-		lineStyle = lipgloss.NewStyle().PaddingLeft(1)
+		line = "  " + title + padding + " " + desc
 	}
-	fmt.Fprint(w, lineStyle.Render(line))
+	fmt.Fprint(w, line)
 }
 
 type ListModel struct {
@@ -137,7 +132,7 @@ func NewListModel() *ListModel {
 		listModel: m,
 	}
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = fmt.Sprintf("%-31s %s", "WiFi Network", "Signal")
+	l.Title = fmt.Sprintf("%-26s %s", "🛜 WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
