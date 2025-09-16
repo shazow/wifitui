@@ -81,6 +81,10 @@ $ ./wifitui show --json "GET off my LAN"
 }
 ```
 
+##  Why not `nmtui` or `impala`?
+
+Each has features the other lacks: `nmtui` can reveal passphrases but can't trigger a rescan, `impala` can rescan but can't manage saved networks (partly due to being iwd-exclusive), etc. I used both for a while, but I just wanted one tool that does everything, plus sort by recency, fuzzy filtering, QR code for sharing the network, support multiple backends (nm and iwd), and more.
+
 ## Acknowledgement
 
 - TUI powered by [bubbletea](https://github.com/charmbracelet/bubbletea).
