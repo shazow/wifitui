@@ -1,4 +1,4 @@
-# wifitui 🫣
+# wifitui 🛜✨
 
 `wifitui` is a fast, featureful, and friendly replacement for `nmtui`.
 
