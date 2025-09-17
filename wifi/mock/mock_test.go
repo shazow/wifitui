@@ -255,6 +255,20 @@ func TestSetAutoConnect(t *testing.T) {
 	}
 }
 
+func TestBuildNetworkList_WirelessDisabled(t *testing.T) {
+	b, _ := New()
+	mockBackend := b.(*MockBackend)
+	mockBackend.WirelessEnabled = false
+
+	_, err := b.BuildNetworkList(false)
+	if err == nil {
+		t.Fatal("BuildNetworkList() should have failed, but did not")
+	}
+	if err != wifi.ErrWirelessDisabled {
+		t.Errorf("expected error %v, but got %v", wifi.ErrWirelessDisabled, err)
+	}
+}
+
 func TestJoinNetwork_UpdatePassword(t *testing.T) {
 	b, _ := New()
 	ssid := "GET off my LAN" // A network that is visible but not known initially

@@ -110,6 +110,9 @@ func (m *MockBackend) setActiveConnection(ssid string) {
 }
 
 func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	if !m.WirelessEnabled {
+		return nil, wifi.ErrWirelessDisabled
+	}
 	// For mock, we can re-randomize strengths on each scan
 	if shouldScan {
 		s := rand.NewSource(time.Now().Unix())
