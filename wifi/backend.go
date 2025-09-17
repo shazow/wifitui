@@ -45,6 +45,6 @@ type Backend interface {
 
 	// IsWirelessEnabled checks if the wireless radio is enabled.
 	IsWirelessEnabled() (bool, error)
-	// SetWirelessEnabled enables or disables the wireless radio.
-	SetWirelessEnabled(enabled bool) error
+	// SetWireless enables or disables the wireless radio.
+	SetWireless(enabled bool) error
 }

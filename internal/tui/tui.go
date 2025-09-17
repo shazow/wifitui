@@ -170,7 +170,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return errorMsg{err}
 				}
-				err = m.backend.SetWirelessEnabled(!enabled)
+				err = m.backend.SetWireless(!enabled)
 				if err != nil {
 					return errorMsg{err}
 				}

@@ -297,7 +297,7 @@ func (b *Backend) IsWirelessEnabled() (bool, error) {
 	return poweredVar.Value().(bool), nil
 }
 
-func (b *Backend) SetWirelessEnabled(enabled bool) error {
+func (b *Backend) SetWireless(enabled bool) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err

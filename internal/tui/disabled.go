@@ -28,7 +28,7 @@ func (m *WirelessDisabledModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		switch msg.String() {
 		case "e":
 			return m, func() tea.Msg {
-				err := m.backend.SetWirelessEnabled(true)
+				err := m.backend.SetWireless(true)
 				if err != nil {
 					return errorMsg{err}
 				}

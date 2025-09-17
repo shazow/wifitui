@@ -491,7 +491,7 @@ func (b *Backend) IsWirelessEnabled() (bool, error) {
 	return b.NM.GetPropertyWirelessEnabled()
 }
 
-func (b *Backend) SetWirelessEnabled(enabled bool) error {
+func (b *Backend) SetWireless(enabled bool) error {
 	return b.NM.SetPropertyWirelessEnabled(enabled)
 }
 

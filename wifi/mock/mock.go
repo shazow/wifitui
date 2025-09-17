@@ -29,7 +29,7 @@ type MockBackend struct {
 	ConnectSleep              time.Duration
 	WirelessEnabled           bool
 	IsWirelessEnabledError    error
-	SetWirelessEnabledError   error
+	SetWirelessError          error
 }
 
 func ago(duration time.Duration) *time.Time {
@@ -316,9 +316,9 @@ func (m *MockBackend) IsWirelessEnabled() (bool, error) {
 	return m.WirelessEnabled, nil
 }
 
-func (m *MockBackend) SetWirelessEnabled(enabled bool) error {
-	if m.SetWirelessEnabledError != nil {
-		return m.SetWirelessEnabledError
+func (m *MockBackend) SetWireless(enabled bool) error {
+	if m.SetWirelessError != nil {
+		return m.SetWirelessError
 	}
 	m.WirelessEnabled = enabled
 	return nil

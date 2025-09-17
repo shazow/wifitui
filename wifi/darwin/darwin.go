@@ -198,8 +198,8 @@ func (b *Backend) IsWirelessEnabled() (bool, error) {
 	return strings.Contains(string(out), ": On"), nil
 }
 
-// SetWirelessEnabled enables or disables the wireless radio.
-func (b *Backend) SetWirelessEnabled(enabled bool) error {
+// SetWireless enables or disables the wireless radio.
+func (b *Backend) SetWireless(enabled bool) error {
 	var state string
 	if enabled {
 		state = "on"
