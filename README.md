@@ -24,18 +24,19 @@ More things I'd like to do:
 
 ## Getting Started
 
-Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not maintained package managers yet](https://github.com/shazow/wifitui/issues/48)):
+Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not maintained in package managers yet](https://github.com/shazow/wifitui/issues/48)):
 
 ```shell
 # Fetch the latest release version
 TAG=$(curl -s https://api.github.com/repos/shazow/wifitui/releases/latest | grep "tag_name" | cut -d '"' -f4)
 OS="linux_$(uname -m)" # x86_64 or arm64
+LATEST_RELEASE="https://github.com/shazow/wifitui/releases/download/${TAG}/wifitui_${TAG}_${OS}"
 
 # Arch Linux
-sudo pacman -U https://github.com/shazow/wifitui/releases/download/${TAG}/wifitui_${TAG}_${OS}.pkg.tar.zst
+sudo pacman -U "${LATEST_RELEASE}.pkg.tar.zst"
 
 # Debian
-sudo apt install https://github.com/shazow/wifitui/releases/download/${TAG}/wifitui_${TAG}_${OS}.deb
+sudo apt install "${LATEST_RELEASE}.deb"
 ```
 
 
