@@ -53,6 +53,14 @@ func New() (wifi.Backend, error) {
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
 func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	enabled, err := b.IsWirelessEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, wifi.ErrWirelessDisabled
+	}
+
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return nil, err
@@ -270,6 +278,37 @@ func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 	obj := conn.Object(iwdDest, path)
 	variant := dbus.MakeVariant(autoConnect)
 	return obj.Call("org.freedesktop.DBus.Properties.Set", 0, iwdKnownNetworkIface, "AutoConnect", variant).Err
+}
+
+func (b *Backend) IsWirelessEnabled() (bool, error) {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return false, err
+	}
+	station, err := b.getStationDevice(conn)
+	if err != nil {
+		return false, err
+	}
+	obj := conn.Object(iwdDest, station)
+	poweredVar, err := obj.GetProperty(iwdDeviceIface + ".Powered")
+	if err != nil {
+		return false, err
+	}
+	return poweredVar.Value().(bool), nil
+}
+
+func (b *Backend) SetWirelessEnabled(enabled bool) error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+	station, err := b.getStationDevice(conn)
+	if err != nil {
+		return err
+	}
+	obj := conn.Object(iwdDest, station)
+	variant := dbus.MakeVariant(enabled)
+	return obj.Call("org.freedesktop.DBus.Properties.Set", 0, iwdDeviceIface, "Powered", variant).Err
 }
 
 func (b *Backend) waitForConnection(ssid string) error {

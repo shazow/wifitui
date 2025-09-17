@@ -18,15 +18,18 @@ type mockConnection struct {
 
 // MockBackend is a mock implementation of the backend.Backend interface for testing.
 type MockBackend struct {
-	VisibleConnections    []wifi.Connection
-	KnownConnections      []mockConnection
-	ActiveConnectionIndex int
-	ActivateError         error
-	ForgetError           error
-	JoinError             error
-	GetSecretsError       error
-	UpdateSecretError     error
-	ConnectSleep          time.Duration
+	VisibleConnections        []wifi.Connection
+	KnownConnections          []mockConnection
+	ActiveConnectionIndex     int
+	ActivateError             error
+	ForgetError               error
+	JoinError                 error
+	GetSecretsError           error
+	UpdateSecretError         error
+	ConnectSleep              time.Duration
+	WirelessEnabled           bool
+	IsWirelessEnabledError    error
+	SetWirelessEnabledError   error
 }
 
 func ago(duration time.Duration) *time.Time {
@@ -85,6 +88,7 @@ func New() (wifi.Backend, error) {
 		KnownConnections:      knownConnections,
 		ActiveConnectionIndex: -1, // No connection active initially
 		ConnectSleep:          DefaultConnectSleep,
+		WirelessEnabled:       true,
 	}, nil
 }
 
@@ -303,4 +307,19 @@ func (m *MockBackend) SetAutoConnect(ssid string, autoConnect bool) error {
 		}
 	}
 	return fmt.Errorf("cannot set autoconnect for unknown network %s: %w", ssid, wifi.ErrNotFound)
+}
+
+func (m *MockBackend) IsWirelessEnabled() (bool, error) {
+	if m.IsWirelessEnabledError != nil {
+		return false, m.IsWirelessEnabledError
+	}
+	return m.WirelessEnabled, nil
+}
+
+func (m *MockBackend) SetWirelessEnabled(enabled bool) error {
+	if m.SetWirelessEnabledError != nil {
+		return m.SetWirelessEnabledError
+	}
+	m.WirelessEnabled = enabled
+	return nil
 }

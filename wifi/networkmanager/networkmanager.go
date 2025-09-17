@@ -43,6 +43,13 @@ func New() (wifi.Backend, error) {
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
 func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	enabled, err := b.IsWirelessEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, wifi.ErrWirelessDisabled
+	}
 	b.Connections = make(map[string]gonetworkmanager.Connection)
 	b.AccessPoints = make(map[string]gonetworkmanager.AccessPoint)
 
@@ -478,6 +485,14 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 
 	applyUpdateWorkaround(settings)
 	return conn.Update(settings)
+}
+
+func (b *Backend) IsWirelessEnabled() (bool, error) {
+	return b.NM.GetPropertyWirelessEnabled()
+}
+
+func (b *Backend) SetWirelessEnabled(enabled bool) error {
+	return b.NM.SetPropertyWirelessEnabled(enabled)
 }
 
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {

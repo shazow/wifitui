@@ -61,6 +61,13 @@ func New() (wifi.Backend, error) {
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
 func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	enabled, err := b.IsWirelessEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, wifi.ErrWirelessDisabled
+	}
 	// Get current network
 	cmd := exec.Command("networksetup", "-getairportnetwork", b.WifiInterface)
 	out, err := runWithOutput(cmd)
@@ -178,6 +185,28 @@ func (b *Backend) ActivateConnection(ssid string) error {
 // ForgetNetwork removes a known network configuration.
 func (b *Backend) ForgetNetwork(ssid string) error {
 	cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.WifiInterface, ssid)
+	return runOnly(cmd)
+}
+
+// IsWirelessEnabled checks if the wireless radio is enabled.
+func (b *Backend) IsWirelessEnabled() (bool, error) {
+	cmd := exec.Command("networksetup", "-getairportpower", b.WifiInterface)
+	out, err := runWithOutput(cmd)
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(string(out), ": On"), nil
+}
+
+// SetWirelessEnabled enables or disables the wireless radio.
+func (b *Backend) SetWirelessEnabled(enabled bool) error {
+	var state string
+	if enabled {
+		state = "on"
+	} else {
+		state = "off"
+	}
+	cmd := exec.Command("networksetup", "-setairportpower", b.WifiInterface, state)
 	return runOnly(cmd)
 }
 
