@@ -31,19 +31,19 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	title := i.Title()
 
 	// Add icons for security
-	var icon string = "  ️ "
-	switch i.Security {
-	case wifi.SecurityUnknown:
-		if i.IsVisible {
-			icon = "❓ "
+	var icon string
+	if i.IsVisible {
+		switch i.Security {
+		case wifi.SecurityOpen:
+			icon = CurrentTheme.NetworkOpenIcon
+		case wifi.SecurityUnknown:
+			icon = CurrentTheme.NetworkUnknownIcon
+		default:
+			icon = CurrentTheme.NetworkSecureIcon
 		}
-	case wifi.SecurityOpen:
-		icon = "🔓 "
-	default:
-		icon = "🔒 "
 	}
 	if i.IsKnown {
-		icon = "💾 "
+		icon = CurrentTheme.NetworkSavedIcon
 	}
 	title = icon + title
 
@@ -132,7 +132,7 @@ func NewListModel() *ListModel {
 		listModel: m,
 	}
 	l := list.New([]list.Item{}, delegate, 0, 0)
-	l.Title = fmt.Sprintf("%-27s %s", "🛜 WiFi Network", "Signal")
+	l.Title = fmt.Sprintf("%-27s %s", CurrentTheme.TitleIcon+"WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{

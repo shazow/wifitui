@@ -54,6 +54,13 @@ type Theme struct {
 	SignalHigh Color
 	SignalLow  Color
 	Saved      Color
+
+	// Icons
+	TitleIcon          string
+	NetworkSecureIcon  string
+	NetworkOpenIcon    string
+	NetworkUnknownIcon string
+	NetworkSavedIcon   string
 }
 
 // CurrentTheme is the active theme for the application.
@@ -72,6 +79,12 @@ func NewDefaultTheme() Theme {
 		SignalHigh: Color{lipgloss.AdaptiveColor{Light: "#00B300", Dark: "#00FF00"}},
 		SignalLow:  Color{lipgloss.AdaptiveColor{Light: "#D05F00", Dark: "#BC3C00"}},
 		Saved:      Color{lipgloss.AdaptiveColor{Light: "#00459E", Dark: "#54A5F6"}},
+
+		TitleIcon:          "🛜 ",
+		NetworkSecureIcon:  "🔒 ",
+		NetworkOpenIcon:    "🔓 ",
+		NetworkUnknownIcon: "❓ ",
+		NetworkSavedIcon:   "💾 ",
 	}
 }
 

@@ -29,3 +29,10 @@ SignalLow = ["#D05F00", "#BC3C00"]
 
 # Color for saved networks
 Saved = ["#00459E", "#54A5F6"]
+
+# Icons
+TitleIcon = "🛜 "
+NetworkSecureIcon = "🔒 "
+NetworkOpenIcon = "🔓 "
+NetworkUnknownIcon = "❓ "
+NetworkSavedIcon = "💾 "
