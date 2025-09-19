@@ -323,6 +323,7 @@ func (m *MockBackend) SetWireless(enabled bool) error {
 	if m.SetWirelessError != nil {
 		return m.SetWirelessError
 	}
+	time.Sleep(m.ConnectSleep)
 	m.WirelessEnabled = enabled
 	return nil
 }

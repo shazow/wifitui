@@ -26,7 +26,7 @@ func (m *WirelessDisabledModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "e":
+		case "r":
 			return m, func() tea.Msg {
 				err := m.backend.SetWireless(true)
 				if err != nil {
@@ -48,7 +48,14 @@ func (m *WirelessDisabledModel) View() string {
 	var s strings.Builder
 	s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render("Wi-Fi is disabled."))
 	s.WriteString("\n\n")
-	s.WriteString("Press 'e' to enable Wi-Fi.\n")
+	button := lipgloss.NewStyle().
+		Foreground(CurrentTheme.Primary).
+		BorderStyle(lipgloss.RoundedBorder()).
+		Padding(0, 1).
+		Render("Enable WiFi (r)")
+
+	s.WriteString(button)
+	s.WriteString("\n\n")
 	s.WriteString("Press 'q' to quit.\n")
 	return s.String()
 }
