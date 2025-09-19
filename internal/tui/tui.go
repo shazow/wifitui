@@ -165,7 +165,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// This is a global keybinding to toggle the radio
 			m.loading = true
 			m.statusMessage = "Toggling Wi-Fi radio..."
-			return m, func() tea.Msg {
+
+			var cmds []tea.Cmd
+			// If we are in the disabled view, pop it.
+			if _, ok := m.componentStack[len(m.componentStack)-1].(*WirelessDisabledModel); ok {
+				cmds = append(cmds, func() tea.Msg { return popViewMsg{} })
+			}
+
+			toggleCmd := func() tea.Msg {
 				enabled, err := m.backend.IsWirelessEnabled()
 				if err != nil {
 					return errorMsg{err}
@@ -176,6 +183,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return scanMsg{}
 			}
+			cmds = append(cmds, toggleCmd)
+
+			return m, tea.Batch(cmds...)
 		}
 	// Clear loading status on some messages
 	case connectionsLoadedMsg, scanFinishedMsg, secretsLoadedMsg:
