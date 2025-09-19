@@ -3,7 +3,8 @@ module github.com/shazow/wifitui
 go 1.24.5
 
 require (
-	github.com/Wifx/gonetworkmanager v0.5.0
+	github.com/BurntSushi/toml v1.5.0
+	github.com/Wifx/gonetworkmanager/v3 v3.2.0
 	github.com/charmbracelet/bubbles v0.21.0
 	github.com/charmbracelet/bubbletea v1.3.6
 	github.com/charmbracelet/lipgloss v1.1.0
@@ -15,7 +16,6 @@ require (
 )
 
 require (
-	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/charmbracelet/colorprofile v0.2.3-0.20250311203215-f60798e515dc // indirect
