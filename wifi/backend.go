@@ -42,4 +42,9 @@ type Backend interface {
 	UpdateSecret(ssid string, newPassword string) error
 	// SetAutoConnect sets the autoconnect property for a known connection.
 	SetAutoConnect(ssid string, autoConnect bool) error
+
+	// IsWirelessEnabled checks if the wireless radio is enabled.
+	IsWirelessEnabled() (bool, error)
+	// SetWireless enables or disables the wireless radio.
+	SetWireless(enabled bool) error
 }

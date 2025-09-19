@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Wifx/gonetworkmanager"
+	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
 	"github.com/google/uuid"
 	"github.com/shazow/wifitui/wifi"
 )
 
-const connectionTimeout = 30 * time.Second
+const connectionTimeout = 10 * time.Second
 
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
 type Backend struct {
@@ -41,25 +41,37 @@ func New() (wifi.Backend, error) {
 	}, nil
 }
 
-// BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
-	b.Connections = make(map[string]gonetworkmanager.Connection)
-	b.AccessPoints = make(map[string]gonetworkmanager.AccessPoint)
-
+func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
+	// TODO: Cache result in struct?
 	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return nil, err
 	}
 
-	var wirelessDevice gonetworkmanager.DeviceWireless
 	for _, device := range devices {
 		if dev, ok := device.(gonetworkmanager.DeviceWireless); ok {
-			wirelessDevice = dev
-			break
+			return dev, nil
 		}
 	}
-	if wirelessDevice == nil {
-		return nil, fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
+
+	return nil, fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
+}
+
+// BuildNetworkList scans (if shouldScan is true) and returns all networks.
+func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	enabled, err := b.IsWirelessEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, wifi.ErrWirelessDisabled
+	}
+	b.Connections = make(map[string]gonetworkmanager.Connection)
+	b.AccessPoints = make(map[string]gonetworkmanager.AccessPoint)
+
+	wirelessDevice, err := b.getWirelessDevice()
+	if err != nil {
+		return nil, err
 	}
 
 	if shouldScan {
@@ -244,23 +256,9 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
-	devices, err := b.NM.GetDevices()
+	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
 		return err
-	}
-	var wirelessDevice gonetworkmanager.Device
-	for _, device := range devices {
-		deviceType, err := device.GetPropertyDeviceType()
-		if err != nil {
-			continue
-		}
-		if deviceType == gonetworkmanager.NmDeviceTypeWifi {
-			wirelessDevice = device
-			break
-		}
-	}
-	if wirelessDevice == nil {
-		return fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 	}
 
 	activeConn, err := b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
@@ -310,19 +308,9 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 }
 
 func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
-	devices, err := b.NM.GetDevices()
+	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
 		return err
-	}
-	var wirelessDevice gonetworkmanager.DeviceWireless
-	for _, device := range devices {
-		if dev, ok := device.(gonetworkmanager.DeviceWireless); ok {
-			wirelessDevice = dev
-			break
-		}
-	}
-	if wirelessDevice == nil {
-		return fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 	}
 	deviceInterface, _ := wirelessDevice.GetPropertyInterface()
 
@@ -478,6 +466,58 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 
 	applyUpdateWorkaround(settings)
 	return conn.Update(settings)
+}
+
+func (b *Backend) IsWirelessEnabled() (bool, error) {
+	return b.NM.GetPropertyWirelessEnabled()
+}
+
+// SetWireless enables or disables the wireless radio.
+func (b *Backend) SetWireless(enabled bool) error {
+	if err := b.NM.SetPropertyWirelessEnabled(enabled); err != nil {
+		return err
+	}
+
+	if currentState, err := b.NM.GetPropertyWirelessEnabled(); err == nil && currentState == enabled {
+		return nil // Already in the desired state
+	}
+
+	wirelessDevice, err := b.getWirelessDevice()
+	if err != nil {
+		return err
+	}
+
+	stateChanges := make(chan gonetworkmanager.DeviceStateChange, 1)
+	exit := make(chan struct{})
+	defer close(exit)
+
+	if err := wirelessDevice.SubscribeState(stateChanges, exit); err != nil {
+		return fmt.Errorf("failed to subscribe to state changes: %w", err)
+	}
+
+	if err := b.NM.SetPropertyWirelessEnabled(enabled); err != nil {
+		return fmt.Errorf("failed to set wireless enabled property: %w", err)
+	}
+
+	var expectedState gonetworkmanager.NmDeviceState
+	if enabled {
+		// When enabling, the device becomes available and disconnected.
+		expectedState = gonetworkmanager.NmDeviceStateDisconnected
+	} else {
+		// When disabling, the device becomes unavailable.
+		expectedState = gonetworkmanager.NmDeviceStateUnavailable
+	}
+
+	for {
+		select {
+		case change := <-stateChanges:
+			if change.State == expectedState {
+				return nil // Success!
+			}
+		case <-time.After(connectionTimeout):
+			return fmt.Errorf("timed out waiting for wireless state change")
+		}
+	}
 }
 
 func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {

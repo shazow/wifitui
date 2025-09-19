@@ -18,15 +18,18 @@ type mockConnection struct {
 
 // MockBackend is a mock implementation of the backend.Backend interface for testing.
 type MockBackend struct {
-	VisibleConnections    []wifi.Connection
-	KnownConnections      []mockConnection
-	ActiveConnectionIndex int
-	ActivateError         error
-	ForgetError           error
-	JoinError             error
-	GetSecretsError       error
-	UpdateSecretError     error
-	ConnectSleep          time.Duration
+	VisibleConnections        []wifi.Connection
+	KnownConnections          []mockConnection
+	ActiveConnectionIndex     int
+	ActivateError             error
+	ForgetError               error
+	JoinError                 error
+	GetSecretsError           error
+	UpdateSecretError         error
+	ConnectSleep              time.Duration
+	WirelessEnabled           bool
+	IsWirelessEnabledError    error
+	SetWirelessError          error
 }
 
 func ago(duration time.Duration) *time.Time {
@@ -85,6 +88,7 @@ func New() (wifi.Backend, error) {
 		KnownConnections:      knownConnections,
 		ActiveConnectionIndex: -1, // No connection active initially
 		ConnectSleep:          DefaultConnectSleep,
+		WirelessEnabled:       true,
 	}, nil
 }
 
@@ -106,6 +110,9 @@ func (m *MockBackend) setActiveConnection(ssid string) {
 }
 
 func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	if !m.WirelessEnabled {
+		return nil, wifi.ErrWirelessDisabled
+	}
 	// For mock, we can re-randomize strengths on each scan
 	if shouldScan {
 		s := rand.NewSource(time.Now().Unix())
@@ -303,4 +310,20 @@ func (m *MockBackend) SetAutoConnect(ssid string, autoConnect bool) error {
 		}
 	}
 	return fmt.Errorf("cannot set autoconnect for unknown network %s: %w", ssid, wifi.ErrNotFound)
+}
+
+func (m *MockBackend) IsWirelessEnabled() (bool, error) {
+	if m.IsWirelessEnabledError != nil {
+		return false, m.IsWirelessEnabledError
+	}
+	return m.WirelessEnabled, nil
+}
+
+func (m *MockBackend) SetWireless(enabled bool) error {
+	if m.SetWirelessError != nil {
+		return m.SetWirelessError
+	}
+	time.Sleep(m.ConnectSleep)
+	m.WirelessEnabled = enabled
+	return nil
 }

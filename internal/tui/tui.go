@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -65,6 +66,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case errorMsg:
 		m.loading = false
+		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
+			disabledModel := NewWirelessDisabledModel(m.backend)
+			m.componentStack = append(m.componentStack, disabledModel)
+			return m, nil
+		}
 		errorModel := NewErrorModel(msg.err)
 		m.componentStack = append(m.componentStack, errorModel)
 		return m, nil
@@ -154,6 +160,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
+		}
+		if msg.String() == "r" {
+			// This is a global keybinding to toggle the radio
+			m.loading = true
+			m.statusMessage = "Toggling Wi-Fi radio..."
+			return m, func() tea.Msg {
+				enabled, err := m.backend.IsWirelessEnabled()
+				if err != nil {
+					return errorMsg{err}
+				}
+				err = m.backend.SetWireless(!enabled)
+				if err != nil {
+					return errorMsg{err}
+				}
+				return scanMsg{}
+			}
 		}
 	// Clear loading status on some messages
 	case connectionsLoadedMsg, scanFinishedMsg, secretsLoadedMsg:

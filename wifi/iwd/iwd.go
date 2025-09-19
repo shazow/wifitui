@@ -12,6 +12,7 @@ import (
 )
 
 const connectionTimeout = 30 * time.Second
+const propertyChangeTimeout = 5 * time.Second
 
 // IWD constants
 const (
@@ -53,6 +54,14 @@ func New() (wifi.Backend, error) {
 
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
 func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	enabled, err := b.IsWirelessEnabled()
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, wifi.ErrWirelessDisabled
+	}
+
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return nil, err
@@ -270,6 +279,74 @@ func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
 	obj := conn.Object(iwdDest, path)
 	variant := dbus.MakeVariant(autoConnect)
 	return obj.Call("org.freedesktop.DBus.Properties.Set", 0, iwdKnownNetworkIface, "AutoConnect", variant).Err
+}
+
+func (b *Backend) IsWirelessEnabled() (bool, error) {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return false, err
+	}
+	station, err := b.getStationDevice(conn)
+	if err != nil {
+		return false, err
+	}
+	obj := conn.Object(iwdDest, station)
+	poweredVar, err := obj.GetProperty(iwdDeviceIface + ".Powered")
+	if err != nil {
+		return false, err
+	}
+	return poweredVar.Value().(bool), nil
+}
+
+func (b *Backend) SetWireless(enabled bool) error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+	station, err := b.getStationDevice(conn)
+	if err != nil {
+		return err
+	}
+	obj := conn.Object(iwdDest, station)
+	variant := dbus.MakeVariant(enabled)
+	err = obj.Call("org.freedesktop.DBus.Properties.Set", 0, iwdDeviceIface, "Powered", variant).Err
+	if err != nil {
+		return err
+	}
+
+	// Now, block until the property is updated.
+	signals := make(chan *dbus.Signal, 10)
+	matchPath := dbus.WithMatchObjectPath(station)
+	matchInterface := dbus.WithMatchInterface("org.freedesktop.DBus.Properties")
+	conn.Signal(signals)
+	conn.AddMatchSignal(matchInterface, matchPath)
+	defer conn.RemoveMatchSignal(matchInterface, matchPath)
+
+	for {
+		select {
+		case signal := <-signals:
+			if signal.Name == "org.freedesktop.DBus.Properties.PropertiesChanged" {
+				if len(signal.Body) < 2 {
+					continue
+				}
+				iface, ok := signal.Body[0].(string)
+				if !ok || iface != iwdDeviceIface {
+					continue
+				}
+				props, ok := signal.Body[1].(map[string]dbus.Variant)
+				if !ok {
+					continue
+				}
+				if val, ok := props["Powered"]; ok {
+					if val.Value().(bool) == enabled {
+						return nil
+					}
+				}
+			}
+		case <-time.After(propertyChangeTimeout):
+			return fmt.Errorf("timed out waiting for wireless state change")
+		}
+	}
 }
 
 func (b *Backend) waitForConnection(ssid string) error {
