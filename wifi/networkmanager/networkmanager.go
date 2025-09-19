@@ -491,7 +491,7 @@ func (b *Backend) IsWirelessEnabled() (bool, error) {
 	return b.NM.GetPropertyWirelessEnabled()
 }
 
-// SetWireless enables or disables the wireless radio and blocks until the change is complete.
+// SetWireless enables or disables the wireless radio.
 func (b *Backend) SetWireless(enabled bool) error {
 	// Not all versions of NetworkManager support subscribing to signals, so we
 	// can't rely on it. We'll just have to assume the change was successful.
