@@ -24,7 +24,7 @@ More things I'd like to do:
 
 ## Getting Started
 
-Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not maintained in package managers yet](https://github.com/shazow/wifitui/issues/48)):
+Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not maintained in package managers yet](https://github.com/shazow/wifitui/issues/48)), here's a handy script for convenience:
 
 ```shell
 # Fetch the latest release version
@@ -38,7 +38,7 @@ sudo pacman -U "${LATEST_RELEASE}.pkg.tar.zst"
 # Debian
 sudo apt install "${LATEST_RELEASE}.deb"
 
-# Just the binary
+# Just the binary (any distro)
 wget -q -O- "${LATEST_RELEASE}.tar.gz" | tar xzv
 ```
 
