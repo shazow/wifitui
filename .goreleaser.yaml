@@ -46,10 +46,16 @@ changelog:
 
 nfpms:
   - maintainer: 'Andrey Petrov'
-    description: 'A cute wifi tui'
+    description: 'Fast featureful friendly wifi terminal UI. 🛜✨'
     homepage: 'https://github.com/shazow/wifitui'
     license: 'MIT'
     formats:
       - deb
       - rpm
       - archlinux
+    file_name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ tolower .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
