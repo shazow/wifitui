@@ -46,7 +46,7 @@ changelog:
 
 nfpms:
   - maintainer: 'Andrey Petrov'
-    description: 'A cute wifi tui'
+    description: 'Fast featureful friendly wifi terminal UI. 🛜✨'
     homepage: 'https://github.com/shazow/wifitui'
     license: 'MIT'
     formats:
