@@ -12,8 +12,8 @@ import (
 	"github.com/shazow/wifitui/internal/helpers"
 )
 
-func runTUI(b wifi.Backend) error {
-	m, err := tui.NewModel(b)
+func runTUI(b wifi.Backend, scanInterval time.Duration) error {
+	m, err := tui.NewModel(b, scanInterval)
 	if err != nil {
 		return fmt.Errorf("error initializing model: %w", err)
 	}

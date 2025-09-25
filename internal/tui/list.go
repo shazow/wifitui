@@ -15,12 +15,10 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
-const scanInterval = 10 * time.Second
-
 type tickMsg time.Time
 
-func tickCmd() tea.Cmd {
-	return tea.Tick(scanInterval, func(t time.Time) tea.Msg {
+func tickCmd(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
@@ -136,11 +134,14 @@ type ListModel struct {
 	isForgetting bool
 	isFocused    bool
 	activeScan   bool
+	scanInterval time.Duration
 }
 
-func NewListModel() *ListModel {
+func NewListModel(scanInterval time.Duration) *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{}
+	m := &ListModel{
+		scanInterval: scanInterval,
+	}
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -200,15 +201,15 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.FocusMsg:
 		m.isFocused = true
-		return m, tickCmd()
+		return m, tickCmd(m.scanInterval)
 	case tea.BlurMsg:
 		m.isFocused = false
 		return m, nil
 	case tickMsg:
 		if m.isFocused && m.activeScan {
-			return m, tea.Batch(func() tea.Msg { return scanMsg{} }, tickCmd())
+			return m, tea.Batch(func() tea.Msg { return scanMsg{} }, tickCmd(m.scanInterval))
 		}
-		return m, tickCmd()
+		return m, tickCmd(m.scanInterval)
 	case tea.WindowSizeMsg:
 		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)

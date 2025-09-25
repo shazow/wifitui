@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/shazow/wifitui/internal/tui"
@@ -19,9 +20,10 @@ var (
 // main is the entry point of the application
 func main() {
 	var (
-		rootFlagSet = flag.NewFlagSet("wifitui", flag.ExitOnError)
-		theme       = rootFlagSet.String("theme", "", "path to theme toml file (env: WIFITUI_THEME)")
-		version     = rootFlagSet.Bool("version", false, "display version")
+		rootFlagSet   = flag.NewFlagSet("wifitui", flag.ExitOnError)
+		theme         = rootFlagSet.String("theme", "", "path to theme toml file (env: WIFITUI_THEME)")
+		version       = rootFlagSet.Bool("version", false, "display version")
+		scanInterval  = rootFlagSet.Duration("scan-interval", 10*time.Second, "scan interval for active scanning")
 	)
 
 	var b wifi.Backend
@@ -104,7 +106,7 @@ func main() {
 				}
 				tui.CurrentTheme = loadedTheme
 			}
-			return runTUI(b)
+			return runTUI(b, *scanInterval)
 		},
 	}
 
