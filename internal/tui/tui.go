@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,12 +25,12 @@ type model struct {
 }
 
 // NewModel creates the starting state of our application
-func NewModel(b wifi.Backend) (*model, error) {
+func NewModel(b wifi.Backend, scanInterval time.Duration) (*model, error) {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
-	listModel := NewListModel()
+	listModel := NewListModel(scanInterval)
 
 	m := model{
 		componentStack: []Component{listModel},
