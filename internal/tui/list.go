@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -13,6 +14,16 @@ import (
 
 	"github.com/shazow/wifitui/wifi"
 )
+
+const scanInterval = 10 * time.Second
+
+type tickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Tick(scanInterval, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
 
 // itemDelegate is our custom list delegate
 type itemDelegate struct {
@@ -123,6 +134,8 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type ListModel struct {
 	list         list.Model
 	isForgetting bool
+	isFocused    bool
+	activeScan   bool
 }
 
 func NewListModel() *ListModel {
@@ -137,6 +150,7 @@ func NewListModel() *ListModel {
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
+			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "active scan")),
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
@@ -184,6 +198,17 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case tea.FocusMsg:
+		m.isFocused = true
+		return m, tickCmd()
+	case tea.BlurMsg:
+		m.isFocused = false
+		return m, nil
+	case tickMsg:
+		if m.isFocused && m.activeScan {
+			return m, tea.Batch(func() tea.Msg { return scanMsg{} }, tickCmd())
+		}
+		return m, tickCmd()
 	case tea.WindowSizeMsg:
 		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
@@ -223,6 +248,9 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			return editModel, nil
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
+		case "S":
+			m.activeScan = !m.activeScan
+			return m, nil
 		case "f":
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
