@@ -7,28 +7,35 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/wifi/mock"
-	"github.com/stretchr/testify/require"
 )
 
 func TestTUI_EnableWirelessFromDisabled(t *testing.T) {
 	backend, err := mock.New()
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
 
 	mockBackend := backend.(*mock.MockBackend)
 	mockBackend.WirelessEnabled = false
 	mockBackend.ConnectSleep = 0 // for faster tests
 
 	m, err := NewModel(backend)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatalf("NewModel() failed: %v", err)
+	}
 
 	// Initial load should result in wireless disabled error
 	initCmd := m.Init()
-	require.NotNil(t, initCmd)
+	if initCmd == nil {
+		t.Fatal("Init() returned nil command")
+	}
 
 	// The command is a batch, so we expect a BatchMsg from running it.
 	batchMsg := initCmd()
 	cmds, ok := batchMsg.(tea.BatchMsg) // tea.BatchMsg is []tea.Cmd
-	require.True(t, ok, "expected a batch message")
+	if !ok {
+		t.Fatalf("expected a batch message, got %T", batchMsg)
+	}
 
 	var errMsg errorMsg
 	found := false
@@ -40,16 +47,23 @@ func TestTUI_EnableWirelessFromDisabled(t *testing.T) {
 			break
 		}
 	}
-	require.True(t, found, "expected to find an error message in batch")
-	require.True(t, errors.Is(errMsg.err, wifi.ErrWirelessDisabled), "Expected wireless disabled error")
+	if !found {
+		t.Fatal("expected to find an error message in batch")
+	}
+	if !errors.Is(errMsg.err, wifi.ErrWirelessDisabled) {
+		t.Fatal("Expected wireless disabled error")
+	}
 
 	// Update the model with the error, should push the disabled view
 	mUpdated, _ := m.Update(errMsg)
 	m = mUpdated.(*model)
 
-	require.Len(t, m.componentStack, 2, "component stack should have 2 items: list, disabled")
-	_, ok = m.componentStack[1].(*WirelessDisabledModel)
-	require.True(t, ok, "Top of stack should be WirelessDisabledModel")
+	if len(m.componentStack) != 2 {
+		t.Fatalf("expected component stack to have 2 items, got %d", len(m.componentStack))
+	}
+	if _, ok := m.componentStack[1].(*WirelessDisabledModel); !ok {
+		t.Fatal("Top of stack should be WirelessDisabledModel")
+	}
 
 
 	// Press 'r' to re-enable wireless
@@ -58,12 +72,16 @@ func TestTUI_EnableWirelessFromDisabled(t *testing.T) {
 	m = mUpdated.(*model)
 
 	// After pressing 'r', we should get a batch command.
-	require.NotNil(t, rCmd, "a command should be returned")
+	if rCmd == nil {
+		t.Fatal("expected a command to be returned")
+	}
 
 	// Execute the command, we should get a batch of commands
 	batch := rCmd()
 	cmds, ok = batch.(tea.BatchMsg)
-	require.True(t, ok, "expected a batch message")
+	if !ok {
+		t.Fatalf("expected a batch message, got %T", batch)
+	}
 
 	// The batch should contain a popViewMsg and a scanMsg.
 	var hasPop, hasScan bool
@@ -76,8 +94,12 @@ func TestTUI_EnableWirelessFromDisabled(t *testing.T) {
 			hasScan = true
 		}
 	}
-	require.True(t, hasPop, "batch should contain popViewMsg")
-	require.True(t, hasScan, "batch should contain scanMsg")
+	if !hasPop {
+		t.Fatal("batch should contain popViewMsg")
+	}
+	if !hasScan {
+		t.Fatal("batch should contain scanMsg")
+	}
 
 	// Process the messages
 	mUpdated, _ = m.Update(popViewMsg{})
@@ -91,7 +113,10 @@ func TestTUI_EnableWirelessFromDisabled(t *testing.T) {
 	m = mUpdated.(*model)
 
 	// After all updates, the disabled view should be gone.
-	require.Len(t, m.componentStack, 1, "component stack should have 1 item")
-	_, ok = m.componentStack[0].(*ListModel)
-	require.True(t, ok, "Top of stack should be ListModel")
+	if len(m.componentStack) != 1 {
+		t.Fatalf("expected component stack to have 1 item, got %d", len(m.componentStack))
+	}
+	if _, ok := m.componentStack[0].(*ListModel); !ok {
+		t.Fatal("Top of stack should be ListModel")
+	}
 }
