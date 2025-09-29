@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -13,6 +14,14 @@ import (
 
 	"github.com/shazow/wifitui/wifi"
 )
+
+type tickMsg time.Time
+
+func tickCmd(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(t time.Time) tea.Msg {
+		return tickMsg(t)
+	})
+}
 
 // itemDelegate is our custom list delegate
 type itemDelegate struct {
@@ -123,11 +132,16 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type ListModel struct {
 	list         list.Model
 	isForgetting bool
+	isFocused    bool
+	activeScan   bool
+	scanInterval time.Duration
 }
 
-func NewListModel() *ListModel {
+func NewListModel(scanInterval time.Duration) *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{}
+	m := &ListModel{
+		scanInterval: scanInterval,
+	}
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -137,6 +151,7 @@ func NewListModel() *ListModel {
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
+			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "active scan")),
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
@@ -184,6 +199,17 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	}
 
 	switch msg := msg.(type) {
+	case tea.FocusMsg:
+		m.isFocused = true
+		return m, tickCmd(m.scanInterval)
+	case tea.BlurMsg:
+		m.isFocused = false
+		return m, nil
+	case tickMsg:
+		if m.isFocused && m.activeScan {
+			return m, tea.Batch(func() tea.Msg { return scanMsg{} }, tickCmd(m.scanInterval))
+		}
+		return m, tickCmd(m.scanInterval)
 	case tea.WindowSizeMsg:
 		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
@@ -223,6 +249,9 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			return editModel, nil
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
+		case "S":
+			m.activeScan = !m.activeScan
+			return m, nil
 		case "f":
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
