@@ -120,3 +120,86 @@ func TestTUI_EnableWirelessFromDisabled(t *testing.T) {
 		t.Fatal("Top of stack should be ListModel")
 	}
 }
+
+func TestTUI_ActiveScanning(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+
+	m, err := NewModel(backend)
+	if err != nil {
+		t.Fatalf("NewModel() failed: %v", err)
+	}
+
+	// Active scanning should be on by default
+	if !m.isScanningActive {
+		t.Fatal("Expected active scanning to be on by default")
+	}
+
+	// Press 'S' to disable
+	sKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("S")}
+	mUpdated, cmd := m.Update(sKeyMsg)
+	m = mUpdated.(*model)
+
+	if m.isScanningActive {
+		t.Fatal("Expected active scanning to be off after pressing 'S'")
+	}
+	if m.statusMessage != "Active scanning disabled." {
+		t.Fatalf("Expected status message to be 'Active scanning disabled.', got '%s'", m.statusMessage)
+	}
+	if cmd != nil {
+		t.Fatal("Expected no command to be returned when disabling active scanning")
+	}
+
+	// Press 'S' to re-enable
+	mUpdated, cmd = m.Update(sKeyMsg)
+	m = mUpdated.(*model)
+
+	if !m.isScanningActive {
+		t.Fatal("Expected active scanning to be on after pressing 'S' again")
+	}
+	if m.statusMessage != "Active scanning enabled." {
+		t.Fatalf("Expected status message to be 'Active scanning enabled.', got '%s'", m.statusMessage)
+	}
+	if cmd == nil {
+		t.Fatal("Expected a command to be returned when enabling active scanning")
+	}
+	// Check if it's a scheduleScan command
+	msg := cmd()
+	if _, ok := msg.(scheduledScanMsg); !ok {
+		t.Fatalf("Expected a scheduledScanMsg, got %T", msg)
+	}
+
+	// Check scan interval progression
+	if m.scanIntervalIndex != 0 {
+		t.Fatalf("Expected scanIntervalIndex to be 0, got %d", m.scanIntervalIndex)
+	}
+
+	// Simulate a scan finished message
+	mUpdated, _ = m.Update(scanFinishedMsg{})
+	m = mUpdated.(*model)
+	if m.scanIntervalIndex != 1 {
+		t.Fatalf("Expected scanIntervalIndex to be 1, got %d", m.scanIntervalIndex)
+	}
+
+	// Simulate more scan finished messages
+	mUpdated, _ = m.Update(scanFinishedMsg{})
+	m = mUpdated.(*model)
+	if m.scanIntervalIndex != 2 {
+		t.Fatalf("Expected scanIntervalIndex to be 2, got %d", m.scanIntervalIndex)
+	}
+
+	mUpdated, _ = m.Update(scanFinishedMsg{})
+	m = mUpdated.(*model)
+	if m.scanIntervalIndex != 3 {
+		t.Fatalf("Expected scanIntervalIndex to be 3, got %d", m.scanIntervalIndex)
+	}
+
+	// It should stay at the max index
+	mUpdated, _ = m.Update(scanFinishedMsg{})
+	m = mUpdated.(*model)
+	if m.scanIntervalIndex != 3 {
+		t.Fatalf("Expected scanIntervalIndex to stay at 3, got %d", m.scanIntervalIndex)
+	}
+}
