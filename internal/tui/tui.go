@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -12,15 +13,33 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
+type scheduledScanMsg struct{}
+
+func scheduleScan(interval time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		<-time.After(interval)
+		return scheduledScanMsg{}
+	}
+}
+
+var scanIntervals = []time.Duration{
+	1 * time.Second,
+	2 * time.Second,
+	5 * time.Second,
+	10 * time.Second,
+}
+
 // The main model for our TUI application
 type model struct {
 	componentStack []Component
 
-	spinner       spinner.Model
-	backend       wifi.Backend
-	loading       bool
-	statusMessage string
-	width, height int
+	spinner           spinner.Model
+	backend           wifi.Backend
+	loading           bool
+	statusMessage     string
+	width, height     int
+	isScanningActive  bool
+	scanIntervalIndex int
 }
 
 // NewModel creates the starting state of our application
@@ -32,11 +51,13 @@ func NewModel(b wifi.Backend) (*model, error) {
 	listModel := NewListModel()
 
 	m := model{
-		componentStack: []Component{listModel},
-		spinner:        s,
-		backend:        b,
-		loading:        true,
-		statusMessage:  "Loading connections...",
+		componentStack:    []Component{listModel},
+		spinner:           s,
+		backend:           b,
+		loading:           true,
+		statusMessage:     "Loading connections...",
+		isScanningActive:  true,
+		scanIntervalIndex: 0,
 	}
 	return &m, nil
 }
@@ -67,6 +88,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errorMsg:
 		m.loading = false
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
+			m.statusMessage = ""
 			disabledModel := NewWirelessDisabledModel(m.backend)
 			m.componentStack = append(m.componentStack, disabledModel)
 			return m, nil
@@ -165,20 +187,65 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// This is a global keybinding to toggle the radio
 			m.loading = true
 			m.statusMessage = "Toggling Wi-Fi radio..."
-			return m, func() tea.Msg {
-				enabled, err := m.backend.IsWirelessEnabled()
-				if err != nil {
-					return errorMsg{err}
-				}
-				err = m.backend.SetWireless(!enabled)
+
+			// Reset scan interval if we're enabling the radio
+			enabled, err := m.backend.IsWirelessEnabled()
+			if err != nil {
+				return m, func() tea.Msg { return errorMsg{err} }
+			}
+			if !enabled {
+				m.scanIntervalIndex = 0
+			}
+
+			var cmds []tea.Cmd
+			// If we are in the disabled view, pop it.
+			if _, ok := m.componentStack[len(m.componentStack)-1].(*WirelessDisabledModel); ok {
+				cmds = append(cmds, func() tea.Msg { return popViewMsg{} })
+			}
+
+			toggleCmd := func() tea.Msg {
+				err := m.backend.SetWireless(!enabled)
 				if err != nil {
 					return errorMsg{err}
 				}
 				return scanMsg{}
 			}
+			cmds = append(cmds, toggleCmd)
+
+			return m, tea.Batch(cmds...)
+		}
+		if msg.String() == "S" {
+			m.isScanningActive = !m.isScanningActive
+			if m.isScanningActive {
+				m.statusMessage = "Active scanning enabled."
+				m.scanIntervalIndex = 0
+				return m, scheduleScan(scanIntervals[m.scanIntervalIndex])
+			}
+			m.statusMessage = "Active scanning disabled."
+			return m, nil
+		}
+	case scheduledScanMsg:
+		if m.isScanningActive {
+			return m, func() tea.Msg { return scanMsg{} }
+		}
+		return m, nil
+	case scanFinishedMsg:
+		m.loading = false
+		m.statusMessage = ""
+		if m.isScanningActive {
+			if m.scanIntervalIndex < len(scanIntervals)-1 {
+				m.scanIntervalIndex++
+			}
+			cmds = append(cmds, scheduleScan(scanIntervals[m.scanIntervalIndex]))
 		}
 	// Clear loading status on some messages
-	case connectionsLoadedMsg, scanFinishedMsg, secretsLoadedMsg:
+	case connectionsLoadedMsg:
+		m.loading = false
+		m.statusMessage = ""
+		if m.isScanningActive {
+			cmds = append(cmds, scheduleScan(scanIntervals[m.scanIntervalIndex]))
+		}
+	case secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
 	case connectionSavedMsg:
@@ -221,10 +288,22 @@ func (m model) View() string {
 		s.WriteString(top.View())
 	}
 
+	var footer []string
 	if m.loading {
-		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
+		footer = append(footer, fmt.Sprintf("%s %s", m.spinner.View(), lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
 	} else if m.statusMessage != "" {
-		s.WriteString(fmt.Sprintf("\n\n%s", lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
+		footer = append(footer, lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage))
+	}
+
+	scanStatus := "Off"
+	if m.isScanningActive {
+		scanStatus = "On"
+	}
+	footer = append(footer, fmt.Sprintf("[S] Active Scan: %s", scanStatus))
+
+	if len(footer) > 0 {
+		s.WriteString("\n\n")
+		s.WriteString(strings.Join(footer, " • "))
 	}
 
 	return s.String()
