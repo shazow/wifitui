@@ -236,17 +236,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.scanIntervalIndex < len(scanIntervals)-1 {
 				m.scanIntervalIndex++
 			}
-			return m, scheduleScan(scanIntervals[m.scanIntervalIndex])
+			cmds = append(cmds, scheduleScan(scanIntervals[m.scanIntervalIndex]))
 		}
-		return m, nil
 	// Clear loading status on some messages
 	case connectionsLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
 		if m.isScanningActive {
-			return m, scheduleScan(scanIntervals[m.scanIntervalIndex])
+			cmds = append(cmds, scheduleScan(scanIntervals[m.scanIntervalIndex]))
 		}
-		return m, nil
 	case secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
