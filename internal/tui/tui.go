@@ -60,9 +60,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
 	case popViewMsg:
-		if m.stack.Len() > 1 {
-			m.stack.Pop()
-		}
+		m.stack.Pop()
 		return m, nil
 	case errorMsg:
 		m.loading = false

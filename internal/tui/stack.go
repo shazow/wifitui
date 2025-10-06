@@ -19,27 +19,12 @@ func (s *ComponentStack) Push(c Component) {
 	s.components = append(s.components, c)
 }
 
-// Pop removes and returns the top component.
-func (s *ComponentStack) Pop() (Component, bool) {
-	if s.IsEmpty() {
-		return nil, false
+// Pop removes the top component if there is more than one component on the
+// stack.
+func (s *ComponentStack) Pop() {
+	if len(s.components) > 1 {
+		s.components = s.components[:len(s.components)-1]
 	}
-	index := len(s.components) - 1
-	component := s.components[index]
-	s.components = s.components[:index]
-	return component, true
-}
-
-// Top returns the top component without removing it.
-// It will panic if the stack is empty. The TUI logic should guarantee that
-// the stack is never empty.
-func (s *ComponentStack) Top() Component {
-	return s.components[len(s.components)-1]
-}
-
-// IsEmpty returns true if the stack is empty.
-func (s *ComponentStack) IsEmpty() bool {
-	return len(s.components) == 0
 }
 
 // IsConsumingInput returns true if any component on the stack is consuming input.
@@ -52,17 +37,12 @@ func (s *ComponentStack) IsConsumingInput() bool {
 	return false
 }
 
-// Len returns the number of components on the stack.
-func (s *ComponentStack) Len() int {
-	return len(s.components)
-}
-
 // Update updates the top component on the stack.
 func (s *ComponentStack) Update(msg tea.Msg) tea.Cmd {
-	if s.IsEmpty() {
+	if len(s.components) == 0 {
 		return nil
 	}
-	top := s.Top()
+	top := s.components[len(s.components)-1]
 	newComp, cmd := top.Update(msg)
 	if newComp != top {
 		s.Push(newComp)
@@ -72,8 +52,8 @@ func (s *ComponentStack) Update(msg tea.Msg) tea.Cmd {
 
 // View returns the view of the top component on the stack.
 func (s *ComponentStack) View() string {
-	if s.IsEmpty() {
+	if len(s.components) == 0 {
 		return ""
 	}
-	return s.Top().View()
+	return s.components[len(s.components)-1].View()
 }
