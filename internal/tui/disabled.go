@@ -32,11 +32,9 @@ func (m *WirelessDisabledModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				if err != nil {
 					return errorMsg{err}
 				}
-				// We re-use connectionSavedMsg to trigger a refresh in the main model.
-				return connectionSavedMsg{}
+				return radioEnabledMsg{}
 			}
 		case "q", "esc":
-			// We are quitting the program, so no need to pop the view.
 			return m, tea.Quit
 		}
 	}
