@@ -472,14 +472,11 @@ func (b *Backend) IsWirelessEnabled() (bool, error) {
 	return b.NM.GetPropertyWirelessEnabled()
 }
 
-// SetWireless enables or disables the wireless radio.
+// SetWireless enables or disables the wireless radio. This function blocks until the radio is in the desired state.
 func (b *Backend) SetWireless(enabled bool) error {
-	if err := b.NM.SetPropertyWirelessEnabled(enabled); err != nil {
-		return err
-	}
-
+	// First, check if we're already in the desired state.
 	if currentState, err := b.NM.GetPropertyWirelessEnabled(); err == nil && currentState == enabled {
-		return nil // Already in the desired state
+		return nil
 	}
 
 	wirelessDevice, err := b.getWirelessDevice()
@@ -495,6 +492,7 @@ func (b *Backend) SetWireless(enabled bool) error {
 		return fmt.Errorf("failed to subscribe to state changes: %w", err)
 	}
 
+	// Now, change the state.
 	if err := b.NM.SetPropertyWirelessEnabled(enabled); err != nil {
 		return fmt.Errorf("failed to set wireless enabled property: %w", err)
 	}
@@ -508,14 +506,28 @@ func (b *Backend) SetWireless(enabled bool) error {
 		expectedState = gonetworkmanager.NmDeviceStateUnavailable
 	}
 
+	// Check the current state of the device, in case the state changed before we started listening.
+	if currentState, err := wirelessDevice.GetPropertyState(); err == nil {
+		if enabled && currentState >= gonetworkmanager.NmDeviceStateDisconnected {
+			return nil
+		}
+		if !enabled && currentState == expectedState {
+			return nil
+		}
+	}
+
 	for {
 		select {
 		case change := <-stateChanges:
-			if change.State == expectedState {
+			if enabled && change.State >= gonetworkmanager.NmDeviceStateDisconnected {
+				return nil // Success!
+			}
+			if !enabled && change.State == expectedState {
 				return nil // Success!
 			}
 		case <-time.After(connectionTimeout):
-			return fmt.Errorf("timed out waiting for wireless state change")
+			s, _ := wirelessDevice.GetPropertyState()
+			return fmt.Errorf("timed out waiting for wireless state change to %v, current state: %v", expectedState, s)
 		}
 	}
 }

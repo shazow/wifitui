@@ -166,19 +166,27 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.String() == "r" {
-			// This is a global keybinding to toggle the radio
+			// This is a global keybinding to toggle the radio.
+			// We only handle it here if the radio is currently enabled.
+			// If it's disabled, we let the WirelessDisabledModel handle it.
+			enabled, err := m.backend.IsWirelessEnabled()
+			if err != nil {
+				return m, func() tea.Msg { return errorMsg{err} }
+			}
+			if !enabled {
+				// Let the component on the stack handle it.
+				break
+			}
+
 			m.loading = true
-			m.statusMessage = "Toggling Wi-Fi radio..."
+			m.statusMessage = "Disabling Wi-Fi radio..."
 			return m, func() tea.Msg {
-				enabled, err := m.backend.IsWirelessEnabled()
+				err := m.backend.SetWireless(false)
 				if err != nil {
 					return errorMsg{err}
 				}
-				err = m.backend.SetWireless(!enabled)
-				if err != nil {
-					return errorMsg{err}
-				}
-				return scanMsg{}
+				// By returning this error, we trigger the main loop to push the WirelessDisabledModel.
+				return errorMsg{wifi.ErrWirelessDisabled}
 			}
 		}
 	// Clear loading status on some messages
