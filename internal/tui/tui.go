@@ -41,10 +41,6 @@ func NewModel(b wifi.Backend) (*model, error) {
 	return &m, nil
 }
 
-func (m *model) IsConsumingInput() bool {
-	return m.stack.IsConsumingInput()
-}
-
 // Init is the first command that is run when the program starts
 func (m *model) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, func() tea.Msg {
@@ -167,7 +163,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// If a text input is focused, don't process global keybindings.
-		if m.IsConsumingInput() {
+		if m.stack.IsConsumingInput() {
 			break
 		}
 
@@ -206,13 +202,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Delegate to the component on the stack
-	top := m.stack.Top()
-	newComp, cmd := top.Update(msg)
-	cmds = append(cmds, cmd)
-
-	if newComp != top {
-		m.stack.Push(newComp)
-	}
+	cmds = append(cmds, m.stack.Update(msg))
 
 	// Spinner update
 	var spinnerCmd tea.Cmd
@@ -226,8 +216,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var s strings.Builder
 
-	// The stack is guaranteed to have at least one component.
-	s.WriteString(m.stack.Top().View())
+	s.WriteString(m.stack.View())
 
 	if m.loading {
 		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))

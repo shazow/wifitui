@@ -1,5 +1,7 @@
 package tui
 
+import tea "github.com/charmbracelet/bubbletea"
+
 // ComponentStack is a stack of components.
 type ComponentStack struct {
 	components []Component
@@ -53,4 +55,25 @@ func (s *ComponentStack) IsConsumingInput() bool {
 // Len returns the number of components on the stack.
 func (s *ComponentStack) Len() int {
 	return len(s.components)
+}
+
+// Update updates the top component on the stack.
+func (s *ComponentStack) Update(msg tea.Msg) tea.Cmd {
+	if s.IsEmpty() {
+		return nil
+	}
+	top := s.Top()
+	newComp, cmd := top.Update(msg)
+	if newComp != top {
+		s.Push(newComp)
+	}
+	return cmd
+}
+
+// View returns the view of the top component on the stack.
+func (s *ComponentStack) View() string {
+	if s.IsEmpty() {
+		return ""
+	}
+	return s.Top().View()
 }
