@@ -161,6 +161,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
+
+		// If a text input is focused, don't process global keybindings.
+		if top := m.componentStack[len(m.componentStack)-1]; top.IsTextInputFocused() {
+			break
+		}
+
 		if msg.String() == "r" {
 			// This is a global keybinding to toggle the radio
 			m.loading = true

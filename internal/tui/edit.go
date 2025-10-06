@@ -236,6 +236,10 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m *EditModel) IsTextInputFocused() bool {
+	return m.ssidAdapter.Model.Focused() || m.passwordAdapter.Model.Focused()
+}
+
 func (m *EditModel) View() string {
 	var s strings.Builder
 	s.WriteString(fmt.Sprintf("\n%s\n\n", "Wi-Fi Connection"))

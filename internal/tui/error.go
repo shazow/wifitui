@@ -31,3 +31,8 @@ func (m *ErrorModel) View() string {
 		Padding(1, 2)
 	return lipgloss.NewStyle().Margin(1, 2).Render(errorViewStyle.Render(fmt.Sprintf("Error: %s", m.err)))
 }
+
+// IsTextInputFocused returns whether the model is focused on a text input.
+func (m *ErrorModel) IsTextInputFocused() bool {
+	return false
+}

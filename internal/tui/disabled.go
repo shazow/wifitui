@@ -59,3 +59,7 @@ func (m *WirelessDisabledModel) View() string {
 	s.WriteString("Press 'q' to quit.\n")
 	return s.String()
 }
+
+func (m *WirelessDisabledModel) IsTextInputFocused() bool {
+	return false
+}
