@@ -125,8 +125,8 @@ type ListModel struct {
 	isForgetting bool
 }
 
-// IsTextInputFocused returns whether the model is focused on a text input.
-func (m *ListModel) IsTextInputFocused() bool {
+// IsConsumingInput returns whether the model is focused on a text input.
+func (m *ListModel) IsConsumingInput() bool {
 	// The list model does not have any text inputs.
 	if m.list.FilterState() == list.Filtering {
 		return true

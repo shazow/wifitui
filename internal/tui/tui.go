@@ -41,6 +41,15 @@ func NewModel(b wifi.Backend) (*model, error) {
 	return &m, nil
 }
 
+func (m *model) IsConsumingInput() bool {
+	for _, c := range m.componentStack {
+		if c.IsConsumingInput() {
+			return true
+		}
+	}
+	return false
+}
+
 // Init is the first command that is run when the program starts
 func (m *model) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, func() tea.Msg {
@@ -163,7 +172,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// If a text input is focused, don't process global keybindings.
-		if top := m.componentStack[len(m.componentStack)-1]; top.IsTextInputFocused() {
+		if m.IsConsumingInput() {
 			break
 		}
 

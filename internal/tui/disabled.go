@@ -60,6 +60,6 @@ func (m *WirelessDisabledModel) View() string {
 	return s.String()
 }
 
-func (m *WirelessDisabledModel) IsTextInputFocused() bool {
+func (m *WirelessDisabledModel) IsConsumingInput() bool {
 	return false
 }

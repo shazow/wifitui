@@ -109,10 +109,10 @@ func NewEditModel(item *connectionItem) *EditModel {
 			case 0: // Join
 				return func() tea.Msg {
 					return joinNetworkMsg{
-						ssid:       m.ssidAdapter.Model.Value(),
-						password:   m.passwordAdapter.Model.Value(),
-						security:   wifi.SecurityType(m.securityGroup.Selected()),
-						isHidden:   true,
+						ssid:     m.ssidAdapter.Model.Value(),
+						password: m.passwordAdapter.Model.Value(),
+						security: wifi.SecurityType(m.securityGroup.Selected()),
+						isHidden: true,
 					}
 				}
 			case 1: // Cancel
@@ -123,14 +123,14 @@ func NewEditModel(item *connectionItem) *EditModel {
 			case 0: // Connect
 				return func() tea.Msg {
 					return connectMsg{
-						item: m.selectedItem,
+						item:        m.selectedItem,
 						autoConnect: m.autoConnectCheckbox.Checked(),
 					}
 				}
 			case 1: // Save
 				return func() tea.Msg {
 					return updateSecretMsg{
-						item: m.selectedItem,
+						item:        m.selectedItem,
 						newPassword: m.passwordAdapter.Model.Value(),
 						autoConnect: m.autoConnectCheckbox.Checked(),
 					}
@@ -145,10 +145,10 @@ func NewEditModel(item *connectionItem) *EditModel {
 			case 0: // Join
 				return func() tea.Msg {
 					return joinNetworkMsg{
-						ssid:       m.selectedItem.SSID,
-						password:   m.passwordAdapter.Model.Value(),
-						security:   m.selectedItem.Security,
-						isHidden:   m.selectedItem.IsHidden,
+						ssid:     m.selectedItem.SSID,
+						password: m.passwordAdapter.Model.Value(),
+						security: m.selectedItem.Security,
+						isHidden: m.selectedItem.IsHidden,
 					}
 				}
 			case 1: // Cancel
@@ -236,7 +236,7 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m *EditModel) IsTextInputFocused() bool {
+func (m *EditModel) IsConsumingInput() bool {
 	return m.ssidAdapter.Model.Focused() || m.passwordAdapter.Model.Focused()
 }
 
