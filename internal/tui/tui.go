@@ -14,7 +14,7 @@ import (
 
 // The main model for our TUI application
 type model struct {
-	componentStack []Component
+	stack *ComponentStack
 
 	spinner       spinner.Model
 	backend       wifi.Backend
@@ -32,22 +32,17 @@ func NewModel(b wifi.Backend) (*model, error) {
 	listModel := NewListModel()
 
 	m := model{
-		componentStack: []Component{listModel},
-		spinner:        s,
-		backend:        b,
-		loading:        true,
-		statusMessage:  "Loading connections...",
+		stack:         NewComponentStack(listModel),
+		spinner:       s,
+		backend:       b,
+		loading:       true,
+		statusMessage: "Loading connections...",
 	}
 	return &m, nil
 }
 
 func (m *model) IsConsumingInput() bool {
-	for _, c := range m.componentStack {
-		if c.IsConsumingInput() {
-			return true
-		}
-	}
-	return false
+	return m.stack.IsConsumingInput()
 }
 
 // Init is the first command that is run when the program starts
@@ -69,19 +64,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
 	case popViewMsg:
-		if len(m.componentStack) > 1 {
-			m.componentStack = m.componentStack[:len(m.componentStack)-1]
+		if m.stack.Len() > 1 {
+			m.stack.Pop()
 		}
 		return m, nil
 	case errorMsg:
 		m.loading = false
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
 			disabledModel := NewWirelessDisabledModel(m.backend)
-			m.componentStack = append(m.componentStack, disabledModel)
+			m.stack.Push(disabledModel)
 			return m, nil
 		}
 		errorModel := NewErrorModel(msg.err)
-		m.componentStack = append(m.componentStack, errorModel)
+		m.stack.Push(errorModel)
 		return m, nil
 	case scanMsg:
 		m.loading = true
@@ -211,12 +206,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Delegate to the component on the stack
-	top := m.componentStack[len(m.componentStack)-1]
+	top := m.stack.Top()
 	newComp, cmd := top.Update(msg)
 	cmds = append(cmds, cmd)
 
 	if newComp != top {
-		m.componentStack = append(m.componentStack, newComp)
+		m.stack.Push(newComp)
 	}
 
 	// Spinner update
@@ -231,10 +226,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var s strings.Builder
 
-	if len(m.componentStack) > 0 {
-		top := m.componentStack[len(m.componentStack)-1]
-		s.WriteString(top.View())
-	}
+	// The stack is guaranteed to have at least one component.
+	s.WriteString(m.stack.Top().View())
 
 	if m.loading {
 		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
