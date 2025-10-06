@@ -32,8 +32,8 @@ func (m *WirelessDisabledModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				if err != nil {
 					return errorMsg{err}
 				}
-				// TODO: We need a better way to trigger a refresh
-				return connectionSavedMsg{}
+				// Pop the view, which will trigger a refresh in the main model.
+				return popViewMsg{}
 			}
 		case "q", "esc":
 			return m, func() tea.Msg {
