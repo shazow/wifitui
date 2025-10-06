@@ -42,7 +42,6 @@ func (i connectionItem) FilterValue() string { return i.Title() }
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
 	// From backend
-	radioEnabledMsg      struct{}
 	connectionsLoadedMsg []wifi.Connection // Sent when connections are fetched
 	scanFinishedMsg      []wifi.Connection // Sent when a scan is finished
 	secretsLoadedMsg     struct {

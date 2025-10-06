@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,10 +18,9 @@ type model struct {
 
 	spinner       spinner.Model
 	backend       wifi.Backend
-	loading             bool
-	wasRadioJustEnabled bool
-	statusMessage       string
-	width, height       int
+	loading       bool
+	statusMessage string
+	width, height int
 }
 
 // NewModel creates the starting state of our application
@@ -64,13 +62,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case popViewMsg:
 		m.stack.Pop()
 		return m, nil
-	case radioEnabledMsg:
-		m.wasRadioJustEnabled = true
-		// Pop the disabled view and trigger a scan
-		return m, tea.Batch(
-			func() tea.Msg { return popViewMsg{} },
-			func() tea.Msg { return scanMsg{} },
-		)
 	case errorMsg:
 		m.loading = false
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
@@ -199,19 +190,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	// Clear loading status on some messages
-	case scanFinishedMsg:
-		m.loading = false
-		m.statusMessage = ""
-		if m.wasRadioJustEnabled && len(msg) == 0 {
-			m.wasRadioJustEnabled = false
-			m.statusMessage = "No networks found, re-scanning in 1.5s..."
-			return m, tea.Tick(1500*time.Millisecond, func(t time.Time) tea.Msg {
-				return scanMsg{}
-			})
-		}
-		m.wasRadioJustEnabled = false
-
-	case connectionsLoadedMsg, secretsLoadedMsg:
+	case connectionsLoadedMsg, scanFinishedMsg, secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
 	case connectionSavedMsg:
