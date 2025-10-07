@@ -146,7 +146,7 @@ func NewListModel() *ListModel {
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "active scan")),
-			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rescan")),
+			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
@@ -231,7 +231,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		case "n":
 			editModel := NewEditModel(nil)
 			return editModel, nil
-		case "r":
+		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
 		case "f":
 			if len(m.list.Items()) > 0 {

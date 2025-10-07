@@ -232,12 +232,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scheduleCmd = m.scanner.SetSchedule(ScanFast)
 		}
 		m.loading = false
-		// Don't clear status message if we just toggled the active scan
-		if m.statusMessage == "Active scan enabled." || m.statusMessage == "Active scan disabled." {
-			// do nothing
-		} else {
-			m.statusMessage = ""
-		}
+		m.statusMessage = ""
 		cmds = append(cmds, scheduleCmd)
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh

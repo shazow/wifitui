@@ -16,29 +16,29 @@ const (
 type ScanSchedule struct {
 	callback func() tea.Msg
 	interval time.Duration
-	enabled  bool
 }
 
 // NewScanSchedule creates a new ScanSchedule.
 func NewScanSchedule(callback func() tea.Msg) *ScanSchedule {
 	return &ScanSchedule{
 		callback: callback,
-		enabled:  true,
 	}
 }
 
 // Toggle enables or disables the scan schedule.
 func (s *ScanSchedule) Toggle() (bool, tea.Cmd) {
-	s.enabled = !s.enabled
 	var cmd tea.Cmd
-	if !s.enabled {
-		// Stop the ticker
-		cmd = s.SetSchedule(ScanOff)
-	} else {
-		// Start the ticker
+	var enabled bool
+	if s.interval == ScanOff {
+		// It's off, turn it on
 		cmd = s.SetSchedule(ScanFast)
+		enabled = true
+	} else {
+		// It's on, turn it off
+		cmd = s.SetSchedule(ScanOff)
+		enabled = false
 	}
-	return s.enabled, cmd
+	return enabled, cmd
 }
 
 // SetSchedule sets the scan interval.
@@ -46,7 +46,7 @@ func (s *ScanSchedule) SetSchedule(interval time.Duration) tea.Cmd {
 	isStarting := s.interval == ScanOff && interval != ScanOff
 	s.interval = interval
 
-	if isStarting && s.enabled {
+	if isStarting {
 		// We were off, now we are on. Start the scan loop.
 		return tea.Batch(s.callback, s.tick())
 	}
@@ -55,7 +55,7 @@ func (s *ScanSchedule) SetSchedule(interval time.Duration) tea.Cmd {
 
 // Update handles messages for the ScanSchedule.
 func (s *ScanSchedule) Update(msg tea.Msg) tea.Cmd {
-	if s.interval == ScanOff || !s.enabled {
+	if s.interval == ScanOff {
 		return nil
 	}
 
