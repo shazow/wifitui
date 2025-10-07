@@ -25,6 +25,22 @@ func NewScanSchedule(callback func() tea.Msg) *ScanSchedule {
 	}
 }
 
+// Toggle enables or disables the scan schedule.
+func (s *ScanSchedule) Toggle() (bool, tea.Cmd) {
+	var cmd tea.Cmd
+	var enabled bool
+	if s.interval == ScanOff {
+		// It's off, turn it on
+		cmd = s.SetSchedule(ScanFast)
+		enabled = true
+	} else {
+		// It's on, turn it off
+		cmd = s.SetSchedule(ScanOff)
+		enabled = false
+	}
+	return enabled, cmd
+}
+
 // SetSchedule sets the scan interval.
 func (s *ScanSchedule) SetSchedule(interval time.Duration) tea.Cmd {
 	isStarting := s.interval == ScanOff && interval != ScanOff

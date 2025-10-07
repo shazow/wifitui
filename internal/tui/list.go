@@ -146,14 +146,18 @@ func NewListModel() *ListModel {
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
-			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
 		}
 	}
 	// Make 'q' the only quit key
 	l.KeyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
-	l.AdditionalFullHelpKeys = l.AdditionalShortHelpKeys
+	l.AdditionalFullHelpKeys = func() []key.Binding {
+		return append([]key.Binding{
+			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
+			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "active scan")),
+		}, l.AdditionalShortHelpKeys()...)
+	}
 
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)

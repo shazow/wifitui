@@ -186,7 +186,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
-		if msg.String() == "r" {
+		switch msg.String() {
+		case "S":
+			enabled, cmd := m.scanner.Toggle()
+			if !enabled {
+				m.statusMessage = "Active Scan disabled"
+			}
+			return m, cmd
+		case "r":
 			// This is a global keybinding to toggle the radio.
 			// We only handle it here if the radio is currently enabled.
 			// If it's disabled, we let the WirelessDisabledModel handle it.
