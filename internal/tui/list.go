@@ -123,6 +123,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type ListModel struct {
 	list         list.Model
 	isForgetting bool
+	parent       *model
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -134,9 +135,11 @@ func (m *ListModel) IsConsumingInput() bool {
 	return false
 }
 
-func NewListModel() *ListModel {
+func NewListModel(parent *model) *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{}
+	m := &ListModel{
+		parent: parent,
+	}
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -145,7 +148,8 @@ func NewListModel() *ListModel {
 	l.SetShowStatusBar(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
-			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
+			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "active scan")),
+			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "rescan")),
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
@@ -230,7 +234,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		case "n":
 			editModel := NewEditModel(nil)
 			return editModel, nil
-		case "s":
+		case "r":
 			return m, func() tea.Msg { return scanMsg{} }
 		case "f":
 			if len(m.list.Items()) > 0 {
@@ -286,10 +290,20 @@ func (m *ListModel) View() string {
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
 
 	// Custom status bar
-	statusText := ""
+	itemsStatusText := ""
 	if len(m.list.Items()) > 0 {
-		statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
+		itemsStatusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
 	}
+
+	scanStatusText := "Active Scan: Off"
+	if m.parent.scanScheduleEnabled {
+		scanStatusText = "Active Scan: On"
+	}
+	// Make it subtle
+	scanStatusText = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(scanStatusText)
+
+	statusText := lipgloss.JoinHorizontal(lipgloss.Bottom, itemsStatusText, "  ", scanStatusText)
+
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
 	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())

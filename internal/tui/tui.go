@@ -16,12 +16,13 @@ import (
 type model struct {
 	stack *ComponentStack
 
-	spinner       spinner.Model
-	scanner       *ScanSchedule
-	backend       wifi.Backend
-	loading       bool
-	statusMessage string
-	width, height int
+	spinner             spinner.Model
+	scanner             *ScanSchedule
+	backend             wifi.Backend
+	loading             bool
+	scanScheduleEnabled bool
+	statusMessage       string
+	width, height       int
 }
 
 // NewModel creates the starting state of our application
@@ -30,15 +31,15 @@ func NewModel(b wifi.Backend) (*model, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
-	listModel := NewListModel()
-
 	m := model{
-		stack:         NewComponentStack(listModel),
-		spinner:       s,
-		backend:       b,
-		loading:       true,
-		statusMessage: "Loading connections...",
+		spinner:             s,
+		backend:             b,
+		loading:             true,
+		scanScheduleEnabled: true,
+		statusMessage:       "Loading connections...",
 	}
+	listModel := NewListModel(&m)
+	m.stack = NewComponentStack(listModel)
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	return &m, nil
 }
@@ -186,7 +187,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			break
 		}
 
-		if msg.String() == "r" {
+		switch msg.String() {
+		case "S":
+			m.scanScheduleEnabled = !m.scanScheduleEnabled
+			var cmd tea.Cmd
+			if m.scanScheduleEnabled {
+				cmd = m.scanner.SetSchedule(ScanFast)
+				m.statusMessage = "Active scan enabled."
+			} else {
+				cmd = m.scanner.SetSchedule(ScanOff)
+				m.statusMessage = "Active scan disabled."
+			}
+			return m, cmd
+		case "r":
 			// This is a global keybinding to toggle the radio.
 			// We only handle it here if the radio is currently enabled.
 			// If it's disabled, we let the WirelessDisabledModel handle it.
@@ -217,13 +230,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = ""
 	case scanFinishedMsg:
 		var scheduleCmd tea.Cmd
-		if len(msg) > 0 {
-			scheduleCmd = m.scanner.SetSchedule(ScanSlow)
-		} else {
-			scheduleCmd = m.scanner.SetSchedule(ScanFast)
+		if m.scanScheduleEnabled {
+			if len(msg) > 0 {
+				scheduleCmd = m.scanner.SetSchedule(ScanSlow)
+			} else {
+				scheduleCmd = m.scanner.SetSchedule(ScanFast)
+			}
 		}
 		m.loading = false
-		m.statusMessage = ""
+		// Don't clear status message if we just toggled the active scan
+		if m.statusMessage == "Active scan enabled." || m.statusMessage == "Active scan disabled." {
+			// do nothing
+		} else {
+			m.statusMessage = ""
+		}
 		cmds = append(cmds, scheduleCmd)
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
