@@ -77,14 +77,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stack.Pop()
 		return m, nil
 	case radioEnabledMsg:
-		return m, tea.Batch(m.scanner.Start(), func() tea.Msg { return scanMsg{} })
+		return m, m.scanner.SetSchedule(ScanFast)
 	case errorMsg:
 		m.loading = false
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
-			m.scanner.Stop()
+			cmd := m.scanner.SetSchedule(ScanOff)
 			disabledModel := NewWirelessDisabledModel(m.backend)
 			m.stack.Push(disabledModel)
-			return m, nil
+			return m, cmd
 		}
 		errorModel := NewErrorModel(msg.err)
 		m.stack.Push(errorModel)
@@ -195,26 +195,32 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 
-			m.scanner.Stop()
+			cmd := m.scanner.SetSchedule(ScanOff)
 			m.loading = true
 			m.statusMessage = "Disabling Wi-Fi radio..."
-			return m, func() tea.Msg {
+			return m, tea.Batch(cmd, func() tea.Msg {
 				err := m.backend.SetWireless(false)
 				if err != nil {
 					return errorMsg{err}
 				}
 				// By returning this error, we trigger the main loop to push the WirelessDisabledModel.
 				return errorMsg{wifi.ErrWirelessDisabled}
-			}
+			})
 		}
 	// Clear loading status on some messages
 	case connectionsLoadedMsg, secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
 	case scanFinishedMsg:
-		m.scanner.HasResults(len(msg) > 0)
+		var cmd tea.Cmd
+		if len(msg) > 0 {
+			cmd = m.scanner.SetSchedule(ScanSlow)
+		} else {
+			cmd = m.scanner.SetSchedule(ScanFast)
+		}
 		m.loading = false
 		m.statusMessage = ""
+		return m, cmd
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = "Successfully updated. Refreshing list..."
