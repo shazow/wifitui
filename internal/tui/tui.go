@@ -189,10 +189,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "S":
 			enabled, cmd := m.scanner.Toggle()
-			if enabled {
-				m.statusMessage = "Active scan enabled."
-			} else {
-				m.statusMessage = "Active scan disabled."
+			if !enabled {
+				m.statusMessage = "Active Scan disabled"
 			}
 			return m, cmd
 		case "r":
