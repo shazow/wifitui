@@ -123,7 +123,6 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type ListModel struct {
 	list         list.Model
 	isForgetting bool
-	parent       *model
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -135,11 +134,9 @@ func (m *ListModel) IsConsumingInput() bool {
 	return false
 }
 
-func NewListModel(parent *model) *ListModel {
+func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{
-		parent: parent,
-	}
+	m := &ListModel{}
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -290,20 +287,10 @@ func (m *ListModel) View() string {
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
 
 	// Custom status bar
-	itemsStatusText := ""
+	statusText := ""
 	if len(m.list.Items()) > 0 {
-		itemsStatusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
+		statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
 	}
-
-	scanStatusText := "Active Scan: Off"
-	if m.parent.scanScheduleEnabled {
-		scanStatusText = "Active Scan: On"
-	}
-	// Make it subtle
-	scanStatusText = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(scanStatusText)
-
-	statusText := lipgloss.JoinHorizontal(lipgloss.Bottom, itemsStatusText, "  ", scanStatusText)
-
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
 	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
