@@ -77,7 +77,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stack.Pop()
 		return m, nil
 	case radioEnabledMsg:
-		return m, m.scanner.SetSchedule(ScanFast)
+		m.stack.Pop() // Pop the disabled view
+		return m, tea.Batch(
+			m.scanner.SetSchedule(ScanFast),
+			func() tea.Msg { return scanMsg{} },
+		)
 	case errorMsg:
 		m.loading = false
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
