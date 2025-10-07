@@ -17,6 +17,7 @@ type model struct {
 	stack *ComponentStack
 
 	spinner       spinner.Model
+	scanner       *ScanSchedule
 	backend       wifi.Backend
 	loading       bool
 	statusMessage string
@@ -38,12 +39,25 @@ func NewModel(b wifi.Backend) (*model, error) {
 		loading:       true,
 		statusMessage: "Loading connections...",
 	}
+	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	return &m, nil
 }
+
+type radioEnabledMsg struct{}
 
 // Init is the first command that is run when the program starts
 func (m *model) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, func() tea.Msg {
+		// Check if the wireless radio is enabled.
+		// If so, start the scanner.
+		enabled, err := m.backend.IsWirelessEnabled()
+		if err != nil {
+			return errorMsg{err}
+		}
+		if enabled {
+			return radioEnabledMsg{}
+		}
+
 		connections, err := m.backend.BuildNetworkList(false)
 		if err != nil {
 			return errorMsg{err}
@@ -62,12 +76,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case popViewMsg:
 		m.stack.Pop()
 		return m, nil
+	case radioEnabledMsg:
+		return m, m.scanner.SetSchedule(ScanFast)
 	case errorMsg:
 		m.loading = false
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
+			cmd := m.scanner.SetSchedule(ScanOff)
 			disabledModel := NewWirelessDisabledModel(m.backend)
 			m.stack.Push(disabledModel)
-			return m, nil
+			return m, cmd
 		}
 		errorModel := NewErrorModel(msg.err)
 		m.stack.Push(errorModel)
@@ -178,21 +195,32 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 
+			cmd := m.scanner.SetSchedule(ScanOff)
 			m.loading = true
 			m.statusMessage = "Disabling Wi-Fi radio..."
-			return m, func() tea.Msg {
+			return m, tea.Batch(cmd, func() tea.Msg {
 				err := m.backend.SetWireless(false)
 				if err != nil {
 					return errorMsg{err}
 				}
 				// By returning this error, we trigger the main loop to push the WirelessDisabledModel.
 				return errorMsg{wifi.ErrWirelessDisabled}
-			}
+			})
 		}
 	// Clear loading status on some messages
-	case connectionsLoadedMsg, scanFinishedMsg, secretsLoadedMsg:
+	case connectionsLoadedMsg, secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
+	case scanFinishedMsg:
+		var scheduleCmd tea.Cmd
+		if len(msg) > 0 {
+			scheduleCmd = m.scanner.SetSchedule(ScanSlow)
+		} else {
+			scheduleCmd = m.scanner.SetSchedule(ScanFast)
+		}
+		m.loading = false
+		m.statusMessage = ""
+		cmds = append(cmds, scheduleCmd)
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = "Successfully updated. Refreshing list..."
@@ -209,6 +237,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Delegate to the component on the stack
 	cmds = append(cmds, m.stack.Update(msg))
+
+	// Scanner update
+	cmds = append(cmds, m.scanner.Update(msg))
 
 	// Spinner update
 	var spinnerCmd tea.Cmd
