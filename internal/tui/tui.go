@@ -212,15 +212,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.statusMessage = ""
 	case scanFinishedMsg:
-		var cmd tea.Cmd
+		var scheduleCmd tea.Cmd
 		if len(msg) > 0 {
-			cmd = m.scanner.SetSchedule(ScanSlow)
+			scheduleCmd = m.scanner.SetSchedule(ScanSlow)
 		} else {
-			cmd = m.scanner.SetSchedule(ScanFast)
+			scheduleCmd = m.scanner.SetSchedule(ScanFast)
 		}
 		m.loading = false
 		m.statusMessage = ""
-		return m, cmd
+		cmds = append(cmds, scheduleCmd)
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = "Successfully updated. Refreshing list..."
