@@ -143,6 +143,7 @@ func NewListModel() *ListModel {
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-27s %s", CurrentTheme.TitleIcon+"WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
+	l.SetShowHelp(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
@@ -287,7 +288,8 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
+	help := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
+	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
 
 	// Custom status bar
 	statusText := ""
@@ -297,4 +299,14 @@ func (m *ListModel) View() string {
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
 	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
+}
+
+func (m *ListModel) FullHelp() [][]key.Binding {
+	return m.list.FullHelp()
+}
+
+func (m *ListModel) ShortHelp() []key.Binding {
+	h := m.list.ShortHelp()
+	// Remove up/down from short help
+	return h[2:]
 }
