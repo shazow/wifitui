@@ -121,7 +121,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type ListModel struct {
-	list         list.Model
+	list         CustomHelpList
 	isForgetting bool
 }
 
@@ -159,20 +159,15 @@ func NewListModel() *ListModel {
 		}, l.AdditionalShortHelpKeys()...)
 	}
 
-	// Override the default up/down help.
-	l.KeyMap.CursorUp = key.NewBinding(
-		key.WithKeys("up", "k"),
-	)
-	l.KeyMap.CursorDown = key.NewBinding(
-		key.WithKeys("down", "j"),
-	)
-
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
-	m.list = l
+
+	m.list = CustomHelpList{
+		Model: l,
+	}
 	return m
 }
 
