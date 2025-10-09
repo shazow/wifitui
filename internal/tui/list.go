@@ -159,6 +159,14 @@ func NewListModel() *ListModel {
 		}, l.AdditionalShortHelpKeys()...)
 	}
 
+	// Override the default up/down help.
+	l.KeyMap.CursorUp = key.NewBinding(
+		key.WithKeys("up", "k"),
+	)
+	l.KeyMap.CursorDown = key.NewBinding(
+		key.WithKeys("down", "j"),
+	)
+
 	// Enable the fuzzy finder
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
