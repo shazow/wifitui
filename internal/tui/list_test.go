@@ -9,7 +9,7 @@ import (
 )
 
 func TestListModel_NewKey(t *testing.T) {
-	m := NewListModel()
+	m := NewListModel(NewScanSchedule(nil))
 	nKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}
 	newComp, _ := m.Update(nKeyMsg)
 
@@ -19,7 +19,7 @@ func TestListModel_NewKey(t *testing.T) {
 }
 
 func TestListModel_ForgetFlow(t *testing.T) {
-	m := NewListModel()
+	m := NewListModel(NewScanSchedule(nil))
 	item1 := connectionItem{Connection: wifi.Connection{SSID: "TestNetwork1", IsKnown: true}}
 	item2 := connectionItem{Connection: wifi.Connection{SSID: "TestNetwork2", IsKnown: true}}
 	m.list.SetItems([]list.Item{item1, item2})
