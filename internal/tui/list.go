@@ -123,6 +123,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type ListModel struct {
 	list         list.Model
 	isForgetting bool
+	scanner      *ScanSchedule
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -134,9 +135,11 @@ func (m *ListModel) IsConsumingInput() bool {
 	return false
 }
 
-func NewListModel() *ListModel {
+func NewListModel(scanner *ScanSchedule) *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{}
+	m := &ListModel{
+		scanner: scanner,
+	}
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -222,7 +225,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	case secretsLoadedMsg:
 		editModel := NewEditModel(&msg.item)
 		editModel.SetPassword(msg.secret)
-		return editModel, nil
+		return editModel, m.scanner.SetSchedule(ScanOff)
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {
 			break
@@ -234,7 +237,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			}
 		case "n":
 			editModel := NewEditModel(nil)
-			return editModel, nil
+			return editModel, m.scanner.SetSchedule(ScanOff)
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
 		case "f":
@@ -253,7 +256,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 						return m, func() tea.Msg { return connectMsg{item: selected} }
 					} else {
 						editModel := NewEditModel(&selected)
-						return editModel, nil
+						return editModel, m.scanner.SetSchedule(ScanOff)
 					}
 				}
 			}
@@ -267,7 +270,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 					return m, func() tea.Msg { return loadSecretsMsg{item: selected} }
 				} else {
 					editModel := NewEditModel(&selected)
-					return editModel, nil
+					return editModel, m.scanner.SetSchedule(ScanOff)
 				}
 			}
 		}

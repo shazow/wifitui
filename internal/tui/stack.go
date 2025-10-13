@@ -27,6 +27,14 @@ func (s *ComponentStack) Pop() {
 	}
 }
 
+// Top returns the top component on the stack.
+func (s *ComponentStack) Top() Component {
+	if len(s.components) == 0 {
+		return nil
+	}
+	return s.components[len(s.components)-1]
+}
+
 // IsConsumingInput returns true if any component on the stack is consuming input.
 func (s *ComponentStack) IsConsumingInput() bool {
 	for _, c := range s.components {

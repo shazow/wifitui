@@ -30,7 +30,8 @@ func NewModel(b wifi.Backend) (*model, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
-	listModel := NewListModel()
+	scanner := NewScanSchedule(func() tea.Msg { return scanMsg{} })
+	listModel := NewListModel(scanner)
 
 	m := model{
 		stack:         NewComponentStack(listModel),
@@ -38,8 +39,8 @@ func NewModel(b wifi.Backend) (*model, error) {
 		backend:       b,
 		loading:       true,
 		statusMessage: "Loading connections...",
+		scanner:       scanner,
 	}
-	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	return &m, nil
 }
 
@@ -75,6 +76,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case popViewMsg:
 		m.stack.Pop()
+		if _, ok := m.stack.Top().(*ListModel); ok {
+			// Resumed the list view, so we can start scanning again.
+			return m, m.scanner.SetSchedule(ScanSlow)
+		}
 		return m, nil
 	case radioEnabledMsg:
 		m.stack.Pop() // Pop the disabled view
