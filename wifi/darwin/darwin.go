@@ -41,7 +41,6 @@ type Backend struct {
 	WifiInterface string
 }
 
-
 // New creates a new darwin.Backend.
 func New() (wifi.Backend, error) {
 	// Find the Wi-Fi interface name (e.g., en0)
@@ -55,7 +54,7 @@ func New() (wifi.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-  
+
 	return &Backend{WifiInterface: device}, nil
 }
 
@@ -240,24 +239,53 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// UpdateSecret changes the password for a known connection.
-func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
-	// In macOS, we need to delete the old password and add a new one.
-	// The -U flag in add-generic-password updates the item if it exists,
-	// but it's safer to delete and add.
-	cmd := exec.Command("security", "delete-generic-password", "-a", ssid, "-s", ssid)
-	_ = runOnly(cmd) // Ignore error if it doesn't exist
+// UpdateConnection updates a known connection.
+func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+	if opts.Password != nil {
+		// In macOS, we need to delete the old password and add a new one.
+		// The -U flag in add-generic-password updates the item if it exists,
+		// but it's safer to delete and add.
+		cmd := exec.Command("security", "delete-generic-password", "-a", ssid, "-s", ssid)
+		_ = runOnly(cmd) // Ignore error if it doesn't exist
 
-	cmd = exec.Command("security", "add-generic-password", "-a", ssid, "-s", ssid, "-w", newPassword)
-	return runOnly(cmd)
+		cmd = exec.Command("security", "add-generic-password", "-a", ssid, "-s", ssid, "-w", *opts.Password)
+		if err := runOnly(cmd); err != nil {
+			return err
+		}
+	}
+
+	if opts.AutoConnect != nil {
+		if *opts.AutoConnect {
+			// FIXME: Re-adding a network to preferred requires security type, which we don't have here.
+			return fmt.Errorf("enabling autoconnect is not yet supported on darwin: %w", wifi.ErrNotSupported)
+		}
+		cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.WifiInterface, ssid)
+		if err := runOnly(cmd); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-// SetAutoConnect sets the autoconnect property for a known connection.
-func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
-	if autoConnect {
-		// FIXME: Re-adding a network to preferred requires security type, which we don't have here.
-		return fmt.Errorf("enabling autoconnect is not yet supported on darwin: %w", wifi.ErrNotSupported)
+func findWifiDevice(hardwarePorts string) (string, error) {
+	scanner := bufio.NewScanner(strings.NewReader(hardwarePorts))
+	var device string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "Hardware Port: Wi-Fi") || strings.HasPrefix(line, "Hardware Port: AirPort") {
+			// Found the Wi-Fi section, now find the device
+			for scanner.Scan() {
+				line = scanner.Text()
+				if strings.HasPrefix(line, "Device: ") {
+					device = strings.TrimSpace(strings.TrimPrefix(line, "Device: "))
+					return device, nil
+				}
+				if line == "" { // End of section
+					break
+				}
+			}
+		}
 	}
-	cmd := exec.Command("networksetup", "-removepreferredwirelessnetwork", b.WifiInterface, ssid)
-	return runOnly(cmd)
+	return "", fmt.Errorf("could not find Wi-Fi device: %w", wifi.ErrNotFound)
 }

@@ -26,6 +26,13 @@ type Connection struct {
 	AutoConnect   bool
 }
 
+// UpdateOptions specifies the properties to update for a connection.
+// A nil value for a field means that the property should not be changed.
+type UpdateOptions struct {
+	Password    *string
+	AutoConnect *bool
+}
+
 // Backend defines the interface for managing network connections.
 type Backend interface {
 	// BuildNetworkList scans (if shouldScan is true) and returns all networks.
@@ -38,10 +45,8 @@ type Backend interface {
 	JoinNetwork(ssid string, password string, security SecurityType, isHidden bool) error
 	// GetSecrets retrieves the password for a known connection.
 	GetSecrets(ssid string) (string, error)
-	// UpdateSecret changes the password for a known connection.
-	UpdateSecret(ssid string, newPassword string) error
-	// SetAutoConnect sets the autoconnect property for a known connection.
-	SetAutoConnect(ssid string, autoConnect bool) error
+	// UpdateConnection updates a known connection.
+	UpdateConnection(ssid string, opts UpdateOptions) error
 
 	// IsWirelessEnabled checks if the wireless radio is enabled.
 	IsWirelessEnabled() (bool, error)
