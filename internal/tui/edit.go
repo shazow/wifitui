@@ -133,9 +133,11 @@ func NewEditModel(item *connectionItem) *EditModel {
 					newPassword := m.passwordAdapter.Model.Value()
 					autoConnect := m.autoConnectCheckbox.Checked()
 					return updateConnectionMsg{
-						item:        m.selectedItem,
-						newPassword: &newPassword,
-						autoConnect: &autoConnect,
+						item: m.selectedItem,
+						UpdateOptions: wifi.UpdateOptions{
+							Password:    &newPassword,
+							AutoConnect: &autoConnect,
+						},
 					}
 				}
 			case 2: // Forget

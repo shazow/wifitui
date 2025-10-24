@@ -45,9 +45,8 @@ func NewModel(b wifi.Backend) (*model, error) {
 
 type radioEnabledMsg struct{}
 type updateConnectionMsg struct {
-	item        connectionItem
-	newPassword *string
-	autoConnect *bool
+	item connectionItem
+	wifi.UpdateOptions
 }
 
 // Init is the first command that is run when the program starts
@@ -154,14 +153,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		m.statusMessage = fmt.Sprintf("Saving settings for %s...", msg.item.SSID)
 		return m, func() tea.Msg {
-			opts := wifi.UpdateOptions{}
-			if msg.newPassword != nil {
-				opts.Password = msg.newPassword
-			}
-			if msg.autoConnect != nil {
-				opts.AutoConnect = msg.autoConnect
-			}
-			err := m.backend.UpdateConnection(msg.item.SSID, opts)
+			err := m.backend.UpdateConnection(msg.item.SSID, msg.UpdateOptions)
 			if err != nil {
 				return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
 			}

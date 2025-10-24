@@ -267,25 +267,3 @@ func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
 
 	return nil
 }
-
-func findWifiDevice(hardwarePorts string) (string, error) {
-	scanner := bufio.NewScanner(strings.NewReader(hardwarePorts))
-	var device string
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "Hardware Port: Wi-Fi") || strings.HasPrefix(line, "Hardware Port: AirPort") {
-			// Found the Wi-Fi section, now find the device
-			for scanner.Scan() {
-				line = scanner.Text()
-				if strings.HasPrefix(line, "Device: ") {
-					device = strings.TrimSpace(strings.TrimPrefix(line, "Device: "))
-					return device, nil
-				}
-				if line == "" { // End of section
-					break
-				}
-			}
-		}
-	}
-	return "", fmt.Errorf("could not find Wi-Fi device: %w", wifi.ErrNotFound)
-}
