@@ -448,7 +448,7 @@ func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
 	}
 }
 
-func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
+func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
@@ -459,10 +459,20 @@ func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
 		return err
 	}
 
-	if _, ok := settings["802-11-wireless-security"]; !ok {
-		settings["802-11-wireless-security"] = make(map[string]interface{})
+	if opts.Password != nil {
+		if _, ok := settings["802-11-wireless-security"]; !ok {
+			settings["802-11-wireless-security"] = make(map[string]interface{})
+		}
+		settings["802-11-wireless-security"]["psk"] = *opts.Password
 	}
-	settings["802-11-wireless-security"]["psk"] = newPassword
+
+	if opts.AutoConnect != nil {
+		if _, ok := settings["connection"]; !ok {
+			// This should not happen for a valid connection
+			settings["connection"] = make(map[string]interface{})
+		}
+		settings["connection"]["autoconnect"] = *opts.AutoConnect
+	}
 
 	applyUpdateWorkaround(settings)
 	return conn.Update(settings)
@@ -530,25 +540,4 @@ func (b *Backend) SetWireless(enabled bool) error {
 			return fmt.Errorf("timed out waiting for wireless state change to %v, current state: %v", expectedState, s)
 		}
 	}
-}
-
-func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
-	conn, ok := b.Connections[ssid]
-	if !ok {
-		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
-	}
-
-	settings, err := conn.GetSettings()
-	if err != nil {
-		return err
-	}
-
-	if _, ok := settings["connection"]; !ok {
-		// This should not happen for a valid connection
-		settings["connection"] = make(map[string]interface{})
-	}
-	settings["connection"]["autoconnect"] = autoConnect
-
-	applyUpdateWorkaround(settings)
-	return conn.Update(settings)
 }

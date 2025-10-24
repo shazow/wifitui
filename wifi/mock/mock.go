@@ -25,7 +25,7 @@ type MockBackend struct {
 	ForgetError               error
 	JoinError                 error
 	GetSecretsError           error
-	UpdateSecretError         error
+	UpdateConnectionError     error
 	ConnectSleep              time.Duration
 	WirelessEnabled           bool
 	IsWirelessEnabledError    error
@@ -287,29 +287,23 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 	return "", fmt.Errorf("no secrets for %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func (m *MockBackend) UpdateSecret(ssid string, newPassword string) error {
-	if m.UpdateSecretError != nil {
-		return m.UpdateSecretError
+func (m *MockBackend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+	if m.UpdateConnectionError != nil {
+		return m.UpdateConnectionError
 	}
 	// "Act on first match" logic for ambiguity.
 	for i, c := range m.KnownConnections {
 		if c.SSID == ssid {
-			m.KnownConnections[i].Secret = newPassword
+			if opts.Password != nil {
+				m.KnownConnections[i].Secret = *opts.Password
+			}
+			if opts.AutoConnect != nil {
+				m.KnownConnections[i].AutoConnect = *opts.AutoConnect
+			}
 			return nil
 		}
 	}
-	return fmt.Errorf("cannot update secret for unknown network %s: %w", ssid, wifi.ErrNotFound)
-}
-
-func (m *MockBackend) SetAutoConnect(ssid string, autoConnect bool) error {
-	// "Act on first match" logic for ambiguity.
-	for i, c := range m.KnownConnections {
-		if c.SSID == ssid {
-			m.KnownConnections[i].AutoConnect = autoConnect
-			return nil
-		}
-	}
-	return fmt.Errorf("cannot set autoconnect for unknown network %s: %w", ssid, wifi.ErrNotFound)
+	return fmt.Errorf("cannot update connection for unknown network %s: %w", ssid, wifi.ErrNotFound)
 }
 
 func (m *MockBackend) IsWirelessEnabled() (bool, error) {

@@ -250,35 +250,33 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 	return "", fmt.Errorf("getting secrets is not supported by the iwd backend: %w", wifi.ErrNotSupported)
 }
 
-func (b *Backend) UpdateSecret(ssid string, newPassword string) error {
-	// To "update" a secret, we have to forget the network and then re-join it.
-	err := b.ForgetNetwork(ssid)
-	if err != nil {
-		return fmt.Errorf("failed to forget network before updating secret: %w", wifi.ErrOperationFailed)
+func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+	if opts.Password != nil {
+		// IWD doesn't support updating secrets directly. To "update" a secret,
+		// we would have to forget the network and then re-join it, but that
+		// requires the network to be visible.
+		return fmt.Errorf("updating secrets is not supported by the iwd backend: %w", wifi.ErrNotSupported)
 	}
 
-	// We can't re-connect without a visible AP.
-	// This is a limitation of this approach.
-	return fmt.Errorf("updating secrets requires the network to be visible; try connecting to it again manually: %w", wifi.ErrNotSupported)
-}
+	if opts.AutoConnect != nil {
+		conn, err := dbus.SystemBus()
+		if err != nil {
+			return err
+		}
+		path, err := b.findKnownNetworkPath(conn, ssid)
+		if err != nil {
+			return err
+		}
+		if path == "" {
+			return fmt.Errorf("cannot set autoconnect: network %s is not known: %w", ssid, wifi.ErrNotFound)
+		}
 
-
-func (b *Backend) SetAutoConnect(ssid string, autoConnect bool) error {
-	conn, err := dbus.SystemBus()
-	if err != nil {
-		return err
-	}
-	path, err := b.findKnownNetworkPath(conn, ssid)
-	if err != nil {
-		return err
-	}
-	if path == "" {
-		return fmt.Errorf("cannot set autoconnect: network %s is not known: %w", ssid, wifi.ErrNotFound)
+		obj := conn.Object(iwdDest, path)
+		variant := dbus.MakeVariant(*opts.AutoConnect)
+		return obj.Call("org.freedesktop.DBus.Properties.Set", 0, iwdKnownNetworkIface, "AutoConnect", variant).Err
 	}
 
-	obj := conn.Object(iwdDest, path)
-	variant := dbus.MakeVariant(autoConnect)
-	return obj.Call("org.freedesktop.DBus.Properties.Set", 0, iwdKnownNetworkIface, "AutoConnect", variant).Err
+	return nil
 }
 
 func (b *Backend) IsWirelessEnabled() (bool, error) {

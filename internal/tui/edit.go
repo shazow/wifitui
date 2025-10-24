@@ -122,17 +122,22 @@ func NewEditModel(item *connectionItem) *EditModel {
 			switch index {
 			case 0: // Connect
 				return func() tea.Msg {
+					autoConnect := m.autoConnectCheckbox.Checked()
 					return connectMsg{
 						item:        m.selectedItem,
-						autoConnect: m.autoConnectCheckbox.Checked(),
+						autoConnect: autoConnect,
 					}
 				}
 			case 1: // Save
 				return func() tea.Msg {
-					return updateSecretMsg{
-						item:        m.selectedItem,
-						newPassword: m.passwordAdapter.Model.Value(),
-						autoConnect: m.autoConnectCheckbox.Checked(),
+					newPassword := m.passwordAdapter.Model.Value()
+					autoConnect := m.autoConnectCheckbox.Checked()
+					return updateConnectionMsg{
+						item: m.selectedItem,
+						UpdateOptions: wifi.UpdateOptions{
+							Password:    &newPassword,
+							AutoConnect: &autoConnect,
+						},
 					}
 				}
 			case 2: // Forget

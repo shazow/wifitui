@@ -44,6 +44,10 @@ func NewModel(b wifi.Backend) (*model, error) {
 }
 
 type radioEnabledMsg struct{}
+type updateConnectionMsg struct {
+	item connectionItem
+	wifi.UpdateOptions
+}
 
 // Init is the first command that is run when the program starts
 func (m *model) Init() tea.Cmd {
@@ -110,7 +114,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var batch []tea.Cmd
 		if msg.autoConnect != msg.item.AutoConnect {
 			batch = append(batch, func() tea.Msg {
-				err := m.backend.SetAutoConnect(msg.item.SSID, msg.autoConnect)
+				err := m.backend.UpdateConnection(msg.item.SSID, wifi.UpdateOptions{AutoConnect: &msg.autoConnect})
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
 				}
@@ -145,27 +149,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return secretsLoadedMsg{item: msg.item, secret: secret}
 		}
-	case updateSecretMsg:
+	case updateConnectionMsg:
 		m.loading = true
 		m.statusMessage = fmt.Sprintf("Saving settings for %s...", msg.item.SSID)
-		var batch []tea.Cmd
-		batch = append(batch, func() tea.Msg {
-			err := m.backend.UpdateSecret(msg.item.SSID, msg.newPassword)
+		return m, func() tea.Msg {
+			err := m.backend.UpdateConnection(msg.item.SSID, msg.UpdateOptions)
 			if err != nil {
 				return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
 			}
 			return connectionSavedMsg{}
-		})
-		if msg.autoConnect != msg.item.AutoConnect {
-			batch = append(batch, func() tea.Msg {
-				err := m.backend.SetAutoConnect(msg.item.SSID, msg.autoConnect)
-				if err != nil {
-					return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
-				}
-				return connectionSavedMsg{}
-			})
 		}
-		return m, tea.Batch(batch...)
 	case forgetNetworkMsg:
 		m.loading = true
 		m.statusMessage = fmt.Sprintf("Forgetting '%s'...", msg.item.SSID)

@@ -6,7 +6,6 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
-
 // Helper to find a connection in a slice
 func findConnection(connections []wifi.Connection, ssid string) *wifi.Connection {
 	for i := range connections {
@@ -171,15 +170,16 @@ func TestGetSecretsForDuplicateSSID(t *testing.T) {
 	}
 }
 
-func TestUpdateSecretForDuplicateSSID(t *testing.T) {
+func TestUpdateConnectionForDuplicateSSID(t *testing.T) {
 	b, _ := New()
 	mockBackend := b.(*MockBackend)
 	ssid := "HideYoKidsHideYoWiFi"
 	newPassword := "new-password"
 
-	err := b.UpdateSecret(ssid, newPassword)
+	opts := wifi.UpdateOptions{Password: &newPassword}
+	err := b.UpdateConnection(ssid, opts)
 	if err != nil {
-		t.Fatalf("UpdateSecret() failed: %v", err)
+		t.Fatalf("UpdateConnection() failed: %v", err)
 	}
 
 	// Verify that only the first entry was updated
@@ -209,14 +209,16 @@ func TestGetSecretsForKnownNetworkWithoutSecret(t *testing.T) {
 	}
 }
 
-func TestSetAutoConnect(t *testing.T) {
+func TestUpdateConnection(t *testing.T) {
 	b, err := New()
 	if err != nil {
 		t.Fatalf("failed to create mock backend: %v", err)
 	}
 
 	ssid := "Password is password"
-	err = b.SetAutoConnect(ssid, false)
+	autoConnect := false
+	opts := wifi.UpdateOptions{AutoConnect: &autoConnect}
+	err = b.UpdateConnection(ssid, opts)
 	if err != nil {
 		t.Fatalf("failed to set autoconnect to false: %v", err)
 	}
@@ -235,7 +237,9 @@ func TestSetAutoConnect(t *testing.T) {
 		t.Errorf("expected autoconnect to be false, but it is true")
 	}
 
-	err = b.SetAutoConnect(ssid, true)
+	autoConnect = true
+	opts = wifi.UpdateOptions{AutoConnect: &autoConnect}
+	err = b.UpdateConnection(ssid, opts)
 	if err != nil {
 		t.Fatalf("failed to set autoconnect to true: %v", err)
 	}
@@ -252,6 +256,21 @@ func TestSetAutoConnect(t *testing.T) {
 
 	if !conn.AutoConnect {
 		t.Errorf("expected autoconnect to be true, but it is false")
+	}
+
+	newPassword := "new-password"
+	opts = wifi.UpdateOptions{Password: &newPassword}
+	err = b.UpdateConnection(ssid, opts)
+	if err != nil {
+		t.Fatalf("failed to update password: %v", err)
+	}
+
+	secret, err := b.GetSecrets(ssid)
+	if err != nil {
+		t.Fatalf("failed to get secrets: %v", err)
+	}
+	if secret != newPassword {
+		t.Errorf("expected secret to be '%s', but got '%s'", newPassword, secret)
 	}
 }
 
@@ -325,7 +344,7 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 	}
 	conn = findConnection(networks, ssid)
 	if conn == nil {
-		t.Fatalf("did not find network %s in list after second join", ssid)
+		t.Fatalf("did not find network %s in in list after second join", ssid)
 	}
 	if !conn.IsKnown {
 		t.Errorf("expected network %s to still be known in list, but it was not", ssid)
