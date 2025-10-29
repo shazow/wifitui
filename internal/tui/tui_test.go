@@ -67,8 +67,9 @@ func TestTuiModel_EnableRadioSwitchesView(t *testing.T) {
 		t.Fatalf("View does not contain 'Wi-Fi is disabled.' in\n%s", view)
 	}
 
-	// Now, enable the radio. This returns a batch command.
-	updatedModel, cmd := m.Update(radioEnabledMsg{})
+	// Now, pop the view. This is what happens when the radio is enabled.
+	// The OnLeave hook should take care of the rest.
+	updatedModel, cmd := m.Update(popViewMsg{})
 	m = updatedModel.(*model)
 
 	// The batch command contains a command to start the scanner and a command to do an initial scan.

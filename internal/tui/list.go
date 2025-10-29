@@ -123,6 +123,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 type ListModel struct {
 	list         list.Model
 	isForgetting bool
+	scanner      *ScanSchedule
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -135,12 +136,17 @@ func (m *ListModel) IsConsumingInput() bool {
 }
 
 func (m *ListModel) OnEnter() tea.Cmd {
-	return func() tea.Msg { return scanMsg{} }
+	return tea.Batch(
+		m.scanner.SetSchedule(ScanFast),
+		// Start a scan right away
+		func() tea.Msg { return scanMsg{} },
+	)
 }
 
 func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
 	m := &ListModel{}
+	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -241,6 +247,17 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			return editModel, nil
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
+		case "S":
+			enabled, cmd := m.scanner.Toggle()
+			var msg string
+			if enabled {
+				msg = "Active Scan enabled"
+			} else {
+				msg = "Active Scan disabled"
+			}
+			return m, tea.Batch(cmd, func() tea.Msg {
+				return statusMsg{message: msg}
+			})
 		case "f":
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
@@ -286,12 +303,13 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.isForgetting = false
 	}
 
+	cmds = append(cmds, m.scanner.Update(msg))
 	return m, tea.Batch(cmds...)
 }
 
 func (m *ListModel) OnLeave() tea.Cmd {
 	m.isForgetting = false
-	return nil
+	return m.scanner.SetSchedule(ScanOff)
 }
 
 func (m *ListModel) View() string {

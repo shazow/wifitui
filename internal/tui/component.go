@@ -34,6 +34,10 @@ type Enterable interface {
 // popViewMsg is a message to pop the current view from the stack.
 type popViewMsg struct{}
 
+type statusMsg struct {
+	message string
+}
+
 // connectionItem holds the information for a single Wi-Fi connection in our list
 type connectionItem struct {
 	wifi.Connection

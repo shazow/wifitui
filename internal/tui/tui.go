@@ -17,7 +17,6 @@ type model struct {
 	stack *ComponentStack
 
 	spinner       spinner.Model
-	scanner       *ScanSchedule
 	backend       wifi.Backend
 	loading       bool
 	statusMessage string
@@ -39,7 +38,6 @@ func NewModel(b wifi.Backend) (*model, error) {
 		loading:       true,
 		statusMessage: "Loading connections...",
 	}
-	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	return &m, nil
 }
 
@@ -57,24 +55,7 @@ func (m *model) Init() tea.Cmd {
 		cmds = append(cmds, enterable.OnEnter())
 	}
 
-	cmds = append(cmds, m.spinner.Tick, func() tea.Msg {
-		// Check if the wireless radio is enabled.
-		// If so, start the scanner.
-		enabled, err := m.backend.IsWirelessEnabled()
-		if err != nil {
-			return errorMsg{err}
-		}
-		if enabled {
-			return radioEnabledMsg{}
-		}
-
-		connections, err := m.backend.BuildNetworkList(false)
-		if err != nil {
-			return errorMsg{err}
-		}
-		wifi.SortConnections(connections)
-		return connectionsLoadedMsg(connections)
-	})
+	cmds = append(cmds, m.spinner.Tick)
 	return tea.Batch(cmds...)
 }
 
@@ -84,22 +65,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
+	case statusMsg:
+		m.statusMessage = msg.message
+		return m, nil
 	case popViewMsg:
 		cmd := m.stack.Pop()
 		return m, cmd
 	case radioEnabledMsg:
 		cmd := m.stack.Pop() // Pop the disabled view
-		return m, tea.Batch(
-			cmd,
-			m.scanner.SetSchedule(ScanFast),
-			func() tea.Msg { return scanMsg{} },
-		)
+		return m, cmd
 	case errorMsg:
 		m.loading = false
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
-			cmd := m.scanner.SetSchedule(ScanOff)
 			disabledModel := NewWirelessDisabledModel(m.backend)
-			cmd = tea.Batch(cmd, m.stack.Push(disabledModel))
+			cmd := m.stack.Push(disabledModel)
 			return m, cmd
 		}
 		errorModel := NewErrorModel(msg.err)
@@ -188,12 +167,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "S":
-			enabled, cmd := m.scanner.Toggle()
-			if !enabled {
-				m.statusMessage = "Active Scan disabled"
-			}
-			return m, cmd
 		case "r":
 			// This is a global keybinding to toggle the radio.
 			// We only handle it here if the radio is currently enabled.
@@ -207,32 +180,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 
-			cmd := m.scanner.SetSchedule(ScanOff)
 			m.loading = true
 			m.statusMessage = "Disabling Wi-Fi radio..."
-			return m, tea.Batch(cmd, func() tea.Msg {
+			return m, func() tea.Msg {
 				err := m.backend.SetWireless(false)
 				if err != nil {
 					return errorMsg{err}
 				}
 				// By returning this error, we trigger the main loop to push the WirelessDisabledModel.
 				return errorMsg{wifi.ErrWirelessDisabled}
-			})
+			}
 		}
 	// Clear loading status on some messages
 	case connectionsLoadedMsg, secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
 	case scanFinishedMsg:
-		var scheduleCmd tea.Cmd
-		if len(msg) > 0 {
-			scheduleCmd = m.scanner.SetSchedule(ScanSlow)
-		} else {
-			scheduleCmd = m.scanner.SetSchedule(ScanFast)
-		}
 		m.loading = false
 		m.statusMessage = ""
-		cmds = append(cmds, scheduleCmd)
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = "Successfully updated. Refreshing list..."
@@ -249,9 +214,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Delegate to the component on the stack
 	cmds = append(cmds, m.stack.Update(msg))
-
-	// Scanner update
-	cmds = append(cmds, m.scanner.Update(msg))
 
 	// Spinner update
 	var spinnerCmd tea.Cmd
