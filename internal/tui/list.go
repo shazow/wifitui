@@ -134,6 +134,10 @@ func (m *ListModel) IsConsumingInput() bool {
 	return false
 }
 
+func (m *ListModel) OnEnter() tea.Cmd {
+	return func() tea.Msg { return scanMsg{} }
+}
+
 func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
 	m := &ListModel{}
@@ -283,6 +287,11 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	}
 
 	return m, tea.Batch(cmds...)
+}
+
+func (m *ListModel) OnLeave() tea.Cmd {
+	m.isForgetting = false
+	return nil
 }
 
 func (m *ListModel) View() string {

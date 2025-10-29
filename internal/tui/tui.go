@@ -51,7 +51,13 @@ type updateConnectionMsg struct {
 
 // Init is the first command that is run when the program starts
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, func() tea.Msg {
+	var cmds []tea.Cmd
+	// Call OnEnter on the initial component
+	if enterable, ok := m.stack.components[0].(Enterable); ok {
+		cmds = append(cmds, enterable.OnEnter())
+	}
+
+	cmds = append(cmds, m.spinner.Tick, func() tea.Msg {
 		// Check if the wireless radio is enabled.
 		// If so, start the scanner.
 		enabled, err := m.backend.IsWirelessEnabled()
@@ -69,6 +75,7 @@ func (m *model) Init() tea.Cmd {
 		wifi.SortConnections(connections)
 		return connectionsLoadedMsg(connections)
 	})
+	return tea.Batch(cmds...)
 }
 
 // Update handles all incoming messages and updates the model accordingly
@@ -78,11 +85,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
 	case popViewMsg:
-		m.stack.Pop()
-		return m, nil
+		cmd := m.stack.Pop()
+		return m, cmd
 	case radioEnabledMsg:
-		m.stack.Pop() // Pop the disabled view
+		cmd := m.stack.Pop() // Pop the disabled view
 		return m, tea.Batch(
+			cmd,
 			m.scanner.SetSchedule(ScanFast),
 			func() tea.Msg { return scanMsg{} },
 		)
@@ -91,12 +99,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
 			cmd := m.scanner.SetSchedule(ScanOff)
 			disabledModel := NewWirelessDisabledModel(m.backend)
-			m.stack.Push(disabledModel)
+			cmd = tea.Batch(cmd, m.stack.Push(disabledModel))
 			return m, cmd
 		}
 		errorModel := NewErrorModel(msg.err)
-		m.stack.Push(errorModel)
-		return m, nil
+		cmd := m.stack.Push(errorModel)
+		return m, cmd
 	case scanMsg:
 		m.loading = true
 		m.statusMessage = "Scanning for networks..."
