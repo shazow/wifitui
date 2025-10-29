@@ -285,6 +285,11 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func (m *ListModel) OnLeave() tea.Cmd {
+	m.isForgetting = false
+	return nil
+}
+
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)

@@ -19,6 +19,12 @@ type Component interface {
 	IsConsumingInput() bool
 }
 
+// Leavable is an optional interface for components that need to perform
+// an action when they are popped from the stack.
+type Leavable interface {
+	OnLeave() tea.Cmd
+}
+
 // popViewMsg is a message to pop the current view from the stack.
 type popViewMsg struct{}
 

@@ -78,11 +78,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
 	case popViewMsg:
-		m.stack.Pop()
-		return m, nil
+		cmd := m.stack.Pop()
+		return m, cmd
 	case radioEnabledMsg:
-		m.stack.Pop() // Pop the disabled view
+		cmd := m.stack.Pop() // Pop the disabled view
 		return m, tea.Batch(
+			cmd,
 			m.scanner.SetSchedule(ScanFast),
 			func() tea.Msg { return scanMsg{} },
 		)
