@@ -143,11 +143,10 @@ func (m *ListModel) OnEnter() tea.Cmd {
 	)
 }
 
-func NewListModel(scanner *ScanSchedule) *ListModel {
+func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{
-		scanner: scanner,
-	}
+	m := &ListModel{}
+	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -157,7 +156,6 @@ func NewListModel(scanner *ScanSchedule) *ListModel {
 	l.SetShowHelp(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
-			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
 		}
@@ -167,7 +165,6 @@ func NewListModel(scanner *ScanSchedule) *ListModel {
 	l.AdditionalFullHelpKeys = func() []key.Binding {
 		return append([]key.Binding{
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
-			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "active scan")),
 		}, l.AdditionalShortHelpKeys()...)
 	}
 
@@ -291,6 +288,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.isForgetting = false
 	}
 
+	cmds = append(cmds, m.scanner.Update(msg))
 	return m, tea.Batch(cmds...)
 }
 

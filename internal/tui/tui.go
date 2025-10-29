@@ -17,7 +17,6 @@ type model struct {
 	stack *ComponentStack
 
 	spinner       spinner.Model
-	scanner       *ScanSchedule
 	backend       wifi.Backend
 	loading       bool
 	statusMessage string
@@ -30,15 +29,15 @@ func NewModel(b wifi.Backend) (*model, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
+	listModel := NewListModel()
+
 	m := model{
+		stack:         NewComponentStack(listModel),
 		spinner:       s,
 		backend:       b,
 		loading:       true,
 		statusMessage: "Loading connections...",
 	}
-	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
-	listModel := NewListModel(m.scanner)
-	m.stack = NewComponentStack(listModel)
 	return &m, nil
 }
 
@@ -196,32 +195,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 
-			cmd := m.scanner.SetSchedule(ScanOff)
 			m.loading = true
 			m.statusMessage = "Disabling Wi-Fi radio..."
-			return m, tea.Batch(cmd, func() tea.Msg {
+			return m, func() tea.Msg {
 				err := m.backend.SetWireless(false)
 				if err != nil {
 					return errorMsg{err}
 				}
 				// By returning this error, we trigger the main loop to push the WirelessDisabledModel.
 				return errorMsg{wifi.ErrWirelessDisabled}
-			})
+			}
 		}
 	// Clear loading status on some messages
 	case connectionsLoadedMsg, secretsLoadedMsg:
 		m.loading = false
 		m.statusMessage = ""
 	case scanFinishedMsg:
-		var scheduleCmd tea.Cmd
-		if len(msg) > 0 {
-			scheduleCmd = m.scanner.SetSchedule(ScanSlow)
-		} else {
-			scheduleCmd = m.scanner.SetSchedule(ScanFast)
-		}
 		m.loading = false
 		m.statusMessage = ""
-		cmds = append(cmds, scheduleCmd)
 	case connectionSavedMsg:
 		m.loading = true // Show loading while we refresh
 		m.statusMessage = "Successfully updated. Refreshing list..."
@@ -238,9 +229,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Delegate to the component on the stack
 	cmds = append(cmds, m.stack.Update(msg))
-
-	// Scanner update
-	cmds = append(cmds, m.scanner.Update(msg))
 
 	// Spinner update
 	var spinnerCmd tea.Cmd
