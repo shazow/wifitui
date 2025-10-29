@@ -156,6 +156,7 @@ func NewListModel() *ListModel {
 	l.SetShowHelp(false)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
+			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
 			key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
 		}
@@ -165,6 +166,7 @@ func NewListModel() *ListModel {
 	l.AdditionalFullHelpKeys = func() []key.Binding {
 		return append([]key.Binding{
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
+			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "active scan")),
 		}, l.AdditionalShortHelpKeys()...)
 	}
 
@@ -243,6 +245,11 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		case "n":
 			editModel := NewEditModel(nil)
 			return editModel, nil
+		case "s":
+			return m, func() tea.Msg { return scanMsg{} }
+		case "S":
+			_, cmd := m.scanner.Toggle()
+			return m, cmd
 		case "f":
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
