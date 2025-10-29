@@ -55,25 +55,7 @@ func (m *model) Init() tea.Cmd {
 		cmds = append(cmds, enterable.OnEnter())
 	}
 
-	cmds = append(cmds, m.spinner.Tick, func() tea.Msg {
-		// Check if the wireless radio is enabled.
-		// If so, start the scanner.
-		enabled, err := m.backend.IsWirelessEnabled()
-		if err != nil {
-			return errorMsg{err}
-		}
-		if enabled {
-			// This will be handled by the list view's OnEnter
-			return nil
-		}
-
-		connections, err := m.backend.BuildNetworkList(false)
-		if err != nil {
-			return errorMsg{err}
-		}
-		wifi.SortConnections(connections)
-		return connectionsLoadedMsg(connections)
-	})
+	cmds = append(cmds, m.spinner.Tick)
 	return tea.Batch(cmds...)
 }
 
