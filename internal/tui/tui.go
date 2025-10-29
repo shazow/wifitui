@@ -65,6 +65,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
+	case statusMsg:
+		m.statusMessage = msg.message
+		return m, nil
 	case popViewMsg:
 		cmd := m.stack.Pop()
 		return m, cmd

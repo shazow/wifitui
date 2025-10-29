@@ -248,8 +248,16 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
 		case "S":
-			_, cmd := m.scanner.Toggle()
-			return m, cmd
+			enabled, cmd := m.scanner.Toggle()
+			var msg string
+			if enabled {
+				msg = "Active Scan enabled"
+			} else {
+				msg = "Active Scan disabled"
+			}
+			return m, tea.Batch(cmd, func() tea.Msg {
+				return statusMsg{message: msg}
+			})
 		case "f":
 			if len(m.list.Items()) > 0 {
 				selected, ok := m.list.SelectedItem().(connectionItem)
