@@ -229,11 +229,16 @@ func (m model) View() string {
 
 	s.WriteString(m.stack.View())
 
+	// Reserve the status message line.
+	s.WriteString("\n\n")
+
+	var statusLine string
 	if m.loading {
-		s.WriteString(fmt.Sprintf("\n\n%s %s", m.spinner.View(), lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
+		statusLine = fmt.Sprintf("%s %s", m.spinner.View(), lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage))
 	} else if m.statusMessage != "" {
-		s.WriteString(fmt.Sprintf("\n\n%s", lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)))
+		statusLine = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage)
 	}
+	s.WriteString(statusLine)
 
 	return s.String()
 }
