@@ -92,12 +92,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
 			cmd := m.scanner.SetSchedule(ScanOff)
 			disabledModel := NewWirelessDisabledModel(m.backend)
-			m.stack.Push(disabledModel)
+			cmd = tea.Batch(cmd, m.stack.Push(disabledModel))
 			return m, cmd
 		}
 		errorModel := NewErrorModel(msg.err)
-		m.stack.Push(errorModel)
-		return m, nil
+		cmd := m.stack.Push(errorModel)
+		return m, cmd
 	case scanMsg:
 		m.loading = true
 		m.statusMessage = "Scanning for networks..."

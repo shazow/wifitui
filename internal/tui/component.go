@@ -25,6 +25,12 @@ type Leavable interface {
 	OnLeave() tea.Cmd
 }
 
+// Enterable is an optional interface for components that need to perform
+// an action when they are pushed onto the stack.
+type Enterable interface {
+	OnEnter() tea.Cmd
+}
+
 // popViewMsg is a message to pop the current view from the stack.
 type popViewMsg struct{}
 

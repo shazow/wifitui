@@ -134,6 +134,10 @@ func (m *ListModel) IsConsumingInput() bool {
 	return false
 }
 
+func (m *ListModel) OnEnter() tea.Cmd {
+	return func() tea.Msg { return scanMsg{} }
+}
+
 func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
 	m := &ListModel{}
