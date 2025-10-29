@@ -16,11 +16,20 @@ func NewComponentStack(initial ...Component) *ComponentStack {
 
 // Push adds a component to the top of the stack.
 func (s *ComponentStack) Push(c Component) tea.Cmd {
+	var cmds []tea.Cmd
+	// Call OnLeave on the current top component
+	if len(s.components) > 0 {
+		top := s.components[len(s.components)-1]
+		if leavable, ok := top.(Leavable); ok {
+			cmds = append(cmds, leavable.OnLeave())
+		}
+	}
+
 	s.components = append(s.components, c)
 	if enterable, ok := c.(Enterable); ok {
-		return enterable.OnEnter()
+		cmds = append(cmds, enterable.OnEnter())
 	}
-	return nil
+	return tea.Batch(cmds...)
 }
 
 // Pop removes the top component if there is more than one component on the
@@ -62,14 +71,7 @@ func (s *ComponentStack) Update(msg tea.Msg) tea.Cmd {
 	top := s.components[len(s.components)-1]
 	newComp, cmd := top.Update(msg)
 	if newComp != top {
-		var cmds []tea.Cmd
-		if leavable, ok := top.(Leavable); ok {
-			cmds = append(cmds, leavable.OnLeave())
-		}
-		// Push handles OnEnter
-		cmds = append(cmds, s.Push(newComp))
-		cmds = append(cmds, cmd)
-		return tea.Batch(cmds...)
+		return tea.Batch(cmd, s.Push(newComp))
 	}
 	return cmd
 }

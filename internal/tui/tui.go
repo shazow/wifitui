@@ -51,7 +51,13 @@ type updateConnectionMsg struct {
 
 // Init is the first command that is run when the program starts
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, func() tea.Msg {
+	var cmds []tea.Cmd
+	// Call OnEnter on the initial component
+	if enterable, ok := m.stack.components[0].(Enterable); ok {
+		cmds = append(cmds, enterable.OnEnter())
+	}
+
+	cmds = append(cmds, m.spinner.Tick, func() tea.Msg {
 		// Check if the wireless radio is enabled.
 		// If so, start the scanner.
 		enabled, err := m.backend.IsWirelessEnabled()
@@ -69,6 +75,7 @@ func (m *model) Init() tea.Cmd {
 		wifi.SortConnections(connections)
 		return connectionsLoadedMsg(connections)
 	})
+	return tea.Batch(cmds...)
 }
 
 // Update handles all incoming messages and updates the model accordingly
