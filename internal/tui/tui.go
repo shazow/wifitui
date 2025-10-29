@@ -30,16 +30,15 @@ func NewModel(b wifi.Backend) (*model, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
-	listModel := NewListModel()
-
 	m := model{
-		stack:         NewComponentStack(listModel),
 		spinner:       s,
 		backend:       b,
 		loading:       true,
 		statusMessage: "Loading connections...",
 	}
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
+	listModel := NewListModel(m.scanner)
+	m.stack = NewComponentStack(listModel)
 	return &m, nil
 }
 
@@ -65,7 +64,8 @@ func (m *model) Init() tea.Cmd {
 			return errorMsg{err}
 		}
 		if enabled {
-			return radioEnabledMsg{}
+			// This will be handled by the list view's OnEnter
+			return nil
 		}
 
 		connections, err := m.backend.BuildNetworkList(false)
@@ -89,17 +89,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case radioEnabledMsg:
 		cmd := m.stack.Pop() // Pop the disabled view
-		return m, tea.Batch(
-			cmd,
-			m.scanner.SetSchedule(ScanFast),
-			func() tea.Msg { return scanMsg{} },
-		)
+		return m, cmd
 	case errorMsg:
 		m.loading = false
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
-			cmd := m.scanner.SetSchedule(ScanOff)
 			disabledModel := NewWirelessDisabledModel(m.backend)
-			cmd = tea.Batch(cmd, m.stack.Push(disabledModel))
+			cmd := m.stack.Push(disabledModel)
 			return m, cmd
 		}
 		errorModel := NewErrorModel(msg.err)
@@ -188,12 +183,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch msg.String() {
-		case "S":
-			enabled, cmd := m.scanner.Toggle()
-			if !enabled {
-				m.statusMessage = "Active Scan disabled"
-			}
-			return m, cmd
 		case "r":
 			// This is a global keybinding to toggle the radio.
 			// We only handle it here if the radio is currently enabled.
