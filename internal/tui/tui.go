@@ -20,7 +20,6 @@ type model struct {
 	backend       wifi.Backend
 	loading       bool
 	statusMessage string
-	width, height int
 }
 
 // NewModel creates the starting state of our application
@@ -32,11 +31,9 @@ func NewModel(b wifi.Backend) (*model, error) {
 	listModel := NewListModel()
 
 	m := model{
-		stack:         NewComponentStack(listModel),
-		spinner:       s,
-		backend:       b,
-		loading:       true,
-		statusMessage: "Loading connections...",
+		stack:   NewComponentStack(listModel),
+		spinner: s,
+		backend: b,
 	}
 	return &m, nil
 }
@@ -87,6 +84,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.stack.Push(errorModel)
 		return m, cmd
 	case scanMsg:
+		if m.loading {
+			// Skip additional scans while we're still loading
+			return m, nil
+		}
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: "Scanning for networks...", loading: true} },
 			func() tea.Msg {
