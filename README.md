@@ -24,7 +24,7 @@ More things I'd like to do:
 
 ## Getting Started
 
-Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not maintained in package managers yet](https://github.com/shazow/wifitui/issues/48)), here's a handy script for convenience:
+Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not in all package managers yet](https://github.com/shazow/wifitui/issues/48)), here's a handy script for convenience:
 
 ```shell
 # Fetch the latest release version
@@ -32,14 +32,19 @@ TAG=$(curl -s https://api.github.com/repos/shazow/wifitui/releases/latest | grep
 OS="linux-$(uname -m)" # x86_64 or arm64
 LATEST_RELEASE="https://github.com/shazow/wifitui/releases/download/${TAG}/wifitui-${TAG:1}-${OS}"
 
-# Arch Linux
-sudo pacman -U "${LATEST_RELEASE}.pkg.tar.zst"
+# Just the binary (any distro)
+wget -q -O- "${LATEST_RELEASE}.tar.gz" | tar xzv
 
 # Debian
 sudo apt install "${LATEST_RELEASE}.deb"
 
-# Just the binary (any distro)
-wget -q -O- "${LATEST_RELEASE}.tar.gz" | tar xzv
+# Arch Linux (from AUR)
+yay -S wifitui-bin
+
+# Arch Linux (latest release from this repo)
+sudo pacman-key --recv-keys 065D66BF7EFEB02BCDC75FF6227578D96B6A5E4C
+sudo pacman-key --lsign-key 065D66BF7EFEB02BCDC75FF6227578D96B6A5E4C
+sudo pacman -U "${LATEST_RELEASE}.pkg.tar.zst"
 ```
 
 
