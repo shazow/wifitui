@@ -67,6 +67,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case statusMsg:
 		m.statusMessage = msg.message
+		m.loading = msg.loading
 		return m, nil
 	case popViewMsg:
 		cmd := m.stack.Pop()

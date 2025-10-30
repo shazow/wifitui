@@ -36,6 +36,7 @@ type popViewMsg struct{}
 
 type statusMsg struct {
 	message string
+	loading bool
 }
 
 // connectionItem holds the information for a single Wi-Fi connection in our list
