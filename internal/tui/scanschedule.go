@@ -9,7 +9,7 @@ import (
 const (
 	ScanOff  = 0
 	ScanFast = 2 * time.Second
-	ScanSlow = 10 * time.Second
+	ScanSlow = 8 * time.Second
 )
 
 // ScanSchedule is a component that triggers scans at a regular interval.
@@ -78,3 +78,4 @@ func (s *ScanSchedule) tick() tea.Cmd {
 		return tickMsg{}
 	})
 }
+

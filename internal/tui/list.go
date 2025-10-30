@@ -124,6 +124,7 @@ type ListModel struct {
 	list         list.Model
 	isForgetting bool
 	scanner      *ScanSchedule
+	numScans     int // Number of scans with results since enter
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -136,6 +137,7 @@ func (m *ListModel) IsConsumingInput() bool {
 }
 
 func (m *ListModel) OnEnter() tea.Cmd {
+	m.numScans = 0
 	return tea.Batch(
 		m.scanner.SetSchedule(ScanFast),
 		// Start a scan right away
@@ -228,6 +230,13 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			items[i] = connectionItem{Connection: c}
 		}
 		m.list.SetItems(items)
+		if len(items) > 0 {
+			m.numScans++
+		}
+		if m.numScans == 3 {
+			// Slow down scanner after a few scans
+			m.scanner.SetSchedule(ScanSlow)
+		}
 		return m, nil
 	case secretsLoadedMsg:
 		editModel := NewEditModel(&msg.item)
