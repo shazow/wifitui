@@ -205,8 +205,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case connectionsLoadedMsg, secretsLoadedMsg, scanFinishedMsg:
 		// Clear loading status
-		m.loading = false
-		m.statusMessage = ""
+		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case connectionSavedMsg:
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: "Saved. Refreshing...", loading: true} },
