@@ -160,6 +160,8 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 		result = append(result, c)
 	}
 
+	time.Sleep(m.ConnectSleep)
+
 	return result, nil
 }
 
