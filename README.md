@@ -29,8 +29,8 @@ Install [the latest release](https://github.com/shazow/wifitui/releases/) on you
 ```shell
 # Fetch the latest release version
 TAG=$(curl -s https://api.github.com/repos/shazow/wifitui/releases/latest | grep "tag_name" | cut -d '"' -f4)
-OS="linux_$(uname -m)" # x86_64 or arm64
-LATEST_RELEASE="https://github.com/shazow/wifitui/releases/download/${TAG}/wifitui_${TAG:1}_${OS}"
+OS="linux-$(uname -m)" # x86_64 or arm64
+LATEST_RELEASE="https://github.com/shazow/wifitui/releases/download/${TAG}/wifitui-${TAG:1}-${OS}"
 
 # Arch Linux
 sudo pacman -U "${LATEST_RELEASE}.pkg.tar.zst"
