@@ -76,6 +76,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case errorMsg:
 		m.loading = false
+		m.statusMessage = ""
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
 			disabledModel := NewWirelessDisabledModel(m.backend)
 			cmd := m.stack.Push(disabledModel)
