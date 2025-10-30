@@ -214,3 +214,7 @@ func TestRunConnect(t *testing.T) {
 		t.Errorf("runConnect() did not activate the existing network")
 	}
 }
+
+func init() {
+	mock.DefaultConnectSleep = 0
+}

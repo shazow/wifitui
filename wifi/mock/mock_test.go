@@ -363,7 +363,6 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 	}
 }
 
-func TestMain(m *testing.M) {
+func init() {
 	DefaultConnectSleep = 0
-	m.Run()
 }
