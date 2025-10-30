@@ -8,7 +8,7 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
-var DefaultConnectSleep = 500 * time.Millisecond
+var DefaultActionSleep = 500 * time.Millisecond
 
 // mockConnection wraps a backend.Connection with mock-specific metadata.
 type mockConnection struct {
@@ -18,18 +18,20 @@ type mockConnection struct {
 
 // MockBackend is a mock implementation of the backend.Backend interface for testing.
 type MockBackend struct {
-	VisibleConnections        []wifi.Connection
-	KnownConnections          []mockConnection
-	ActiveConnectionIndex     int
-	ActivateError             error
-	ForgetError               error
-	JoinError                 error
-	GetSecretsError           error
-	UpdateConnectionError     error
-	ConnectSleep              time.Duration
-	WirelessEnabled           bool
-	IsWirelessEnabledError    error
-	SetWirelessError          error
+	VisibleConnections     []wifi.Connection
+	KnownConnections       []mockConnection
+	ActiveConnectionIndex  int
+	ActivateError          error
+	ForgetError            error
+	JoinError              error
+	GetSecretsError        error
+	UpdateConnectionError  error
+	WirelessEnabled        bool
+	IsWirelessEnabledError error
+	SetWirelessError       error
+
+	// ActionSleep is a delay before every action, to better emulate a real-world backend for the frontend. Set to 0 during testing.
+	ActionSleep time.Duration
 }
 
 func ago(duration time.Duration) *time.Time {
@@ -87,7 +89,7 @@ func New() (wifi.Backend, error) {
 		VisibleConnections:    initialConnections,
 		KnownConnections:      knownConnections,
 		ActiveConnectionIndex: -1, // No connection active initially
-		ConnectSleep:          DefaultConnectSleep,
+		ActionSleep:           DefaultActionSleep,
 		WirelessEnabled:       true,
 	}, nil
 }
@@ -110,6 +112,8 @@ func (m *MockBackend) setActiveConnection(ssid string) {
 }
 
 func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	time.Sleep(m.ActionSleep)
+
 	if !m.WirelessEnabled {
 		return nil, wifi.ErrWirelessDisabled
 	}
@@ -160,16 +164,15 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 		result = append(result, c)
 	}
 
-	time.Sleep(m.ConnectSleep)
-
 	return result, nil
 }
 
 func (m *MockBackend) ActivateConnection(ssid string) error {
+	time.Sleep(m.ActionSleep)
+
 	if m.ActivateError != nil {
 		return m.ActivateError
 	}
-	time.Sleep(m.ConnectSleep)
 	// "Act on first match" logic for ambiguity.
 	for i, c := range m.KnownConnections {
 		if c.SSID == ssid {
@@ -183,6 +186,8 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 }
 
 func (m *MockBackend) ForgetNetwork(ssid string) error {
+	time.Sleep(m.ActionSleep)
+
 	if m.ForgetError != nil {
 		return m.ForgetError
 	}
@@ -218,6 +223,8 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 }
 
 func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+	time.Sleep(m.ActionSleep)
+
 	if m.JoinError != nil {
 		return m.JoinError
 	}
@@ -240,8 +247,6 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 			IsHidden: isHidden,
 		}
 	}
-
-	time.Sleep(m.ConnectSleep)
 
 	c.IsKnown = true
 	c.AutoConnect = true
@@ -277,6 +282,8 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 }
 
 func (m *MockBackend) GetSecrets(ssid string) (string, error) {
+	time.Sleep(m.ActionSleep)
+
 	if m.GetSecretsError != nil {
 		return "", m.GetSecretsError
 	}
@@ -290,6 +297,8 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 }
 
 func (m *MockBackend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+	time.Sleep(m.ActionSleep)
+
 	if m.UpdateConnectionError != nil {
 		return m.UpdateConnectionError
 	}
@@ -309,6 +318,8 @@ func (m *MockBackend) UpdateConnection(ssid string, opts wifi.UpdateOptions) err
 }
 
 func (m *MockBackend) IsWirelessEnabled() (bool, error) {
+	time.Sleep(m.ActionSleep)
+
 	if m.IsWirelessEnabledError != nil {
 		return false, m.IsWirelessEnabledError
 	}
@@ -316,10 +327,11 @@ func (m *MockBackend) IsWirelessEnabled() (bool, error) {
 }
 
 func (m *MockBackend) SetWireless(enabled bool) error {
+	time.Sleep(m.ActionSleep)
+
 	if m.SetWirelessError != nil {
 		return m.SetWirelessError
 	}
-	time.Sleep(m.ConnectSleep)
 	m.WirelessEnabled = enabled
 	return nil
 }

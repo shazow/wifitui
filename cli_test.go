@@ -216,5 +216,5 @@ func TestRunConnect(t *testing.T) {
 }
 
 func init() {
-	mock.DefaultConnectSleep = 0
+	mock.DefaultActionSleep = 0
 }

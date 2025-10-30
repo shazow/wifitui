@@ -364,5 +364,5 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 }
 
 func init() {
-	DefaultConnectSleep = 0
+	DefaultActionSleep = 0
 }
