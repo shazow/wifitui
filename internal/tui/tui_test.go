@@ -63,8 +63,8 @@ func TestTuiModel_EnableRadioSwitchesView(t *testing.T) {
 
 	// Verify we are in the disabled view
 	view := m.View()
-	if !strings.Contains(view, "Wi-Fi is disabled.") {
-		t.Fatalf("View does not contain 'Wi-Fi is disabled.' in\n%s", view)
+	if !strings.Contains(view, "WiFi is disabled.") {
+		t.Fatalf("View does not contain 'WiFi is disabled.' in\n%s", view)
 	}
 
 	// Now, pop the view. This is what happens when the radio is enabled.
@@ -101,8 +101,8 @@ func TestTuiModel_EnableRadioSwitchesView(t *testing.T) {
 	m = updatedModel.(*model)
 
 	view = m.View()
-	if strings.Contains(view, "Wi-Fi is disabled.") {
-		t.Errorf("View still contains 'Wi-Fi is disabled.' after enabling radio in\n%s", view)
+	if strings.Contains(view, "WiFi is disabled.") {
+		t.Errorf("View still contains 'WiFi is disabled.' after enabling radio in\n%s", view)
 	}
 	// The mock backend will return its default list of networks.
 	if !strings.Contains(view, "WiFi Network") {

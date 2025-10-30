@@ -66,7 +66,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
 	case statusMsg:
-		m.statusMessage = msg.message
+		m.statusMessage = msg.status
 		m.loading = msg.loading
 		return m, nil
 	case popViewMsg:
@@ -87,20 +87,23 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd := m.stack.Push(errorModel)
 		return m, cmd
 	case scanMsg:
-		m.loading = true
-		m.statusMessage = "Scanning for networks..."
-		return m, func() tea.Msg {
-			connections, err := m.backend.BuildNetworkList(true)
-			if err != nil {
-				return errorMsg{err}
-			}
-			wifi.SortConnections(connections)
-			return scanFinishedMsg(connections)
-		}
+		return m, tea.Batch(
+			func() tea.Msg { return statusMsg{status: "Scanning for networks...", loading: true} },
+			func() tea.Msg {
+				connections, err := m.backend.BuildNetworkList(true)
+				if err != nil {
+					return errorMsg{err}
+				}
+				wifi.SortConnections(connections)
+				return scanFinishedMsg(connections)
+			},
+		)
 	case connectMsg:
-		m.loading = true
-		m.statusMessage = fmt.Sprintf("Connecting to '%s'...", msg.item.SSID)
-		var batch []tea.Cmd
+		var batch []tea.Cmd = []tea.Cmd{
+			func() tea.Msg {
+				return statusMsg{status: fmt.Sprintf("Connecting to %q...", msg.item.SSID), loading: true}
+			},
+		}
 		if msg.autoConnect != msg.item.AutoConnect {
 			batch = append(batch, func() tea.Msg {
 				err := m.backend.UpdateConnection(msg.item.SSID, wifi.UpdateOptions{AutoConnect: &msg.autoConnect})
@@ -119,45 +122,51 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		})
 		return m, tea.Batch(batch...)
 	case joinNetworkMsg:
-		m.loading = true
-		m.statusMessage = fmt.Sprintf("Joining '%s'...", msg.ssid)
-		return m, func() tea.Msg {
-			err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden)
-			if err != nil {
-				return errorMsg{fmt.Errorf("failed to join network: %w", err)}
-			}
-			return connectionSavedMsg{}
-		}
+		return m, tea.Batch(
+			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Joining %q...", msg.ssid), loading: true} },
+			func() tea.Msg {
+				err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden)
+				if err != nil {
+					return errorMsg{fmt.Errorf("failed to join network: %w", err)}
+				}
+				return connectionSavedMsg{}
+			},
+		)
 	case loadSecretsMsg:
-		m.loading = true
-		m.statusMessage = fmt.Sprintf("Loading details for %s...", msg.item.SSID)
-		return m, func() tea.Msg {
-			secret, err := m.backend.GetSecrets(msg.item.SSID)
-			if err != nil {
-				return errorMsg{fmt.Errorf("failed to get secrets: %w", err)}
-			}
-			return secretsLoadedMsg{item: msg.item, secret: secret}
-		}
+		return m, tea.Batch(
+			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Loading %q...", msg.item.SSID), loading: true} },
+			func() tea.Msg {
+				secret, err := m.backend.GetSecrets(msg.item.SSID)
+				if err != nil {
+					return errorMsg{fmt.Errorf("failed to get secrets: %w", err)}
+				}
+				return secretsLoadedMsg{item: msg.item, secret: secret}
+			},
+		)
 	case updateConnectionMsg:
-		m.loading = true
-		m.statusMessage = fmt.Sprintf("Saving settings for %s...", msg.item.SSID)
-		return m, func() tea.Msg {
-			err := m.backend.UpdateConnection(msg.item.SSID, msg.UpdateOptions)
-			if err != nil {
-				return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
-			}
-			return connectionSavedMsg{}
-		}
+		return m, tea.Batch(
+			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Saving %q...", msg.item.SSID), loading: true} },
+			func() tea.Msg {
+				err := m.backend.UpdateConnection(msg.item.SSID, msg.UpdateOptions)
+				if err != nil {
+					return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
+				}
+				return connectionSavedMsg{}
+			},
+		)
 	case forgetNetworkMsg:
-		m.loading = true
-		m.statusMessage = fmt.Sprintf("Forgetting '%s'...", msg.item.SSID)
-		return m, func() tea.Msg {
-			err := m.backend.ForgetNetwork(msg.item.SSID)
-			if err != nil {
-				return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
-			}
-			return connectionSavedMsg{} // Re-use this to trigger a refresh
-		}
+		return m, tea.Batch(
+			func() tea.Msg {
+				return statusMsg{status: fmt.Sprintf("Forgetting %q...", msg.item.SSID), loading: true}
+			},
+			func() tea.Msg {
+				err := m.backend.ForgetNetwork(msg.item.SSID)
+				if err != nil {
+					return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
+				}
+				return connectionSavedMsg{} // Re-use this to trigger a refresh
+			},
+		)
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
@@ -182,35 +191,35 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				break
 			}
 
-			m.loading = true
-			m.statusMessage = "Disabling Wi-Fi radio..."
-			return m, func() tea.Msg {
-				err := m.backend.SetWireless(false)
-				if err != nil {
-					return errorMsg{err}
-				}
-				// By returning this error, we trigger the main loop to push the WirelessDisabledModel.
-				return errorMsg{wifi.ErrWirelessDisabled}
-			}
+			return m, tea.Batch(
+				func() tea.Msg { return statusMsg{status: "Disabling WiFi radio...", loading: true} },
+				func() tea.Msg {
+					err := m.backend.SetWireless(false)
+					if err != nil {
+						return errorMsg{err}
+					}
+					// By returning this error, we trigger the main loop to push the WirelessDisabledModel.
+					return errorMsg{wifi.ErrWirelessDisabled}
+				},
+			)
 		}
-	// Clear loading status on some messages
-	case connectionsLoadedMsg, secretsLoadedMsg:
-		m.loading = false
-		m.statusMessage = ""
-	case scanFinishedMsg:
+	case connectionsLoadedMsg, secretsLoadedMsg, scanFinishedMsg:
+		// Clear loading status
 		m.loading = false
 		m.statusMessage = ""
 	case connectionSavedMsg:
-		m.loading = true // Show loading while we refresh
-		m.statusMessage = "Successfully updated. Refreshing list..."
-		return m, tea.Batch(func() tea.Msg { return popViewMsg{} }, func() tea.Msg {
-			connections, err := m.backend.BuildNetworkList(false)
-			if err != nil {
-				return errorMsg{err}
-			}
-			wifi.SortConnections(connections)
-			return connectionsLoadedMsg(connections)
-		})
+		return m, tea.Batch(
+			func() tea.Msg { return statusMsg{status: "Saved. Refreshing...", loading: true} },
+			func() tea.Msg { return popViewMsg{} },
+			func() tea.Msg {
+				connections, err := m.backend.BuildNetworkList(false)
+				if err != nil {
+					return errorMsg{err}
+				}
+				wifi.SortConnections(connections)
+				return connectionsLoadedMsg(connections)
+			},
+		)
 
 	}
 

@@ -247,7 +247,7 @@ func (m *EditModel) IsConsumingInput() bool {
 
 func (m *EditModel) View() string {
 	var s strings.Builder
-	s.WriteString(fmt.Sprintf("\n%s\n\n", "Wi-Fi Connection"))
+	s.WriteString(fmt.Sprintf("\n%s\n\n", "WiFi Connection"))
 
 	isNew := m.selectedItem.SSID == ""
 	if !isNew {

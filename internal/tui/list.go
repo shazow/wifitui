@@ -256,7 +256,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				msg = "Active Scan disabled"
 			}
 			return m, tea.Batch(cmd, func() tea.Msg {
-				return statusMsg{message: msg}
+				return statusMsg{status: msg}
 			})
 		case "f":
 			if len(m.list.Items()) > 0 {

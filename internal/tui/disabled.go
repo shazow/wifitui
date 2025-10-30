@@ -43,7 +43,7 @@ func (m *WirelessDisabledModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 func (m *WirelessDisabledModel) View() string {
 	var s strings.Builder
-	s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render("Wi-Fi is disabled."))
+	s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render("WiFi is disabled."))
 	s.WriteString("\n\n")
 	button := lipgloss.NewStyle().
 		Foreground(CurrentTheme.Primary).

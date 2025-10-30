@@ -35,11 +35,11 @@ type Enterable interface {
 type popViewMsg struct{}
 
 type statusMsg struct {
-	message string
+	status  string
 	loading bool
 }
 
-// connectionItem holds the information for a single Wi-Fi connection in our list
+// connectionItem holds the information for a single WiFi connection in our list
 type connectionItem struct {
 	wifi.Connection
 }
