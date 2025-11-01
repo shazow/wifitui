@@ -18,10 +18,6 @@
 - [x] Non-interactive modes (`list` `show` `connect` commands)
 - [x] Bring your own color scheme and theme (`--theme=./theme.toml` or set `WIFITUI_THEME=./theme.toml`)
 
-More things I'd like to do:
-- [ ] More stats about the current network
-- [ ] Maybe a better name?
-
 ## Getting Started
 
 Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not in all package managers yet](https://github.com/shazow/wifitui/issues/48)), here's a handy script for convenience:
