@@ -291,7 +291,13 @@ func (b *Backend) ActivateConnection(ssid string) error {
 				return nil
 			}
 			if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
-				return fmt.Errorf("connection failed")
+				switch change.Reason {
+				case gonetworkmanager.NmActiveConnectionStateReasonNoSecrets,
+					gonetworkmanager.NmActiveConnectionStateReasonLoginFailed:
+					return wifi.ErrIncorrectPassphrase
+				default:
+					return fmt.Errorf("connection failed: %s", change.Reason)
+				}
 			}
 		case <-time.After(connectionTimeout):
 			return fmt.Errorf("connection timed out")
@@ -389,7 +395,13 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 				return nil
 			}
 			if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
-				return fmt.Errorf("connection failed")
+				switch change.Reason {
+				case gonetworkmanager.NmActiveConnectionStateReasonNoSecrets,
+					gonetworkmanager.NmActiveConnectionStateReasonLoginFailed:
+					return wifi.ErrIncorrectPassphrase
+				default:
+					return fmt.Errorf("connection failed: %s", change.Reason)
+				}
 			}
 		case <-time.After(connectionTimeout):
 			return fmt.Errorf("connection timed out")
