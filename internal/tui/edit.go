@@ -16,6 +16,8 @@ import (
 
 type startForgettingMsg struct{}
 
+type connectionFailedMsg struct{ err error }
+
 type EditModel struct {
 	focusManager        *FocusManager
 	ssidAdapter         *TextInput
@@ -211,6 +213,13 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	case startForgettingMsg:
 		m.isForgetting = true
 		return m, nil
+	case connectionFailedMsg:
+		return m, tea.Batch(
+			m.focusManager.SetFocus(m.passwordAdapter),
+			func() tea.Msg {
+				return statusMsg{status: msg.err.Error()}
+			},
+		)
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "tab":

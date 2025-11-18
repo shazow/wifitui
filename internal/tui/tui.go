@@ -75,6 +75,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case errorMsg:
 		m.loading = false
 		m.statusMessage = ""
+		// If we're in the Edit view, pass the error up so it can be displayed.
+		if _, ok := m.stack.Top().(*EditModel); ok {
+			return m, func() tea.Msg {
+				return connectionFailedMsg{err: msg.err}
+			}
+		}
+
 		if errors.Is(msg.err, wifi.ErrWirelessDisabled) {
 			disabledModel := NewWirelessDisabledModel(m.backend)
 			cmd := m.stack.Push(disabledModel)

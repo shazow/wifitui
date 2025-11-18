@@ -32,6 +32,14 @@ func (s *ComponentStack) Push(c Component) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// Top returns the top component of the stack.
+func (s *ComponentStack) Top() Component {
+	if len(s.components) == 0 {
+		return nil
+	}
+	return s.components[len(s.components)-1]
+}
+
 // Pop removes the top component if there is more than one component on the
 // stack.
 func (s *ComponentStack) Pop() tea.Cmd {
