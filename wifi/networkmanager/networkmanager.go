@@ -356,15 +356,30 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		}
 	}
 
+	conn, err := b.Settings.AddConnectionUnsaved(connection)
+	if err != nil {
+		return fmt.Errorf("failed to add unsaved connection: %w", err)
+	}
+	shouldDelete := true
+	defer func() {
+		if shouldDelete {
+			_ = conn.Delete()
+		}
+	}()
+
 	var activeConn gonetworkmanager.ActiveConnection
 	if isHidden {
-		activeConn, err = b.NM.AddAndActivateConnection(connection, wirelessDevice)
+		// Use the generic ActivateConnection for hidden networks as there is no specific object.
+		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
 	} else {
 		ap, ok := b.AccessPoints[ssid]
 		if !ok {
-			return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
+			// It's possible for the access point to disappear between the scan and the join attempt.
+			// In this case, we can try to join without the AP object.
+			activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
+		} else {
+			activeConn, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
 		}
-		activeConn, err = b.NM.AddAndActivateWirelessConnection(connection, wirelessDevice, ap)
 	}
 	if err != nil {
 		return err
@@ -376,7 +391,13 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 	defer close(done)
 	err = activeConn.SubscribeState(stateChanges, done)
 	if err != nil {
-		return err
+		// Lets check the state
+		state, stateErr := activeConn.GetPropertyState()
+		if stateErr == nil && state == gonetworkmanager.NmActiveConnectionStateDeactivated {
+			// It failed, but we can't get the reason.
+			return fmt.Errorf("connection failed")
+		}
+		return fmt.Errorf("failed to subscribe to state changes: %w", err)
 	}
 
 	// Check the initial state first
@@ -385,6 +406,11 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 	if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
+		err = conn.Save()
+		if err != nil {
+			return fmt.Errorf("failed to save connection: %w", err)
+		}
+		shouldDelete = false
 		return nil
 	}
 
@@ -392,6 +418,11 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		select {
 		case change := <-stateChanges:
 			if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
+				err = conn.Save()
+				if err != nil {
+					return fmt.Errorf("failed to save connection: %w", err)
+				}
+				shouldDelete = false
 				return nil
 			}
 			if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
