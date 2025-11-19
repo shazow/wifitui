@@ -65,8 +65,10 @@ type (
 		item   connectionItem
 		secret string
 	}
-	connectionSavedMsg struct{}
-	errorMsg           struct{ err error }
+	connectionSavedMsg struct {
+		forgottenSSID string
+	}
+	errorMsg struct{ err error }
 
 	// To main model
 	scanMsg    struct{}

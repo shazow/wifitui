@@ -172,7 +172,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
 				}
-				return connectionSavedMsg{} // Re-use this to trigger a refresh
+				return connectionSavedMsg{forgottenSSID: msg.item.SSID} // Re-use this to trigger a refresh
 			},
 		)
 	case tea.KeyMsg:
@@ -222,6 +222,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				connections, err := m.backend.BuildNetworkList(false)
 				if err != nil {
 					return errorMsg{err}
+				}
+				if msg.forgottenSSID != "" {
+					// Filter out the forgotten SSID from connections if it is still present
+					// This handles the race condition where the backend might return the forgotten network
+					for i := range connections {
+						if connections[i].SSID == msg.forgottenSSID {
+							connections[i].IsKnown = false
+							connections[i].AutoConnect = false
+						}
+					}
 				}
 				wifi.SortConnections(connections)
 				return connectionsLoadedMsg(connections)
