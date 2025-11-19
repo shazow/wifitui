@@ -225,22 +225,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if msg.forgottenSSID != "" {
 					// Filter out the forgotten SSID from connections if it is still present
-					// This handles the race condition where the backend might return the forgotten network
-					// We do this in-place to avoid allocating a new slice
-					n := 0
 					for _, c := range connections {
 						if c.SSID == msg.forgottenSSID {
 							c.IsKnown = false
 							c.AutoConnect = false
-							if !c.IsVisible {
-								// If it's not visible, we skip it (removing it from the list)
-								continue
-							}
 						}
-						connections[n] = c
-						n++
 					}
-					connections = connections[:n]
 				}
 				wifi.SortConnections(connections)
 				return connectionsLoadedMsg(connections)
