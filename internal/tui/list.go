@@ -49,14 +49,14 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Define column width for SSID
 	ssidColumnWidth := 30
-	titleLen := len(title)
+	titleWidth := lipgloss.Width(title)
 
 	// Truncate title if it's too long
-	if titleLen > ssidColumnWidth {
-		title = title[:ssidColumnWidth-1] + "…"
-		titleLen = ssidColumnWidth
+	if titleWidth > ssidColumnWidth {
+		title = truncateString(title, ssidColumnWidth)
+		titleWidth = lipgloss.Width(title)
 	}
-	padding := strings.Repeat(" ", ssidColumnWidth-titleLen)
+	padding := strings.Repeat(" ", ssidColumnWidth-titleWidth)
 
 	// Apply custom styling based on connection state
 	var titleStyle lipgloss.Style
@@ -345,4 +345,25 @@ func (m *ListModel) ShortHelp() []key.Binding {
 	h := m.list.ShortHelp()
 	// Remove up/down from short help
 	return h[2:]
+}
+
+// truncateString truncates a string to maxW visual width, appending an ellipsis if truncated.
+func truncateString(s string, maxW int) string {
+	if lipgloss.Width(s) <= maxW {
+		return s
+	}
+	// We need to fit "…" so target is maxW - 1
+	target := maxW - 1
+	var w int
+	var sb strings.Builder
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if w+rw > target {
+			break
+		}
+		sb.WriteRune(r)
+		w += rw
+	}
+	sb.WriteString("…")
+	return sb.String()
 }
