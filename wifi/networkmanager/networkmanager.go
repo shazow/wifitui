@@ -66,8 +66,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	if !enabled {
 		return nil, wifi.ErrWirelessDisabled
 	}
-	b.Connections = make(map[string]gonetworkmanager.Connection)
-	b.AccessPoints = make(map[string]gonetworkmanager.AccessPoint)
+	newConnections := make(map[string]gonetworkmanager.Connection)
+	newAccessPoints := make(map[string]gonetworkmanager.AccessPoint)
 
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
@@ -122,7 +122,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 
 		strength, _ := ap.GetPropertyStrength()
-		if existing, exists := b.AccessPoints[ssid]; exists {
+		if existing, exists := newAccessPoints[ssid]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
 			if strength <= exStrength {
 				continue
@@ -130,7 +130,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 
 		processedSSIDs[ssid] = true
-		b.AccessPoints[ssid] = ap
+		newAccessPoints[ssid] = ap
 
 		flags, _ := ap.GetPropertyFlags()
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
@@ -163,7 +163,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 
 		if knownConn != nil {
-			b.Connections[ssid] = knownConn
+			newConnections[ssid] = knownConn
 			s, _ := knownConn.GetSettings()
 			var id string
 			var lastConnected *time.Time
@@ -229,7 +229,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 
 		if _, processed := processedSSIDs[ssid]; !processed {
-			b.Connections[ssid] = knownConn
+			newConnections[ssid] = knownConn
 			var lastConnected *time.Time
 			if c, ok := s["connection"]; ok {
 				if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
@@ -240,6 +240,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			conns = append(conns, wifi.Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
 		}
 	}
+
+	b.Connections = newConnections
+	b.AccessPoints = newAccessPoints
 
 	wifi.SortConnections(conns)
 	return conns, nil
