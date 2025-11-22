@@ -15,7 +15,7 @@
           version = "0.0.0"; # TODO: Add some tags lol
           src = ./.;
           #vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # Replace with the actual hash
-          vendorHash = "sha256-SEQPc13cefzT8SyuD3UmNtTDgcrXUGTX54SBrnOHJJw=";
+          vendorHash = "sha256-HZEE8bJC9bsSYmyu7NBoxEprW08DO5+uApVnyNkKgMk=";
           ldflags = [ "-s" "-w" ];
         };
 

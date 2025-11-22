@@ -10,8 +10,8 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/uuid v1.6.0
+	github.com/jessevdk/go-flags v1.6.1
 	github.com/lucasb-eyer/go-colorful v1.2.0
-	github.com/peterbourgon/ff/v3 v3.4.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 )
 
