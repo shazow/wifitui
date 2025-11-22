@@ -19,10 +19,14 @@ type Options struct {
 	Theme   string `long:"theme" description:"path to theme toml file" env:"WIFITUI_THEME"`
 	Version bool   `long:"version" description:"display version"`
 
+	Tui     TuiCommand     `command:"tui" description:"Run the TUI (default)"`
 	List    ListCommand    `command:"list" description:"List wifi networks"`
 	Show    ShowCommand    `command:"show" description:"Show a wifi network"`
 	Connect ConnectCommand `command:"connect" description:"Connect to a wifi network"`
 }
+
+// TuiCommand defines the handler for the "tui" subcommand
+type TuiCommand struct{}
 
 // ListCommand defines the flags and arguments for the "list" subcommand
 type ListCommand struct {
@@ -49,6 +53,24 @@ type ConnectCommand struct {
 
 // We need a global backend to be accessible by the command handlers.
 var b wifi.Backend
+var opts Options
+
+// Execute is the handler for the "tui" subcommand
+func (c *TuiCommand) Execute(args []string) error {
+	if opts.Theme != "" {
+		f, err := os.Open(opts.Theme)
+		if err != nil {
+			return fmt.Errorf("failed to open theme file: %w", err)
+		}
+		defer f.Close()
+		loadedTheme, err := tui.LoadTheme(f)
+		if err != nil {
+			return fmt.Errorf("failed to load theme: %w", err)
+		}
+		tui.CurrentTheme = loadedTheme
+	}
+	return runTUI(b)
+}
 
 // Execute is the handler for the "list" subcommand
 func (c *ListCommand) Execute(args []string) error {
@@ -78,8 +100,7 @@ func (c *ConnectCommand) Execute(args []string) error {
 
 // main is the entry point of the application
 func main() {
-	var opts Options
-	parser := flags.NewParser(&opts, flags.Default)
+	parser := flags.NewParser(&opts, flags.HelpFlag)
 	parser.ShortDescription = "A simple TUI for managing wifi connections."
 	parser.LongDescription = "wifitui is a TUI and CLI for managing wifi connections."
 
@@ -99,36 +120,27 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse arguments. If a subcommand is found, its Execute method will be called.
+	// Parse arguments.
 	_, err = parser.Parse()
 	if err != nil {
-		if flagsErr, ok := err.(*flags.Error); ok && flagsErr.Type == flags.ErrHelp {
-			// Help was requested, output is already printed.
-			os.Exit(0)
+		if flagsErr, ok := err.(*flags.Error); ok {
+			if flagsErr.Type == flags.ErrHelp {
+				// Help was requested, so print the help message.
+				parser.WriteHelp(os.Stdout)
+				os.Exit(0)
+			}
+			if flagsErr.Type == flags.ErrCommandRequired {
+				// No command was specified, so run the TUI by default.
+				if err := opts.Tui.Execute(nil); err != nil {
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
+					os.Exit(1)
+				}
+				os.Exit(0)
+			}
 		}
-		// Any other error is printed by go-flags.
-		os.Exit(1)
-	}
 
-	// If no subcommand was specified (parser.Active is nil), run the TUI.
-	if parser.Active == nil {
-		if opts.Theme != "" {
-			f, err := os.Open(opts.Theme)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "failed to open theme file: %v\n", err)
-				os.Exit(1)
-			}
-			defer f.Close()
-			loadedTheme, err := tui.LoadTheme(f)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "failed to load theme: %v\n", err)
-				os.Exit(1)
-			}
-			tui.CurrentTheme = loadedTheme
-		}
-		if err := runTUI(b); err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(1)
-		}
+		// For any other error, print it and exit.
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
