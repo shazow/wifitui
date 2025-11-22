@@ -100,7 +100,7 @@ func (c *ConnectCommand) Execute(args []string) error {
 
 // main is the entry point of the application
 func main() {
-	parser := flags.NewParser(&opts, flags.Default)
+	parser := flags.NewParser(&opts, flags.HelpFlag)
 	parser.ShortDescription = "A simple TUI for managing wifi connections."
 	parser.LongDescription = "wifitui is a TUI and CLI for managing wifi connections."
 
@@ -120,12 +120,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse arguments. If a subcommand is found, its Execute method will be called.
+	// Parse arguments.
 	_, err = parser.Parse()
 	if err != nil {
 		if flagsErr, ok := err.(*flags.Error); ok {
 			if flagsErr.Type == flags.ErrHelp {
-				// Help was requested, output is already printed.
+				// Help was requested, the parser already printed it.
 				os.Exit(0)
 			}
 			if flagsErr.Type == flags.ErrCommandRequired {
@@ -137,7 +137,9 @@ func main() {
 				os.Exit(0)
 			}
 		}
-		// Any other error is printed by go-flags.
+
+		// For any other error, print it and exit.
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }
