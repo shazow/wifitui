@@ -12,9 +12,9 @@
       {
         packages.default = pkgs.buildGoModule {
           pname = "wifitui";
-          version = "0.0.0"; # TODO: Add some tags lol
+          version = "0.0.0"; # Development version is always 0.0.0
           src = ./.;
-          #vendorHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="; # Replace with the actual hash
+          # Updated by `make vendorHash`
           vendorHash = "sha256-HZEE8bJC9bsSYmyu7NBoxEprW08DO5+uApVnyNkKgMk=";
           ldflags = [ "-s" "-w" ];
         };

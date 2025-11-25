@@ -22,3 +22,9 @@ mock:
 
 test:
 	go test -v -test.timeout 5s ./...
+
+vendorHash: flake.nix
+flake.nix: go.sum
+	go mod vendor
+	sed -i "s|vendorHash = \".*\"|vendorHash = \"$$(nix hash path vendor)\"|" flake.nix;
+	rm -rf ./vendor
