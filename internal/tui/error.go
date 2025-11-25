@@ -8,7 +8,8 @@ import (
 )
 
 type ErrorModel struct {
-	err error
+	err   error
+	width int
 }
 
 func NewErrorModel(err error) *ErrorModel {
@@ -16,7 +17,12 @@ func NewErrorModel(err error) *ErrorModel {
 }
 
 func (m *ErrorModel) Update(msg tea.Msg) (Component, tea.Cmd) {
-	switch msg.(type) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		if m.width > 80 {
+			m.width = 80
+		}
 	case tea.KeyMsg:
 		// Any key press dismisses the error
 		return m, func() tea.Msg { return popViewMsg{} }
@@ -28,8 +34,9 @@ func (m *ErrorModel) View() string {
 	errorViewStyle := lipgloss.NewStyle().
 		Border(lipgloss.DoubleBorder(), true).
 		BorderForeground(CurrentTheme.Error).
-		Padding(1, 2)
-	return lipgloss.NewStyle().Margin(1, 2).Render(errorViewStyle.Render(fmt.Sprintf("Error: %s", m.err)))
+		Padding(1, 2).
+		Width(m.width)
+	return errorViewStyle.Render(fmt.Sprintf("Error: %s", m.err))
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.

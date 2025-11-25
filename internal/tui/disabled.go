@@ -10,6 +10,7 @@ import (
 
 type WirelessDisabledModel struct {
 	backend wifi.Backend
+	width   int
 }
 
 func NewWirelessDisabledModel(backend wifi.Backend) *WirelessDisabledModel {
@@ -24,6 +25,11 @@ func (m *WirelessDisabledModel) Init() tea.Cmd {
 
 func (m *WirelessDisabledModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		if m.width > 80 {
+			m.width = 80
+		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "r":
@@ -54,7 +60,7 @@ func (m *WirelessDisabledModel) View() string {
 	s.WriteString(button)
 	s.WriteString("\n\n")
 	s.WriteString("Press 'q' to quit.\n")
-	return s.String()
+	return lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(s.String())
 }
 
 func (m *WirelessDisabledModel) IsConsumingInput() bool {

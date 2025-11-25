@@ -211,11 +211,15 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 		bh, bv := listBorderStyle.GetFrameSize()
 		extraVerticalSpace := 4
-		m.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
+		width := msg.Width - bh
+		// Max width of 80
+		if width > 80 {
+			width = 80
+		}
+		m.SetSize(width, msg.Height-bv-extraVerticalSpace)
 		return m, nil
 	case connectionsLoadedMsg:
 		items := make([]list.Item, len(msg))
@@ -334,7 +338,7 @@ func (m *ListModel) View() string {
 	}
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
-	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
+	return viewBuilder.String()
 }
 
 func (m *ListModel) FullHelp() [][]key.Binding {

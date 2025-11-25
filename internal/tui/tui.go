@@ -20,6 +20,7 @@ type model struct {
 	backend       wifi.Backend
 	loading       bool
 	statusMessage string
+	width         int
 }
 
 // NewModel creates the starting state of our application
@@ -62,6 +63,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Global messages that are not passed to components
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
 	case statusMsg:
 		m.statusMessage = msg.status
 		m.loading = msg.loading
@@ -258,10 +261,18 @@ func (m model) View() string {
 	s.WriteString(m.stack.View())
 	s.WriteString("\n")
 
+	// TODO: Maybe some sort of status bar on the bottom?
 	if m.loading {
 		s.WriteString(m.spinner.View())
 	}
 	s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Render(m.statusMessage))
 
+	// If the view is wider than 80, then apply a margin to center it
+	maxWidth := 80
+	if m.width > maxWidth {
+		return lipgloss.NewStyle().
+			Margin(0, (m.width-maxWidth)/2).
+			Render(s.String())
+	}
 	return s.String()
 }

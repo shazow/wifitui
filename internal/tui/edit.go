@@ -28,6 +28,7 @@ type EditModel struct {
 	passwordRevealed    bool
 	isForgetting        bool
 	selectedItem        connectionItem
+	width               int
 }
 
 func NewEditModel(item *connectionItem) *EditModel {
@@ -203,12 +204,13 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		newWidth := int(float64(msg.Width) * 0.8)
-		if newWidth > 80 {
-			newWidth = 80
+		m.width = msg.Width
+		if m.width > 80 {
+			m.width = 80
 		}
-		m.ssidAdapter.Model.Width = newWidth
-		m.passwordAdapter.Model.Width = newWidth
+		inputWidth := m.width - 20 // 20 for padding+labels
+		m.ssidAdapter.Model.Width = inputWidth
+		m.passwordAdapter.Model.Width = inputWidth
 		return m, nil
 	case startForgettingMsg:
 		m.isForgetting = true
@@ -284,7 +286,7 @@ func (m *EditModel) View() string {
 		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
 			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
-		s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(details.String()))
+		s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Render(details.String()))
 		s.WriteString("\n\n")
 	}
 
@@ -311,7 +313,7 @@ func (m *EditModel) View() string {
 		}
 	}
 
-	return s.String()
+	return lipgloss.NewStyle().Width(m.width).Render(s.String())
 }
 
 func ShouldDisplayPasswordField(security wifi.SecurityType) bool {
