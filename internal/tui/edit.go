@@ -48,7 +48,7 @@ func NewEditModel(item *connectionItem) *EditModel {
 	passwordInput := textinput.New()
 	passwordInput.Focus()
 	passwordInput.CharLimit = 64
-	passwordInput.Width = 30
+	passwordInput.Width = 45
 	passwordInput.EchoMode = textinput.EchoPassword
 
 	m := EditModel{selectedItem: *item}
