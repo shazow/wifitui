@@ -4,6 +4,7 @@ package networkmanager
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
@@ -323,10 +324,28 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 	}
 	deviceInterface, _ := wirelessDevice.GetPropertyInterface()
 
+	// Get all available Access Points for this SSID and sort them by strength
+	var sortedAPs []gonetworkmanager.AccessPoint
+	if !isHidden {
+		allAPs, err := wirelessDevice.GetAccessPoints()
+		if err == nil {
+			for _, ap := range allAPs {
+				apSSID, err := ap.GetPropertySSID()
+				if err == nil && apSSID == ssid {
+					sortedAPs = append(sortedAPs, ap)
+				}
+			}
+			sort.Slice(sortedAPs, func(i, j int) bool {
+				s1, _ := sortedAPs[i].GetPropertyStrength()
+				s2, _ := sortedAPs[j].GetPropertyStrength()
+				return s1 > s2
+			})
+		}
+	}
+
 	connection := map[string]map[string]interface{}{
 		"connection": {
 			"id":             ssid,
-			"uuid":           uuid.New().String(),
 			"type":           "802-11-wireless",
 			"interface-name": deviceInterface,
 			"autoconnect":    true,
@@ -359,88 +378,109 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		}
 	}
 
-	conn, err := b.Settings.AddConnectionUnsaved(connection)
-	if err != nil {
-		return fmt.Errorf("failed to add unsaved connection: %w", err)
-	}
-	shouldDelete := true
-	defer func() {
-		if shouldDelete {
-			_ = conn.Delete()
-		}
-	}()
+	var lastErr error
+	const maxRetries = 2
+	errDeviceDisconnected := fmt.Errorf("device disconnected")
 
-	var activeConn gonetworkmanager.ActiveConnection
-	if isHidden {
-		// Use the generic ActivateConnection for hidden networks as there is no specific object.
-		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
-	} else {
-		ap, ok := b.AccessPoints[ssid]
-		if !ok {
-			// It's possible for the access point to disappear between the scan and the join attempt.
-			// In this case, we can try to join without the AP object.
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// Update UUID for each attempt to ensure a fresh connection profile
+		connection["connection"]["uuid"] = uuid.New().String()
+
+		conn, err := b.Settings.AddConnectionUnsaved(connection)
+		if err != nil {
+			return fmt.Errorf("failed to add unsaved connection: %w", err)
+		}
+
+		// Determine which Access Point to try
+		var targetAP gonetworkmanager.AccessPoint
+		if !isHidden && attempt < len(sortedAPs) {
+			targetAP = sortedAPs[attempt]
+		}
+		// If attempt >= len(sortedAPs) or isHidden, targetAP is nil (auto)
+
+		var activeConn gonetworkmanager.ActiveConnection
+		if targetAP == nil {
+			// Use the generic ActivateConnection for hidden networks or when falling back to auto
 			activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
 		} else {
-			activeConn, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
+			activeConn, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, targetAP)
 		}
-	}
-	if err != nil {
-		return err
-	}
 
-	// Now, block until the connection is fully activated.
-	stateChanges := make(chan gonetworkmanager.StateChange, 1)
-	done := make(chan struct{})
-	defer close(done)
-	err = activeConn.SubscribeState(stateChanges, done)
-	if err != nil {
-		// Lets check the state
-		state, stateErr := activeConn.GetPropertyState()
-		if stateErr == nil && state == gonetworkmanager.NmActiveConnectionStateDeactivated {
-			// It failed, but we can't get the reason.
-			return fmt.Errorf("connection failed")
-		}
-		return fmt.Errorf("failed to subscribe to state changes: %w", err)
-	}
-
-	// Check the initial state first
-	initialState, err := activeConn.GetPropertyState()
-	if err != nil {
-		return err
-	}
-	if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
-		err = conn.Save()
 		if err != nil {
-			return fmt.Errorf("failed to save connection: %w", err)
+			_ = conn.Delete()
+			return err
 		}
-		shouldDelete = false
-		return nil
-	}
 
-	for {
-		select {
-		case change := <-stateChanges:
-			if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
-				err = conn.Save()
-				if err != nil {
-					return fmt.Errorf("failed to save connection: %w", err)
+		// Block until the connection is fully activated or failed
+		err = func() error {
+			stateChanges := make(chan gonetworkmanager.StateChange, 1)
+			done := make(chan struct{})
+			defer close(done)
+			if err := activeConn.SubscribeState(stateChanges, done); err != nil {
+				// Lets check the state
+				state, stateErr := activeConn.GetPropertyState()
+				if stateErr == nil && state == gonetworkmanager.NmActiveConnectionStateDeactivated {
+					// It failed, but we can't get the reason.
+					return fmt.Errorf("connection failed")
 				}
-				shouldDelete = false
+				return fmt.Errorf("failed to subscribe to state changes: %w", err)
+			}
+
+			// Check the initial state first
+			initialState, err := activeConn.GetPropertyState()
+			if err != nil {
+				return err
+			}
+			if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
 				return nil
 			}
-			if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
-				switch change.Reason {
-				case gonetworkmanager.NmActiveConnectionStateReasonNoSecrets,
-					gonetworkmanager.NmActiveConnectionStateReasonLoginFailed:
-					return wifi.ErrIncorrectPassphrase
-				default:
-					return fmt.Errorf("connection failed: %s", change.Reason)
+
+			for {
+				select {
+				case change := <-stateChanges:
+					if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
+						return nil
+					}
+					if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
+						switch change.Reason {
+						case gonetworkmanager.NmActiveConnectionStateReasonNoSecrets,
+							gonetworkmanager.NmActiveConnectionStateReasonLoginFailed:
+							return wifi.ErrIncorrectPassphrase
+						case gonetworkmanager.NmActiveConnectionStateReasonDeviceDisconnected:
+							return errDeviceDisconnected
+						default:
+							return fmt.Errorf("connection failed: %s", change.Reason)
+						}
+					}
+				case <-time.After(connectionTimeout):
+					return fmt.Errorf("connection timed out")
 				}
 			}
-		case <-time.After(connectionTimeout):
-			return fmt.Errorf("connection timed out")
+		}()
+
+		if err == nil {
+			if saveErr := conn.Save(); saveErr != nil {
+				_ = conn.Delete()
+				return fmt.Errorf("failed to save connection: %w", saveErr)
+			}
+			return nil
 		}
+
+		_ = conn.Delete()
+		lastErr = err
+
+		// Retry logic
+		if attempt < maxRetries && err == errDeviceDisconnected {
+			// Wait briefly before retrying
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		// If it's not a retryable error or we've run out of retries, return the error.
+		return err
 	}
+
+	return lastErr
 }
 
 func (b *Backend) GetSecrets(ssid string) (string, error) {
