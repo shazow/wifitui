@@ -32,6 +32,29 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
 
+homebrew_casks:
+  - name: wifitui
+    directory: Casks/w
+    repository:
+      owner: shazow
+      name: homebrew-cask
+      branch: "{{.ProjectName}}-{{.Version}}"
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: true
+        base:
+          owner: Homebrew
+          name: homebrew-cask
+          branch: main
+
+    homepage: "https://github.com/shazow/wifitui"
+    description: "Connect to known WiFi networks and store profiles, all from the terminal"
+    license:  "MIT"
+
+    binaries:
+      - wifitui
+
 changelog:
   sort: asc
 
