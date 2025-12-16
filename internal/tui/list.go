@@ -73,13 +73,16 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Prepare description parts
 	strengthPart := i.Description()
+	if len(i.AccessPoints) > 1 {
+		strengthPart += fmt.Sprintf(" (%d APs)", len(i.AccessPoints))
+	}
 	connectedPart := ""
 	if i.IsActive {
 		connectedPart = " (Connected)"
 	}
 
 	var desc string
-	if i.Strength > 0 {
+	if i.Strength() > 0 {
 		// FIXME: This can be simplified
 		var signalHigh, signalLow string
 		if adaptiveHigh, ok := CurrentTheme.SignalHigh.TerminalColor.(lipgloss.AdaptiveColor); ok {
@@ -95,7 +98,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		}
 		start, _ := colorful.Hex(signalLow)
 		end, _ := colorful.Hex(signalHigh)
-		p := float64(i.Strength) / 100.0
+		p := float64(i.Strength()) / 100.0
 		blend := start.BlendRgb(end, p)
 		signalColor := lipgloss.Color(blend.Hex())
 

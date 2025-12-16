@@ -18,7 +18,7 @@ type Backend struct {
 	NM           gonetworkmanager.NetworkManager
 	Settings     gonetworkmanager.Settings
 	Connections  map[string]gonetworkmanager.Connection
-	AccessPoints map[string]gonetworkmanager.AccessPoint
+	AccessPoints map[string][]gonetworkmanager.AccessPoint
 	Device       gonetworkmanager.DeviceWireless
 }
 
@@ -38,7 +38,7 @@ func New() (wifi.Backend, error) {
 		NM:           nm,
 		Settings:     settings,
 		Connections:  make(map[string]gonetworkmanager.Connection),
-		AccessPoints: make(map[string]gonetworkmanager.AccessPoint),
+		AccessPoints: make(map[string][]gonetworkmanager.AccessPoint),
 	}, nil
 }
 
@@ -72,7 +72,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		return nil, wifi.ErrWirelessDisabled
 	}
 	newConnections := make(map[string]gonetworkmanager.Connection)
-	newAccessPoints := make(map[string]gonetworkmanager.AccessPoint)
+	newAccessPoints := make(map[string][]gonetworkmanager.AccessPoint)
 
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
@@ -120,26 +120,53 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 	}
 
+	// First pass: collect all APs for each SSID
 	for _, ap := range accessPoints {
 		ssid, err := ap.GetPropertySSID()
 		if err != nil || ssid == "" {
 			continue
 		}
+		newAccessPoints[ssid] = append(newAccessPoints[ssid], ap)
+	}
 
-		strength, _ := ap.GetPropertyStrength()
-		if existing, exists := newAccessPoints[ssid]; exists {
-			exStrength, _ := existing.GetPropertyStrength()
-			if strength <= exStrength {
-				continue
+	// Second pass: Create connections
+	for ssid, aps := range newAccessPoints {
+		processedSSIDs[ssid] = true
+
+		var apStructs []wifi.AccessPoint
+		var maxStrength uint8
+		var bestAP gonetworkmanager.AccessPoint
+
+		for _, ap := range aps {
+			bssid, _ := ap.GetPropertyHWAddress()
+			strength, _ := ap.GetPropertyStrength()
+			frequency, _ := ap.GetPropertyFrequency()
+			apStructs = append(apStructs, wifi.AccessPoint{
+				SSID:      ssid,
+				BSSID:     bssid,
+				Strength:  strength,
+				Frequency: uint(frequency),
+			})
+
+			if strength >= maxStrength {
+				maxStrength = strength
+				bestAP = ap
 			}
 		}
 
-		processedSSIDs[ssid] = true
-		newAccessPoints[ssid] = ap
+		// Sort AccessPoints by strength (descending)
+		for i := 0; i < len(apStructs)-1; i++ {
+			for j := i + 1; j < len(apStructs); j++ {
+				if apStructs[i].Strength < apStructs[j].Strength {
+					apStructs[i], apStructs[j] = apStructs[j], apStructs[i]
+				}
+			}
+		}
 
-		flags, _ := ap.GetPropertyFlags()
-		wpaFlags, _ := ap.GetPropertyWPAFlags()
-		rsnFlags, _ := ap.GetPropertyRSNFlags()
+		// Use the best AP for properties
+		flags, _ := bestAP.GetPropertyFlags()
+		wpaFlags, _ := bestAP.GetPropertyWPAFlags()
+		rsnFlags, _ := bestAP.GetPropertyRSNFlags()
 		isSecure := (uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0) || (wpaFlags > 0) || (rsnFlags > 0)
 		var security wifi.SecurityType
 		if wpaFlags > 0 || rsnFlags > 0 {
@@ -193,20 +220,20 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				IsKnown:       true,
 				IsSecure:      isSecure,
 				IsVisible:     true,
-				Strength:      strength,
+				AccessPoints:  apStructs,
 				Security:      security,
 				LastConnected: lastConnected,
 				AutoConnect:   autoConnect,
 			}
 		} else {
 			connInfo = wifi.Connection{
-				SSID:        ssid,
-				IsKnown:     false,
-				IsSecure:    isSecure,
-				IsVisible:   true,
-				Strength:    strength,
-				Security:    security,
-				AutoConnect: false, // Can't autoconnect to a network we don't know
+				SSID:         ssid,
+				IsKnown:      false,
+				IsSecure:     isSecure,
+				IsVisible:    true,
+				AccessPoints: apStructs,
+				Security:     security,
+				AutoConnect:  false, // Can't autoconnect to a network we don't know
 			}
 		}
 		conns = append(conns, connInfo)
@@ -259,9 +286,23 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
-	ap, apOK := b.AccessPoints[ssid]
-	if !apOK {
+	aps, apOK := b.AccessPoints[ssid]
+	if !apOK || len(aps) == 0 {
 		return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
+	}
+	// TODO: Pick the best AP? Or let NM decide by passing specific object?
+	// For now, let's pick the strongest one which should be the first one if we sorted it,
+	// but here we just have the raw slice from NM.
+	// Actually, ActivateWirelessConnection takes a specific AP object path.
+	// We should probably pick the strongest one.
+	var bestAP gonetworkmanager.AccessPoint
+	var maxStrength uint8
+	for _, ap := range aps {
+		s, _ := ap.GetPropertyStrength()
+		if s >= maxStrength {
+			maxStrength = s
+			bestAP = ap
+		}
 	}
 
 	wirelessDevice, err := b.getWirelessDevice()
@@ -269,7 +310,7 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return err
 	}
 
-	activeConn, err := b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	activeConn, err := b.NM.ActivateWirelessConnection(conn, wirelessDevice, bestAP)
 	if err != nil {
 		return err
 	}
@@ -380,13 +421,23 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		// Use the generic ActivateConnection for hidden networks as there is no specific object.
 		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
 	} else {
-		ap, ok := b.AccessPoints[ssid]
-		if !ok {
+		aps, ok := b.AccessPoints[ssid]
+		if !ok || len(aps) == 0 {
 			// It's possible for the access point to disappear between the scan and the join attempt.
 			// In this case, we can try to join without the AP object.
 			activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
 		} else {
-			activeConn, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
+			// Pick strongest
+			var bestAP gonetworkmanager.AccessPoint
+			var maxStrength uint8
+			for _, ap := range aps {
+				s, _ := ap.GetPropertyStrength()
+				if s >= maxStrength {
+					maxStrength = s
+					bestAP = ap
+				}
+			}
+			activeConn, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, bestAP)
 		}
 	}
 	if err != nil {

@@ -20,10 +20,25 @@ type Connection struct {
 	IsSecure      bool
 	IsVisible     bool
 	IsHidden      bool
-	Strength      uint8 // 0-100
+	AccessPoints  []AccessPoint
 	Security      SecurityType
 	LastConnected *time.Time
 	AutoConnect   bool
+}
+
+// AccessPoint represents a specific access point for a network.
+type AccessPoint struct {
+	SSID      string
+	BSSID     string
+	Strength  uint8
+	Frequency uint
+}
+
+func (c Connection) Strength() uint8 {
+	if len(c.AccessPoints) > 0 {
+		return c.AccessPoints[0].Strength
+	}
+	return 0
 }
 
 // UpdateOptions specifies the properties to update for a connection.

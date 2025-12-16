@@ -278,14 +278,24 @@ func (m *EditModel) View() string {
 			}
 		}
 		details.WriteString(fmt.Sprintf("Security: %s\n", security))
-		if m.selectedItem.Strength > 0 {
-			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
+		if m.selectedItem.Strength() > 0 {
+			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength()))
 		}
 		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
 			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
 		s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(details.String()))
 		s.WriteString("\n\n")
+
+		if len(m.selectedItem.AccessPoints) > 0 {
+			var aps strings.Builder
+			aps.WriteString("Access Points:\n")
+			for _, ap := range m.selectedItem.AccessPoints {
+				aps.WriteString(fmt.Sprintf("- BSSID: %s, %d%% (%d MHz)\n", ap.BSSID, ap.Strength, ap.Frequency))
+			}
+			s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(aps.String()))
+			s.WriteString("\n\n")
+		}
 	}
 
 	for _, item := range m.focusManager.items {
