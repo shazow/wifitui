@@ -5,6 +5,7 @@ package networkmanager
 import (
 	"fmt"
 	"time"
+	"sort"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
 	"github.com/google/uuid"
@@ -155,13 +156,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 
 		// Sort AccessPoints by strength (descending)
-		for i := 0; i < len(apStructs)-1; i++ {
-			for j := i + 1; j < len(apStructs); j++ {
-				if apStructs[i].Strength < apStructs[j].Strength {
-					apStructs[i], apStructs[j] = apStructs[j], apStructs[i]
-				}
-			}
-		}
+		sort.Slice(apStructs, func(i, j int) bool {
+			return apStructs[i].Strength > apStructs[j].Strength
+		})
 
 		// Use the best AP for properties
 		flags, _ := bestAP.GetPropertyFlags()
@@ -290,11 +287,8 @@ func (b *Backend) ActivateConnection(ssid string) error {
 	if !apOK || len(aps) == 0 {
 		return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
-	// TODO: Pick the best AP? Or let NM decide by passing specific object?
-	// For now, let's pick the strongest one which should be the first one if we sorted it,
-	// but here we just have the raw slice from NM.
-	// Actually, ActivateWirelessConnection takes a specific AP object path.
-	// We should probably pick the strongest one.
+	// We need to pass a specific AccessPoint object to ActivateWirelessConnection.
+	// We choose the one with the strongest signal to increase the chance of a successful connection.
 	var bestAP gonetworkmanager.AccessPoint
 	var maxStrength uint8
 	for _, ap := range aps {
