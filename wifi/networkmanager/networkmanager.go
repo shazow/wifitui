@@ -19,6 +19,7 @@ type Backend struct {
 	Settings     gonetworkmanager.Settings
 	Connections  map[string]gonetworkmanager.Connection
 	AccessPoints map[string]gonetworkmanager.AccessPoint
+	Device       gonetworkmanager.DeviceWireless
 }
 
 // New creates a new dbus.Backend.
@@ -42,7 +43,10 @@ func New() (wifi.Backend, error) {
 }
 
 func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
-	// TODO: Cache result in struct?
+	if b.Device != nil {
+		return b.Device, nil
+	}
+
 	devices, err := b.NM.GetDevices()
 	if err != nil {
 		return nil, err
@@ -50,6 +54,7 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 
 	for _, device := range devices {
 		if dev, ok := device.(gonetworkmanager.DeviceWireless); ok {
+			b.Device = dev
 			return dev, nil
 		}
 	}
