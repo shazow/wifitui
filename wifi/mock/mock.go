@@ -85,6 +85,24 @@ func New() (wifi.Backend, error) {
 		Secret: "different_secret",
 	})
 
+	// For testing multiple APs
+	multiAPConn := wifi.Connection{
+		SSID:        "MultiAPTestNetwork",
+		IsKnown:     true,
+		AutoConnect: true,
+		Security:    wifi.SecurityWPA,
+		IsVisible:   true,
+		AccessPoints: []wifi.AccessPoint{
+			{BSSID: "11:11:11:11:11:11", Strength: 30, Frequency: 2412},
+			{BSSID: "22:22:22:22:22:22", Strength: 80, Frequency: 5180},
+		},
+	}
+	initialConnections = append(initialConnections, multiAPConn)
+	knownConnections = append(knownConnections, mockConnection{
+		Connection: multiAPConn,
+		Secret:     "password",
+	})
+
 	return &MockBackend{
 		VisibleConnections:    initialConnections,
 		KnownConnections:      knownConnections,
@@ -133,7 +151,16 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 
 	// Add all visible connections first.
 	for _, c := range m.VisibleConnections {
-		unified[c.SSID] = c
+		if existing, ok := unified[c.SSID]; ok {
+			// Merge APs
+			existing.AccessPoints = append(existing.AccessPoints, c.AccessPoints...)
+			if c.Strength > existing.Strength {
+				existing.Strength = c.Strength
+			}
+			unified[c.SSID] = existing
+		} else {
+			unified[c.SSID] = c
+		}
 	}
 
 	// Add/overwrite with known connections to ensure they are in the list.
@@ -141,6 +168,10 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 		conn := kc.Connection
 		if visibleConn, ok := unified[conn.SSID]; ok {
 			conn.Strength = visibleConn.Strength
+			// Merge AccessPoints from visible connection if known connection doesn't have them populated
+			if len(conn.AccessPoints) == 0 && len(visibleConn.AccessPoints) > 0 {
+				conn.AccessPoints = visibleConn.AccessPoints
+			}
 		}
 		unified[conn.SSID] = conn
 	}
@@ -167,7 +198,7 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 	return result, nil
 }
 
-func (m *MockBackend) ActivateConnection(ssid string) error {
+func (m *MockBackend) ActivateConnection(ssid, bssid string) error {
 	time.Sleep(m.ActionSleep)
 
 	if m.ActivateError != nil {
@@ -176,6 +207,34 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 	// "Act on first match" logic for ambiguity.
 	for i, c := range m.KnownConnections {
 		if c.SSID == ssid {
+			if bssid != "" {
+				// Verify BSSID exists
+				found := false
+				for _, ap := range c.AccessPoints {
+					if ap.BSSID == bssid {
+						found = true
+						break
+					}
+				}
+				// Also check visible connections for APs if not found in known (merged view)
+				if !found {
+					for _, vc := range m.VisibleConnections {
+						if vc.SSID == ssid {
+							for _, ap := range vc.AccessPoints {
+								if ap.BSSID == bssid {
+									found = true
+									break
+								}
+							}
+						}
+					}
+				}
+
+				if !found && len(c.AccessPoints) > 0 { // Only error if we have AP info
+					return fmt.Errorf("access point %s not found for %s: %w", bssid, ssid, wifi.ErrNotFound)
+				}
+			}
+
 			m.setActiveConnection(ssid)
 			now := time.Now()
 			m.KnownConnections[i].LastConnected = &now
@@ -222,7 +281,7 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 	return nil
 }
 
-func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, bssid string) error {
 	time.Sleep(m.ActionSleep)
 
 	if m.JoinError != nil {

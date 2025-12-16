@@ -23,6 +23,7 @@ type EditModel struct {
 	ssidAdapter         *TextInput
 	passwordAdapter     *TextInput
 	securityGroup       *ChoiceComponent
+	apSelection         *ChoiceComponent
 	autoConnectCheckbox *Checkbox
 	buttonGroup         *MultiButtonComponent
 	passwordRevealed    bool
@@ -91,6 +92,39 @@ func NewEditModel(item *connectionItem) *EditModel {
 		items = append(items, m.securityGroup)
 	}
 
+	// AP Selection
+	var sortedAPs []wifi.AccessPoint
+	if len(m.selectedItem.AccessPoints) > 1 {
+		// Sort APs by strength
+		sortedAPs = make([]wifi.AccessPoint, len(m.selectedItem.AccessPoints))
+		copy(sortedAPs, m.selectedItem.AccessPoints)
+		// Basic bubble sort for now, or just iterate and pick best.
+		// Actually backend should sort? Backend BuildNetworkList does not sort APs inside Connection.
+		// Let's sort here.
+		for i := 0; i < len(sortedAPs); i++ {
+			for j := i + 1; j < len(sortedAPs); j++ {
+				if sortedAPs[j].Strength > sortedAPs[i].Strength {
+					sortedAPs[i], sortedAPs[j] = sortedAPs[j], sortedAPs[i]
+				}
+			}
+		}
+
+		var options []string
+		options = append(options, "Best Signal (Default)")
+		for _, ap := range sortedAPs {
+			label := fmt.Sprintf("%s (%d%%)", ap.BSSID, ap.Strength)
+			if ap.Frequency > 0 {
+				// Convert to GHz for display if > 1000
+				freq := float64(ap.Frequency) / 1000.0
+				label += fmt.Sprintf(" %.1fGHz", freq)
+			}
+			options = append(options, label)
+		}
+		m.apSelection = NewChoiceComponent("Access Point:", options)
+		// Default to 0 ("Best Signal")
+		items = append(items, m.apSelection)
+	}
+
 	if m.selectedItem.IsKnown {
 		m.autoConnectCheckbox = NewCheckbox("Auto Connect", m.selectedItem.AutoConnect)
 		items = append(items, m.autoConnectCheckbox)
@@ -105,6 +139,14 @@ func NewEditModel(item *connectionItem) *EditModel {
 		buttons = []string{"Join", "Cancel"}
 	}
 	buttonAction := func(index int) tea.Cmd {
+		var selectedBSSID string
+		if m.apSelection != nil {
+			idx := m.apSelection.Selected()
+			if idx > 0 && idx <= len(sortedAPs) {
+				selectedBSSID = sortedAPs[idx-1].BSSID
+			}
+		}
+
 		isNew := m.selectedItem.SSID == ""
 		if isNew {
 			switch index {
@@ -115,6 +157,7 @@ func NewEditModel(item *connectionItem) *EditModel {
 						password: m.passwordAdapter.Model.Value(),
 						security: wifi.SecurityType(m.securityGroup.Selected()),
 						isHidden: true,
+						bssid:    selectedBSSID,
 					}
 				}
 			case 1: // Cancel
@@ -128,6 +171,7 @@ func NewEditModel(item *connectionItem) *EditModel {
 					return connectMsg{
 						item:        m.selectedItem,
 						autoConnect: autoConnect,
+						bssid:       selectedBSSID,
 					}
 				}
 			case 1: // Save
@@ -156,6 +200,7 @@ func NewEditModel(item *connectionItem) *EditModel {
 						password: m.passwordAdapter.Model.Value(),
 						security: m.selectedItem.Security,
 						isHidden: m.selectedItem.IsHidden,
+						bssid:    selectedBSSID,
 					}
 				}
 			case 1: // Cancel

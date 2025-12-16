@@ -68,6 +68,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	}
 	newConnections := make(map[string]gonetworkmanager.Connection)
 	newAccessPoints := make(map[string]gonetworkmanager.AccessPoint)
+	// Map to hold slice of APs per SSID
+	ssidsAccessPoints := make(map[string][]gonetworkmanager.AccessPoint)
 
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
@@ -115,12 +117,15 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 	}
 
+	// First pass: collect all APs grouped by SSID
 	for _, ap := range accessPoints {
 		ssid, err := ap.GetPropertySSID()
 		if err != nil || ssid == "" {
 			continue
 		}
+		ssidsAccessPoints[ssid] = append(ssidsAccessPoints[ssid], ap)
 
+		// Keep track of the strongest AP for direct activation map
 		strength, _ := ap.GetPropertyStrength()
 		if existing, exists := newAccessPoints[ssid]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
@@ -128,10 +133,16 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				continue
 			}
 		}
-
-		processedSSIDs[ssid] = true
 		newAccessPoints[ssid] = ap
+	}
 
+	// Second pass: build Connection objects
+	for ssid, aps := range ssidsAccessPoints {
+		processedSSIDs[ssid] = true
+
+		// We use the strongest AP for main properties
+		ap := newAccessPoints[ssid]
+		strength, _ := ap.GetPropertyStrength()
 		flags, _ := ap.GetPropertyFlags()
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
 		rsnFlags, _ := ap.GetPropertyRSNFlags()
@@ -143,6 +154,18 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			security = wifi.SecurityWEP
 		} else {
 			security = wifi.SecurityOpen
+		}
+
+		var connectionAccessPoints []wifi.AccessPoint
+		for _, subAP := range aps {
+			s, _ := subAP.GetPropertyStrength()
+			freq, _ := subAP.GetPropertyFrequency()
+			bssid, _ := subAP.GetPropertyHwAddress()
+			connectionAccessPoints = append(connectionAccessPoints, wifi.AccessPoint{
+				BSSID:     bssid,
+				Strength:  s,
+				Frequency: freq,
+			})
 		}
 
 		var connInfo wifi.Connection
@@ -192,16 +215,18 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				Security:      security,
 				LastConnected: lastConnected,
 				AutoConnect:   autoConnect,
+				AccessPoints:  connectionAccessPoints,
 			}
 		} else {
 			connInfo = wifi.Connection{
-				SSID:        ssid,
-				IsKnown:     false,
-				IsSecure:    isSecure,
-				IsVisible:   true,
-				Strength:    strength,
-				Security:    security,
-				AutoConnect: false, // Can't autoconnect to a network we don't know
+				SSID:         ssid,
+				IsKnown:      false,
+				IsSecure:     isSecure,
+				IsVisible:    true,
+				Strength:     strength,
+				Security:     security,
+				AutoConnect:  false, // Can't autoconnect to a network we don't know
+				AccessPoints: connectionAccessPoints,
 			}
 		}
 		conns = append(conns, connInfo)
@@ -248,15 +273,44 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	return conns, nil
 }
 
-func (b *Backend) ActivateConnection(ssid string) error {
+func (b *Backend) ActivateConnection(ssid, bssid string) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
 		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
 	}
 
-	ap, apOK := b.AccessPoints[ssid]
-	if !apOK {
-		return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
+	var ap gonetworkmanager.AccessPoint
+	var apOK bool
+
+	if bssid != "" {
+		// Look for the specific AP
+		// This is slow as we iterate all APs, but we don't have a map by BSSID easily available
+		// without storing it differently. Since this is an infrequent operation, it should be fine.
+		wirelessDevice, err := b.getWirelessDevice()
+		if err != nil {
+			return err
+		}
+		allAPs, err := wirelessDevice.GetAccessPoints()
+		if err != nil {
+			return err
+		}
+		for _, a := range allAPs {
+			hw, _ := a.GetPropertyHwAddress()
+			if hw == bssid {
+				ap = a
+				apOK = true
+				break
+			}
+		}
+		if !apOK {
+			return fmt.Errorf("access point %s not found: %w", bssid, wifi.ErrNotFound)
+		}
+	} else {
+		// Fallback to best AP
+		ap, apOK = b.AccessPoints[ssid]
+		if !apOK {
+			return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
+		}
 	}
 
 	wirelessDevice, err := b.getWirelessDevice()
@@ -316,7 +370,7 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Delete()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, bssid string) error {
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
 		return err
@@ -375,8 +429,27 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		// Use the generic ActivateConnection for hidden networks as there is no specific object.
 		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
 	} else {
-		ap, ok := b.AccessPoints[ssid]
-		if !ok {
+		var ap gonetworkmanager.AccessPoint
+		var apOK bool
+
+		if bssid != "" {
+			// Find specific AP
+			allAPs, err := wirelessDevice.GetAccessPoints()
+			if err == nil {
+				for _, a := range allAPs {
+					hw, _ := a.GetPropertyHwAddress()
+					if hw == bssid {
+						ap = a
+						apOK = true
+						break
+					}
+				}
+			}
+		} else {
+			ap, apOK = b.AccessPoints[ssid]
+		}
+
+		if !apOK {
 			// It's possible for the access point to disappear between the scan and the join attempt.
 			// In this case, we can try to join without the AP object.
 			activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)

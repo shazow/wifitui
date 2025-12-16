@@ -122,7 +122,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			})
 		}
 		batch = append(batch, func() tea.Msg {
-			err := m.backend.ActivateConnection(msg.item.SSID)
+			err := m.backend.ActivateConnection(msg.item.SSID, msg.bssid)
 			if err != nil {
 				return errorMsg{fmt.Errorf("failed to activate connection: %w", err)}
 			}
@@ -133,7 +133,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Joining %q...", msg.ssid), loading: true} },
 			func() tea.Msg {
-				err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden)
+				err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden, msg.bssid)
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 				}

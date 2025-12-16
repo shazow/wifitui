@@ -105,6 +105,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		desc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(strengthPart + connectedPart)
 	}
 
+	// Add AP count if > 1
+	if len(i.AccessPoints) > 1 {
+		apCount := fmt.Sprintf(" (%d APs)", len(i.AccessPoints))
+		desc += lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(apCount)
+	}
+
 	// Now combine and render the full line
 	var line string
 	if index == m.Index() {
