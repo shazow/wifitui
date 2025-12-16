@@ -75,12 +75,14 @@ type (
 	connectMsg struct {
 		item        connectionItem
 		autoConnect bool
+		bssid       string
 	}
 	joinNetworkMsg struct {
 		ssid     string
 		password string
 		security wifi.SecurityType
 		isHidden bool
+		bssid    string
 	}
 	loadSecretsMsg  struct{ item connectionItem }
 	updateSecretMsg struct {

@@ -170,7 +170,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 }
 
 // ActivateConnection activates a known network.
-func (b *Backend) ActivateConnection(ssid string) error {
+func (b *Backend) ActivateConnection(ssid, bssid string) error {
 	password, err := b.GetSecrets(ssid)
 	if err != nil {
 		// This will fail for open networks, but that's ok
@@ -210,7 +210,7 @@ func (b *Backend) SetWireless(enabled bool) error {
 }
 
 // JoinNetwork connects to a new network, potentially creating a new configuration.
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, bssid string) error {
 	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
 	if err := runOnly(cmd); err != nil {
 		return err

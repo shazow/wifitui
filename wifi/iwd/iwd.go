@@ -183,7 +183,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	return connections, nil
 }
 
-func (b *Backend) ActivateConnection(ssid string) error {
+func (b *Backend) ActivateConnection(ssid, bssid string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -214,7 +214,7 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Object(iwdDest, iwdPath).Call(iwdIface+".ForgetNetwork", 0, path).Store()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, bssid string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
