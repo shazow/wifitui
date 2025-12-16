@@ -27,7 +27,7 @@ func runTUI(b wifi.Backend) error {
 func formatConnection(c wifi.Connection) string {
 	var parts []string
 	if c.IsVisible {
-		parts = append(parts, fmt.Sprintf("%d%%", c.Strength))
+		parts = append(parts, fmt.Sprintf("%d%%", c.Strength()))
 		parts = append(parts, "visible")
 	}
 	if c.IsSecure {
@@ -99,7 +99,7 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 			fmt.Fprintf(w, "Secure: %t\n", c.IsSecure)
 			fmt.Fprintf(w, "Visible: %t\n", c.IsVisible)
 			fmt.Fprintf(w, "Hidden: %t\n", c.IsHidden)
-			fmt.Fprintf(w, "Strength: %d%%\n", c.Strength)
+			fmt.Fprintf(w, "Strength: %d%%\n", c.Strength())
 			if c.LastConnected != nil {
 				fmt.Fprintf(w, "Last Connected: %s\n", helpers.FormatDuration(*c.LastConnected))
 			}

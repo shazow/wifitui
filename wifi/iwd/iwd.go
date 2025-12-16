@@ -114,26 +114,42 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			connectedVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Connected")
 			isActive := connectedVar.Value().(bool)
 
+			// For iwd, we only have one AP per "Network" object as exposed by IWD.
+			// Multiple BSSIDs are hidden behind the Network abstraction in IWD D-Bus API.
+			// However, if we get multiple network objects with same SSID (rare but possible if IWD changes?),
+			// we stick to the existing logic of keeping the best one, OR we can list them.
+			// But since the user requested "other backends will just include the one AccessPoint",
+			// we will wrap the strength in a single AccessPoint struct.
+
+			// Note: IWD D-Bus Network object doesn't expose Frequency or BSSID directly easily in the same way.
+			// Device object has "GetOrderedNetworks".
+			// Let's create a dummy AP.
+			ap := wifi.AccessPoint{
+				SSID:     ssid,
+				Strength: strength,
+				// Frequency and BSSID are not readily available in this loop without extra calls or might not be exposed on Network interface
+			}
+
 			if existing, exists := visibleNetworks[ssid]; exists {
-				if strength > existing.Strength {
+				if strength > existing.Strength() {
 					visibleNetworks[ssid] = wifi.Connection{
-						SSID:      ssid,
-						IsActive:  isActive,
-						IsSecure:  security != wifi.SecurityOpen,
-						Security:  security,
-						IsVisible: true,
-						Strength:  strength,
+						SSID:         ssid,
+						IsActive:     isActive,
+						IsSecure:     security != wifi.SecurityOpen,
+						Security:     security,
+						IsVisible:    true,
+						AccessPoints: []wifi.AccessPoint{ap},
 					}
 				}
 			} else {
 				visibleNetworks[ssid] = wifi.Connection{
-					SSID:        ssid,
-					IsActive:    isActive,
-					IsSecure:    security != wifi.SecurityOpen,
-					Security:    security,
-					IsVisible:   true,
-					Strength:    strength,
-					AutoConnect: false, // Cannot autoconnect to unknown network
+					SSID:         ssid,
+					IsActive:     isActive,
+					IsSecure:     security != wifi.SecurityOpen,
+					Security:     security,
+					IsVisible:    true,
+					AccessPoints: []wifi.AccessPoint{ap},
+					AutoConnect:  false, // Cannot autoconnect to unknown network
 				}
 			}
 		}

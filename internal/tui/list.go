@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/shazow/wifitui/wifi"
 )
@@ -73,32 +72,17 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	// Prepare description parts
 	strengthPart := i.Description()
+	if len(i.AccessPoints) > 1 {
+		strengthPart += fmt.Sprintf(" (%d APs)", len(i.AccessPoints))
+	}
 	connectedPart := ""
 	if i.IsActive {
 		connectedPart = " (Connected)"
 	}
 
 	var desc string
-	if i.Strength > 0 {
-		// FIXME: This can be simplified
-		var signalHigh, signalLow string
-		if adaptiveHigh, ok := CurrentTheme.SignalHigh.TerminalColor.(lipgloss.AdaptiveColor); ok {
-			if adaptiveLow, ok := CurrentTheme.SignalLow.TerminalColor.(lipgloss.AdaptiveColor); ok {
-				if lipgloss.HasDarkBackground() {
-					signalHigh = adaptiveHigh.Dark
-					signalLow = adaptiveLow.Dark
-				} else {
-					signalHigh = adaptiveHigh.Light
-					signalLow = adaptiveLow.Light
-				}
-			}
-		}
-		start, _ := colorful.Hex(signalLow)
-		end, _ := colorful.Hex(signalHigh)
-		p := float64(i.Strength) / 100.0
-		blend := start.BlendRgb(end, p)
-		signalColor := lipgloss.Color(blend.Hex())
-
+	if i.Strength() > 0 {
+		signalColor := GetSignalStrengthColor(i.Strength())
 		// Style only the signal part with color
 		desc = lipgloss.NewStyle().Foreground(signalColor).Render(strengthPart) + connectedPart
 	} else {

@@ -142,15 +142,23 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				security = wifi.SecurityOpen
 			}
 			isKnown := knownSSIDs[ssid]
+
+			ap := wifi.AccessPoint{
+				SSID:     ssid,
+				BSSID:    matches[2],
+				Strength: strength,
+				// Frequency is not parsed currently but could be from channel info if available
+			}
+
 			conns = append(conns, wifi.Connection{
-				SSID:        ssid,
-				IsActive:    ssid == currentSSID,
-				IsKnown:     isKnown,
-				IsVisible:   true,
-				Strength:    strength,
-				IsSecure:    security != wifi.SecurityOpen,
-				Security:    security,
-				AutoConnect: isKnown,
+				SSID:         ssid,
+				IsActive:     ssid == currentSSID,
+				IsKnown:      isKnown,
+				IsVisible:    true,
+				AccessPoints: []wifi.AccessPoint{ap},
+				IsSecure:     security != wifi.SecurityOpen,
+				Security:     security,
+				AutoConnect:  isKnown,
 			})
 		}
 	}

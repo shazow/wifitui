@@ -41,12 +41,12 @@ func TestSortConnections(t *testing.T) {
 		{
 			name: "Sort by strength",
 			connections: []Connection{
-				{SSID: "Weak", IsVisible: true, Strength: 10},
-				{SSID: "Strong", IsVisible: true, Strength: 90},
+				{SSID: "Weak", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 10}}},
+				{SSID: "Strong", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 90}}},
 			},
 			expected: []Connection{
-				{SSID: "Strong", IsVisible: true, Strength: 90},
-				{SSID: "Weak", IsVisible: true, Strength: 10},
+				{SSID: "Strong", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 90}}},
+				{SSID: "Weak", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 10}}},
 			},
 		},
 		{
@@ -77,15 +77,15 @@ func TestSortConnections(t *testing.T) {
 			name: "Complex sort",
 			connections: []Connection{
 				{SSID: "Known B", IsVisible: false, LastConnected: &twoDaysAgo},
-				{SSID: "Visible Weak", IsVisible: true, Strength: 20},
-				{SSID: "Active WiFi", IsActive: true, IsVisible: true, Strength: 80},
+				{SSID: "Visible Weak", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 20}}},
+				{SSID: "Active WiFi", IsActive: true, IsVisible: true, AccessPoints: []AccessPoint{{Strength: 80}}},
 				{SSID: "Known A", IsVisible: false, LastConnected: &yesterday},
-				{SSID: "Visible Strong", IsVisible: true, Strength: 90},
+				{SSID: "Visible Strong", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 90}}},
 			},
 			expected: []Connection{
-				{SSID: "Active WiFi", IsActive: true, IsVisible: true, Strength: 80},
-				{SSID: "Visible Strong", IsVisible: true, Strength: 90},
-				{SSID: "Visible Weak", IsVisible: true, Strength: 20},
+				{SSID: "Active WiFi", IsActive: true, IsVisible: true, AccessPoints: []AccessPoint{{Strength: 80}}},
+				{SSID: "Visible Strong", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 90}}},
+				{SSID: "Visible Weak", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 20}}},
 				{SSID: "Known A", IsVisible: false, LastConnected: &yesterday},
 				{SSID: "Known B", IsVisible: false, LastConnected: &twoDaysAgo},
 			},

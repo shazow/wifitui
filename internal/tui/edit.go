@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 
 	"github.com/shazow/wifitui/internal/helpers"
 	"github.com/shazow/wifitui/qrwifi"
@@ -278,14 +279,50 @@ func (m *EditModel) View() string {
 			}
 		}
 		details.WriteString(fmt.Sprintf("Security: %s\n", security))
-		if m.selectedItem.Strength > 0 {
-			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
+		if m.selectedItem.Strength() > 0 {
+			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength()))
 		}
 		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
 			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
 		s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(details.String()))
 		s.WriteString("\n\n")
+
+		if len(m.selectedItem.AccessPoints) > 0 {
+			var aps strings.Builder
+			aps.WriteString("Access Points:\n")
+			for _, ap := range m.selectedItem.AccessPoints {
+				freq := ""
+				if ap.Frequency > 0 {
+					freq = fmt.Sprintf(" (%d MHz)", ap.Frequency)
+				}
+
+				// Apply gradient coloring to signal strength
+				var signalHigh, signalLow string
+				if adaptiveHigh, ok := CurrentTheme.SignalHigh.TerminalColor.(lipgloss.AdaptiveColor); ok {
+					if adaptiveLow, ok := CurrentTheme.SignalLow.TerminalColor.(lipgloss.AdaptiveColor); ok {
+						if lipgloss.HasDarkBackground() {
+							signalHigh = adaptiveHigh.Dark
+							signalLow = adaptiveLow.Dark
+						} else {
+							signalHigh = adaptiveHigh.Light
+							signalLow = adaptiveLow.Light
+						}
+					}
+				}
+				start, _ := colorful.Hex(signalLow)
+				end, _ := colorful.Hex(signalHigh)
+				p := float64(ap.Strength) / 100.0
+				blend := start.BlendRgb(end, p)
+				signalColor := lipgloss.Color(blend.Hex())
+
+				strengthStr := lipgloss.NewStyle().Foreground(signalColor).Render(fmt.Sprintf("%d%%", ap.Strength))
+
+				aps.WriteString(fmt.Sprintf("%s %s%s\n", ap.BSSID, strengthStr, freq))
+			}
+			s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(aps.String()))
+			s.WriteString("\n\n")
+		}
 	}
 
 	for _, item := range m.focusManager.items {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lucasb-eyer/go-colorful"
 )
 
 // Color is a wrapper around lipgloss.TerminalColor that can be unmarshaled
@@ -105,4 +106,25 @@ func LoadTheme(r io.Reader) (Theme, error) {
 	}
 
 	return theme, nil
+}
+
+// GetSignalStrengthColor returns a color based on the signal strength.
+func GetSignalStrengthColor(strength uint8) lipgloss.Color {
+	var signalHigh, signalLow string
+	if adaptiveHigh, ok := CurrentTheme.SignalHigh.TerminalColor.(lipgloss.AdaptiveColor); ok {
+		if adaptiveLow, ok := CurrentTheme.SignalLow.TerminalColor.(lipgloss.AdaptiveColor); ok {
+			if lipgloss.HasDarkBackground() {
+				signalHigh = adaptiveHigh.Dark
+				signalLow = adaptiveLow.Dark
+			} else {
+				signalHigh = adaptiveHigh.Light
+				signalLow = adaptiveLow.Light
+			}
+		}
+	}
+	start, _ := colorful.Hex(signalLow)
+	end, _ := colorful.Hex(signalHigh)
+	p := float64(strength) / 100.0
+	blend := start.BlendRgb(end, p)
+	return lipgloss.Color(blend.Hex())
 }

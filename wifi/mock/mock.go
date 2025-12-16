@@ -49,11 +49,16 @@ func New() (wifi.Backend, error) {
 		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: wifi.SecurityWPA},
 		{SSID: "I See Dead Packets", Security: wifi.SecurityWEP, LastConnected: ago(8763 * time.Hour)},
 		{SSID: "Dunder MiffLAN", Security: wifi.SecurityWPA, IsVisible: true},
-		{SSID: "Police Surveillance 2", Strength: 48, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Police Surveillance 2", AccessPoints: []wifi.AccessPoint{{Strength: 48}}, Security: wifi.SecurityWPA, IsVisible: true},
 		{SSID: "I Believe Wi Can Fi", Security: wifi.SecurityWEP, IsVisible: true},
 		{SSID: "Hot singles in your area", Security: wifi.SecurityWPA, IsVisible: true},
-		{SSID: "Password is password", Strength: 87, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true},
-		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Password is password", AccessPoints: []wifi.AccessPoint{{Strength: 87}}, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "TacoBoutAGoodSignal", AccessPoints: []wifi.AccessPoint{{Strength: 99}}, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Multi-AP Network", AccessPoints: []wifi.AccessPoint{
+			{SSID: "Multi-AP Network", BSSID: "00:11:22:33:44:55", Strength: 80, Frequency: 2412},
+			{SSID: "Multi-AP Network", BSSID: "AA:BB:CC:DD:EE:FF", Strength: 60, Frequency: 5180},
+			{SSID: "Multi-AP Network", BSSID: "11:22:33:44:55:66", Strength: 40, Frequency: 5240},
+		}, Security: wifi.SecurityWPA, IsVisible: true},
 		{SSID: "Wi-Fight the Feeling?", Security: wifi.SecurityWEP},
 		{SSID: "xX_D4rkR0ut3r_Xx", Security: wifi.SecurityWPA},
 		{SSID: "Luke I am your WiFi", Security: wifi.SecurityWEP},
@@ -77,10 +82,10 @@ func New() (wifi.Backend, error) {
 	// For testing duplicate SSIDs
 	knownConnections = append(knownConnections, mockConnection{
 		Connection: wifi.Connection{
-			SSID:     "HideYoKidsHideYoWiFi",
-			Strength: 25,
-			IsKnown:  true,
-			Security: wifi.SecurityWPA,
+			SSID:         "HideYoKidsHideYoWiFi",
+			AccessPoints: []wifi.AccessPoint{{Strength: 25}},
+			IsKnown:      true,
+			Security:     wifi.SecurityWPA,
 		},
 		Secret: "different_secret",
 	})
@@ -122,8 +127,18 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 		s := rand.NewSource(time.Now().Unix())
 		r := rand.New(s)
 		for i := range m.VisibleConnections {
-			if m.VisibleConnections[i].Strength > 0 {
-				m.VisibleConnections[i].Strength = uint8(r.Intn(70) + 30)
+			if len(m.VisibleConnections[i].AccessPoints) > 0 {
+				for j := range m.VisibleConnections[i].AccessPoints {
+					m.VisibleConnections[i].AccessPoints[j].Strength = uint8(r.Intn(70) + 30)
+				}
+			} else {
+				// Create a default AP if none exists but it's supposed to be visible (though logic below might add it)
+				// Actually, initialConnections should probably have APs initialized.
+				// But let's be safe.
+				m.VisibleConnections[i].AccessPoints = []wifi.AccessPoint{{
+					SSID:     m.VisibleConnections[i].SSID,
+					Strength: uint8(r.Intn(70) + 30),
+				}}
 			}
 		}
 	}
@@ -140,7 +155,7 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 	for _, kc := range m.KnownConnections {
 		conn := kc.Connection
 		if visibleConn, ok := unified[conn.SSID]; ok {
-			conn.Strength = visibleConn.Strength
+			conn.AccessPoints = visibleConn.AccessPoints
 		}
 		unified[conn.SSID] = conn
 	}

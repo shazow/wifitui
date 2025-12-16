@@ -46,8 +46,8 @@ type connectionItem struct {
 
 func (i connectionItem) Title() string { return i.SSID }
 func (i connectionItem) Description() string {
-	if i.Strength > 0 {
-		return fmt.Sprintf("%d%%", i.Strength)
+	if i.Strength() > 0 {
+		return fmt.Sprintf("%d%%", i.Strength())
 	}
 	if !i.IsVisible && i.LastConnected != nil {
 		return helpers.FormatDuration(*i.LastConnected)
