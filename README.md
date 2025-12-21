@@ -42,7 +42,7 @@ sudo pacman-key --recv-keys 065D66BF7EFEB02BCDC75FF6227578D96B6A5E4C
 sudo pacman-key --lsign-key 065D66BF7EFEB02BCDC75FF6227578D96B6A5E4C
 sudo pacman -U "${LATEST_RELEASE}.pkg.tar.zst"
 
-# Homebrew for macOS and Linux
+# Homebrew for Linux and macOS (experimental)
 brew install wifitui
 ```
 
