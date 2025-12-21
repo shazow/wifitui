@@ -20,6 +20,8 @@
 
 ## Getting Started
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/wifitui.svg)](https://repology.org/project/wifitui/versions)
+
 Install [the latest release](https://github.com/shazow/wifitui/releases/) on your fav distro (wifitui is [not in all package managers yet](https://github.com/shazow/wifitui/issues/48)), here's a handy script for convenience:
 
 ```shell
