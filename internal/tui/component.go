@@ -68,6 +68,7 @@ type (
 	connectionSavedMsg struct {
 		forgottenSSID string
 	}
+	removeNetworkMsg struct{ ssid string }
 	errorMsg struct{ err error }
 
 	// To main model

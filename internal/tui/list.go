@@ -238,6 +238,16 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			m.scanner.SetSchedule(ScanSlow)
 		}
 		return m, nil
+	case removeNetworkMsg:
+		items := m.list.Items()
+		filtered := make([]list.Item, 0, len(items))
+		for _, item := range items {
+			if conn, ok := item.(connectionItem); ok && conn.SSID != msg.ssid {
+				filtered = append(filtered, item)
+			}
+		}
+		m.list.SetItems(filtered)
+		return m, nil
 	case secretsLoadedMsg:
 		editModel := NewEditModel(&msg.item)
 		editModel.SetPassword(msg.secret)

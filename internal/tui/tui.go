@@ -16,10 +16,11 @@ import (
 type model struct {
 	stack *ComponentStack
 
-	spinner       spinner.Model
-	backend       wifi.Backend
-	loading       bool
-	statusMessage string
+	spinner        spinner.Model
+	backend        wifi.Backend
+	loading        bool
+	statusMessage  string
+	forgottenSSIDs map[string]bool
 }
 
 // NewModel creates the starting state of our application
@@ -31,14 +32,16 @@ func NewModel(b wifi.Backend) (*model, error) {
 	listModel := NewListModel()
 
 	m := model{
-		stack:   NewComponentStack(listModel),
-		spinner: s,
-		backend: b,
+		stack:          NewComponentStack(listModel),
+		spinner:        s,
+		backend:        b,
+		forgottenSSIDs: make(map[string]bool),
 	}
 	return &m, nil
 }
 
 type radioEnabledMsg struct{}
+type forgetCompletedMsg struct{ ssid string }
 type updateConnectionMsg struct {
 	item connectionItem
 	wifi.UpdateOptions
@@ -163,16 +166,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			},
 		)
 	case forgetNetworkMsg:
+		ssid := msg.item.SSID
+		m.forgottenSSIDs[ssid] = true
 		return m, tea.Batch(
+			func() tea.Msg { return removeNetworkMsg{ssid: ssid} },
+			func() tea.Msg { return popViewMsg{} },
 			func() tea.Msg {
-				return statusMsg{status: fmt.Sprintf("Forgetting %q...", msg.item.SSID), loading: true}
-			},
-			func() tea.Msg {
-				err := m.backend.ForgetNetwork(msg.item.SSID)
+				err := m.backend.ForgetNetwork(ssid)
 				if err != nil {
-					return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
+					return errorMsg{fmt.Errorf("failed to forget %q: %w", ssid, err)}
 				}
-				return connectionSavedMsg{forgottenSSID: msg.item.SSID} // Re-use this to trigger a refresh
+				return forgetCompletedMsg{ssid: ssid}
 			},
 		)
 	case tea.KeyMsg:
@@ -211,7 +215,40 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				},
 			)
 		}
-	case connectionsLoadedMsg, secretsLoadedMsg, scanFinishedMsg:
+	case forgetCompletedMsg:
+		delete(m.forgottenSSIDs, msg.ssid)
+		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
+	case connectionsLoadedMsg:
+		// Filter out any networks that are pending forget
+		if len(m.forgottenSSIDs) > 0 {
+			filtered := msg[:0]
+			for _, conn := range msg {
+				if !m.forgottenSSIDs[conn.SSID] {
+					filtered = append(filtered, conn)
+				}
+			}
+			msg = connectionsLoadedMsg(filtered)
+		}
+		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
+		cmds = append(cmds, m.stack.Update(msg))
+		m.spinner, _ = m.spinner.Update(msg)
+		return m, tea.Batch(cmds...)
+	case scanFinishedMsg:
+		// Filter out any networks that are pending forget
+		if len(m.forgottenSSIDs) > 0 {
+			filtered := msg[:0]
+			for _, conn := range msg {
+				if !m.forgottenSSIDs[conn.SSID] {
+					filtered = append(filtered, conn)
+				}
+			}
+			msg = scanFinishedMsg(filtered)
+		}
+		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
+		cmds = append(cmds, m.stack.Update(msg))
+		m.spinner, _ = m.spinner.Update(msg)
+		return m, tea.Batch(cmds...)
+	case secretsLoadedMsg:
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case connectionSavedMsg:
