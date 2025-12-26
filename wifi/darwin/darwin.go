@@ -137,13 +137,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 // ActivateConnection activates a known network.
 func (b *Backend) ActivateConnection(ssid string) error {
-	password, err := b.GetSecrets(ssid)
-	if err != nil {
-		// This will fail for open networks, but that's ok
-		password = ""
-	}
-
-	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
+	// For known networks, networksetup uses stored credentials from the keychain
+	// automatically - no need to fetch the password ourselves.
+	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid)
 	return runOnly(cmd)
 }
 

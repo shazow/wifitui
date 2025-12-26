@@ -238,10 +238,6 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			m.scanner.SetSchedule(ScanSlow)
 		}
 		return m, nil
-	case secretsLoadedMsg:
-		editModel := NewEditModel(&msg.item)
-		editModel.SetPassword(msg.secret)
-		return editModel, nil
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {
 			break
@@ -293,12 +289,8 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				if !ok {
 					break
 				}
-				if selected.IsKnown {
-					return m, func() tea.Msg { return loadSecretsMsg{item: selected} }
-				} else {
-					editModel := NewEditModel(&selected)
-					return editModel, nil
-				}
+				editModel := NewEditModel(&selected)
+				return editModel, nil
 			}
 		}
 	}

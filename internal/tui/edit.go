@@ -27,6 +27,7 @@ type EditModel struct {
 	buttonGroup         *MultiButtonComponent
 	passwordRevealed    bool
 	isForgetting        bool
+	secretsLoaded       bool
 	selectedItem        connectionItem
 }
 
@@ -60,6 +61,10 @@ func NewEditModel(item *connectionItem) *EditModel {
 	onPasswordFocus := func(ti *textinput.Model) tea.Cmd {
 		ti.EchoMode = textinput.EchoNormal
 		m.passwordRevealed = true
+		// Load secrets on first focus for known networks
+		if m.selectedItem.IsKnown && !m.secretsLoaded {
+			return func() tea.Msg { return loadSecretsMsg{item: m.selectedItem} }
+		}
 		return nil
 	}
 	onPasswordBlur := func(ti *textinput.Model) {
@@ -209,6 +214,10 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		}
 		m.ssidAdapter.Model.Width = newWidth
 		m.passwordAdapter.Model.Width = newWidth
+		return m, nil
+	case secretsLoadedMsg:
+		m.secretsLoaded = true
+		m.SetPassword(msg.secret)
 		return m, nil
 	case startForgettingMsg:
 		m.isForgetting = true
