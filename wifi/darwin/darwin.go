@@ -1,5 +1,4 @@
 //go:build darwin
-// WARNING: This implementation is untested.
 
 package darwin
 
@@ -8,7 +7,6 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/shazow/wifitui/wifi"
@@ -67,6 +65,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	if !enabled {
 		return nil, wifi.ErrWirelessDisabled
 	}
+
 	// Get current network
 	cmd := exec.Command("networksetup", "-getairportnetwork", b.WifiInterface)
 	out, err := runWithOutput(cmd)
@@ -75,7 +74,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		re := regexp.MustCompile(`Current Wi-Fi Network: (.+)`)
 		matches := re.FindStringSubmatch(string(out))
 		if len(matches) > 1 {
-			currentSSID = matches[1]
+			currentSSID = strings.TrimSpace(matches[1])
 		}
 	}
 
@@ -94,70 +93,37 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 	}
 
-	// Scan for visible networks
-	cmd = exec.Command("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-s")
+	// Scan for visible networks using system_profiler (airport command is deprecated)
+	cmd = exec.Command("system_profiler", "SPAirPortDataType")
 	out, err = runWithOutput(cmd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan for networks: %w", wifi.ErrOperationFailed)
 	}
 
+	scannedNetworks := parseSystemProfilerOutput(string(out))
+
 	var conns []wifi.Connection
 	processedSSIDs := make(map[string]bool)
-	scanner = bufio.NewScanner(strings.NewReader(string(out)))
-	// The regex is to parse the output of the airport command.
-	// It should handle SSIDs with spaces.
-	re := regexp.MustCompile(`(.{1,32})\s+([0-9a-f:]+)\s+(-?\d+)\s+.*`)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "                            SSID BSSID") {
-			continue
-		}
-		matches := re.FindStringSubmatch(strings.TrimSpace(line))
-		if len(matches) > 3 {
-			ssid := strings.TrimSpace(matches[1])
-			if _, processed := processedSSIDs[ssid]; processed {
-				continue
-			}
-			processedSSIDs[ssid] = true
 
-			rssi, _ := strconv.Atoi(matches[3])
-			strength := uint8(2 * (rssi + 100))
-			if rssi >= 0 {
-				strength = 0
-			} else if rssi <= -100 {
-				strength = 0
-			} else {
-				strength = uint8(2 * (rssi + 100))
-			}
-			if strength > 100 {
-				strength = 100
-			}
-
-			var security wifi.SecurityType
-			if strings.Contains(line, "WPA") || strings.Contains(line, "WPA2") {
-				security = wifi.SecurityWPA
-			} else if strings.Contains(line, "WEP") {
-				security = wifi.SecurityWEP
-			} else {
-				security = wifi.SecurityOpen
-			}
-			isKnown := knownSSIDs[ssid]
-			conns = append(conns, wifi.Connection{
-				SSID:        ssid,
-				IsActive:    ssid == currentSSID,
-				IsKnown:     isKnown,
-				IsVisible:   true,
-				Strength:    strength,
-				IsSecure:    security != wifi.SecurityOpen,
-				Security:    security,
-				AutoConnect: isKnown,
-			})
-		}
+	for _, net := range scannedNetworks {
+		processedSSIDs[net.ssid] = true
+		isKnown := knownSSIDs[net.ssid]
+		isActive := net.isActive || net.ssid == currentSSID
+		conns = append(conns, wifi.Connection{
+			SSID:        net.ssid,
+			IsActive:    isActive,
+			IsKnown:     isKnown,
+			IsVisible:   true,
+			Strength:    rssiToStrength(net.rssi),
+			IsSecure:    net.security != wifi.SecurityOpen,
+			Security:    net.security,
+			AutoConnect: isKnown,
+		})
 	}
 
 	// Add known networks that are not visible
 	for ssid := range knownSSIDs {
-		if _, processed := processedSSIDs[ssid]; !processed {
+		if !processedSSIDs[ssid] {
 			conns = append(conns, wifi.Connection{
 				SSID:        ssid,
 				IsKnown:     true,

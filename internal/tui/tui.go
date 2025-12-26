@@ -224,14 +224,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return errorMsg{err}
 				}
 				if msg.forgottenSSID != "" {
-					// Filter out the forgotten SSID from connections if it is still present
-					// This handles the race condition where the backend might return the forgotten network
-					for i := range connections {
-						if connections[i].SSID == msg.forgottenSSID {
-							connections[i].IsKnown = false
-							connections[i].AutoConnect = false
+					// Remove the forgotten network from the list.
+					// If visible, mark as not known; if not visible, remove entirely.
+					filtered := connections[:0]
+					for _, conn := range connections {
+						if conn.SSID == msg.forgottenSSID {
+							if conn.IsVisible {
+								conn.IsKnown = false
+								conn.AutoConnect = false
+								filtered = append(filtered, conn)
+							}
+							// If not visible, don't add to filtered list (removes it)
+						} else {
+							filtered = append(filtered, conn)
 						}
 					}
+					connections = filtered
 				}
 				wifi.SortConnections(connections)
 				return connectionsLoadedMsg(connections)
