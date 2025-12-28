@@ -128,40 +128,60 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 		}
 	}
 
-	// Build a unified list of connections, de-duplicating known networks.
-	unified := make(map[string]wifi.Connection)
+	// Reproduce bug from networkmanager backend:
+	// Iterate through visible connections and append them to the result list,
+	// potentially creating duplicates if multiple APs with the same SSID exist.
+	// We still maintain a map to simulate the "updating best AP" part of the bug,
+	// but we mistakenly append to the result list every time we see a new or better AP.
 
-	// Add all visible connections first.
-	for _, c := range m.VisibleConnections {
-		unified[c.SSID] = c
-	}
-
-	// Add/overwrite with known connections to ensure they are in the list.
-	for _, kc := range m.KnownConnections {
-		conn := kc.Connection
-		if visibleConn, ok := unified[conn.SSID]; ok {
-			conn.Strength = visibleConn.Strength
-		}
-		unified[conn.SSID] = conn
-	}
-
-	// Convert map back to a slice for the return value.
+	processed := make(map[string]wifi.Connection)
 	var result []wifi.Connection
-	for _, c := range unified {
-		// IsActive is now stored on the connection object itself.
-		// We still need to determine IsKnown for networks that might only be in the visible list.
+
+	// Process visible connections with the buggy logic
+	for _, c := range m.VisibleConnections {
+		if existing, ok := processed[c.SSID]; ok {
+			if c.Strength <= existing.Strength {
+				continue
+			}
+		}
+		processed[c.SSID] = c
+
+		// This is the bug: we append to the result list even if we've already added this SSID.
+		// In the real bug, this happened because the append was inside the loop over APs.
+		// We need to ensure we populate IsKnown correctly here too.
+
+		connToAdd := c
 		isKnown := false
 		for _, kc := range m.KnownConnections {
 			if kc.SSID == c.SSID {
 				isKnown = true
+				// Merge known connection details
+				knownConn := kc.Connection
+				connToAdd.IsKnown = true
+				connToAdd.AutoConnect = knownConn.AutoConnect
+				connToAdd.Security = knownConn.Security
+				connToAdd.LastConnected = knownConn.LastConnected
+				// Preserve the visible strength and active status
+				// connToAdd.Strength = c.Strength (already set)
+				// connToAdd.IsActive = c.IsActive (already set)
 				break
 			}
 		}
-		c.IsKnown = isKnown
 		if !isKnown {
-			c.AutoConnect = false
+			connToAdd.IsKnown = false
+			connToAdd.AutoConnect = false
 		}
-		result = append(result, c)
+
+		result = append(result, connToAdd)
+	}
+
+	// Also ensure known connections that weren't visible are added (if that's desired behavior).
+	// The original mock logic added known connections even if not visible.
+	for _, kc := range m.KnownConnections {
+		if _, ok := processed[kc.SSID]; !ok {
+			result = append(result, kc.Connection)
+			processed[kc.SSID] = kc.Connection
+		}
 	}
 
 	return result, nil
