@@ -146,11 +146,10 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 
 	// Process visible connections with the buggy logic
 	for _, c := range m.VisibleConnections {
-		if existing, ok := processed[c.SSID]; ok {
-			if c.Strength <= existing.Strength {
-				continue
-			}
-		}
+		// We still track "processed" to simulate updating the best AP in the map,
+		// but we INTENTIONALLY skip the check that would prevent duplicates from being appended.
+		// This ensures that all duplicate entries in VisibleConnections appear in the result list,
+		// regardless of signal strength ordering.
 		processed[c.SSID] = c
 
 		// This is the bug: we append to the result list even if we've already added this SSID.
