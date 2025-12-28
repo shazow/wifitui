@@ -2,7 +2,7 @@ package mock
 
 import (
 	"fmt"
-	"math/rand"
+	//"math/rand"
 	"time"
 
 	"github.com/shazow/wifitui/wifi"
@@ -118,15 +118,15 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 		return nil, wifi.ErrWirelessDisabled
 	}
 	// For mock, we can re-randomize strengths on each scan
-	if shouldScan {
-		s := rand.NewSource(time.Now().Unix())
-		r := rand.New(s)
-		for i := range m.VisibleConnections {
-			if m.VisibleConnections[i].Strength > 0 {
-				m.VisibleConnections[i].Strength = uint8(r.Intn(70) + 30)
-			}
-		}
-	}
+	// if shouldScan {
+	// 	s := rand.NewSource(time.Now().Unix())
+	// 	r := rand.New(s)
+	// 	for i := range m.VisibleConnections {
+	// 		if m.VisibleConnections[i].Strength > 0 {
+	// 			m.VisibleConnections[i].Strength = uint8(r.Intn(70) + 30)
+	// 		}
+	// 	}
+	// }
 
 	// Reproduce bug from networkmanager backend:
 	// Iterate through visible connections and append them to the result list,

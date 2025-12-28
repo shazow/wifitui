@@ -29,46 +29,52 @@ func TestDuplicateEntriesInList(t *testing.T) {
 		t.Fatalf("NewModel failed: %v", err)
 	}
 
-	// 3. Trigger Scan
-	// Directly simulate the flow:
-	// A. Backend returns a list (with duplicates due to the bug).
+	// 3. Trigger Scan (Initial)
 	conns, err := mb.BuildNetworkList(true)
 	if err != nil {
 		t.Fatalf("BuildNetworkList failed: %v", err)
 	}
-
-	// B. Main model receives scanFinishedMsg
 	msg := scanFinishedMsg(conns)
-
-	// C. Update the model
 	_, _ = m.Update(msg)
 
-	// 4. Inspect ListModel
-	top := m.stack.Top()
-	lm, ok := top.(*ListModel)
-	if !ok {
-		t.Fatalf("Top component is not ListModel, got %T", top)
-	}
-
-	// Access list items using the public Items() method of the internal list.Model
-	// Note: lm.list is not exported, but we are in package tui.
-	items := lm.list.Items()
-
-	count := 0
-	for _, item := range items {
-		ci, ok := item.(connectionItem)
+	// Helper function to check for duplicates
+	checkForDuplicates := func(label string) {
+		top := m.stack.Top()
+		lm, ok := top.(*ListModel)
 		if !ok {
-			continue
+			t.Fatalf("[%s] Top component is not ListModel, got %T", label, top)
 		}
-		if ci.SSID == ssid {
-			count++
+		items := lm.list.Items()
+		count := 0
+		for _, item := range items {
+			ci, ok := item.(connectionItem)
+			if !ok {
+				continue
+			}
+			if ci.SSID == ssid {
+				count++
+			}
+		}
+		if count < 2 {
+			t.Errorf("[%s] Expected at least 2 connections for SSID %q, got %d", label, ssid, count)
+		} else {
+			t.Logf("[%s] Found %d duplicates for SSID %q", label, count, ssid)
 		}
 	}
 
-	// We expect duplicates now because of the simulated bug
-	if count < 2 {
-		t.Errorf("Expected at least 2 connections for SSID %q (reproducing bug), got %d", ssid, count)
-	} else {
-		t.Logf("Successfully reproduced bug: Found %d duplicates for SSID %q", count, ssid)
+	// Verify duplicates after first scan
+	checkForDuplicates("First Scan")
+
+	// 4. Trigger Rescan
+	// In the real app, this happens via a timer or keypress. Here we simulate the result.
+	// Since we disabled randomization, the strengths should remain 50 and 80.
+	conns2, err := mb.BuildNetworkList(true)
+	if err != nil {
+		t.Fatalf("BuildNetworkList (Rescan) failed: %v", err)
 	}
+	msg2 := scanFinishedMsg(conns2)
+	_, _ = m.Update(msg2)
+
+	// Verify duplicates persist after rescan
+	checkForDuplicates("Rescan")
 }
