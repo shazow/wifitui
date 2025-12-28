@@ -55,12 +55,16 @@ func New() (wifi.Backend, error) {
 		{SSID: "Police Surveillance 2", Strength: 48, Security: wifi.SecurityWPA, IsVisible: true},
 		{SSID: "I Believe Wi Can Fi", Security: wifi.SecurityWEP, IsVisible: true},
 		{SSID: "Hot singles in your area", Security: wifi.SecurityWPA, IsVisible: true},
-		{SSID: "Password is password", Strength: 87, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true},
 		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: wifi.SecurityWPA, IsVisible: true},
 		{SSID: "Wi-Fight the Feeling?", Security: wifi.SecurityWEP},
 		{SSID: "xX_D4rkR0ut3r_Xx", Security: wifi.SecurityWPA},
 		{SSID: "Luke I am your WiFi", Security: wifi.SecurityWEP},
 		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: wifi.SecurityWPA},
+
+		// Dupolicates for testing
+		{SSID: "Password is password", Strength: 87, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Password is password", Strength: 67, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Password is password", Strength: 91, LastConnected: ago(1), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true, IsActive: true},
 	}
 	secrets := map[string]string{
 		"Password is password": "password",
