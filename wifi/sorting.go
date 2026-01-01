@@ -25,10 +25,8 @@ func SortConnections(connections []Connection) {
 
 		if a.IsVisible {
 			// Both are visible. Sort by strength descending.
-			aStrength := a.Strength()
-			bStrength := b.Strength()
-			if aStrength != bStrength {
-				return aStrength > bStrength
+			if a.Strength() != b.Strength() {
+				return a.Strength() > b.Strength()
 			}
 		} else {
 			// Both are not visible. Sort by LastConnected descending.
