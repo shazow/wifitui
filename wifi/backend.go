@@ -17,7 +17,7 @@ type AccessPoint struct {
 	SSID      string
 	BSSID     string
 	Strength  uint8 // 0-100
-	Frequency uint
+	Frequency uint  // MHz
 }
 
 // Connection represents a single network, visible or known.

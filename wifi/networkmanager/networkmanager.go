@@ -97,7 +97,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		return nil, err
 	}
 
-	var conns []wifi.Connection
+	// We'll use a map to store unique connections by SSID as we build them.
+	// This avoids needing a second pass to consolidate.
+	uniqueConns := make(map[string]wifi.Connection)
 	processedSSIDs := make(map[string]bool)
 
 	activeConnections, err := b.NM.GetPropertyActiveConnections()
@@ -149,6 +151,13 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		processedSSIDs[ssid] = true
 		newAccessPoints[ssid] = ap
 
+		// Only create/update the connection object if we haven't fully processed this SSID's metadata yet,
+		// OR if we want to ensure we have the "best" AP associated (which newAccessPoints logic handles above).
+		// But since we are aggregating all APs, we just need one valid Connection object per SSID.
+		// However, we still need to loop through APs to find if any are secure, etc.
+		// Actually, the original logic created a `connInfo` for EACH AP and then appended to `conns`.
+		// We want to update the existing one in `uniqueConns` or create new.
+
 		flags, _ := ap.GetPropertyFlags()
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
 		rsnFlags, _ := ap.GetPropertyRSNFlags()
@@ -160,6 +169,16 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			security = wifi.SecurityWEP
 		} else {
 			security = wifi.SecurityOpen
+		}
+
+		// Check if we already have this SSID processed in uniqueConns
+		if _, exists := uniqueConns[ssid]; exists {
+			// We already have a base connection for this SSID.
+			// We just need to ensure the AP list is up to date, which we do via ssidToAPs map.
+			// The APs are added to the slice regardless.
+			// We might want to update security info if this AP is "better" or different, but usually SSID implies security.
+			// Let's assume the first one we find (or the one that passes the newAccessPoints filter if we moved logic) is good enough for metadata.
+			continue
 		}
 
 		var connInfo wifi.Connection
@@ -219,27 +238,13 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				AutoConnect: false, // Can't autoconnect to a network we don't know
 			}
 		}
-		conns = append(conns, connInfo)
+		uniqueConns[ssid] = connInfo
 	}
 
-	// Consolidate connections by SSID to set AccessPoints
-	uniqueConns := make(map[string]wifi.Connection)
-	for _, c := range conns {
-		if _, ok := uniqueConns[c.SSID]; ok {
-			// If already exists, we prefer the one that is known/active if possible, but
-			// here we constructed them identically mostly.
-			// Just update APs.
-			c.AccessPoints = ssidToAPs[c.SSID]
-			uniqueConns[c.SSID] = c
-		} else {
-			c.AccessPoints = ssidToAPs[c.SSID]
-			uniqueConns[c.SSID] = c
-		}
-	}
-
-	// Rebuild conns from uniqueConns
-	conns = nil
-	for _, c := range uniqueConns {
+	// Now build the final list from uniqueConns and attach APs
+	var conns []wifi.Connection
+	for ssid, c := range uniqueConns {
+		c.AccessPoints = ssidToAPs[ssid]
 		conns = append(conns, c)
 	}
 
