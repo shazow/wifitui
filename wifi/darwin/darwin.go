@@ -104,10 +104,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 	// Aggregate networks by SSID
 	aggregatedConns := make(map[string]wifi.Connection)
-	processedSSIDs := make(map[string]bool)
 
 	for _, net := range scannedNetworks {
-		processedSSIDs[net.ssid] = true
 		isKnown := knownSSIDs[net.ssid]
 		isActive := net.isActive || net.ssid == currentSSID
 
@@ -141,7 +139,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 	// Add known networks that are not visible
 	for ssid := range knownSSIDs {
-		if !processedSSIDs[ssid] {
+		if _, exists := aggregatedConns[ssid]; !exists {
 			conns = append(conns, wifi.Connection{
 				SSID:        ssid,
 				IsKnown:     true,
