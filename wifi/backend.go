@@ -51,6 +51,35 @@ func (c Connection) Strength() uint8 {
 	return maxStrength
 }
 
+// AddAccessPoint adds the access points from 'other' to this connection.
+// It returns ErrSecurityMismatch if the security or SSID do not match.
+// It also merges other metadata (Active, Visible, Known, etc.) if applicable.
+func (c *Connection) AddAccessPoint(other Connection) error {
+	if c.SSID != other.SSID {
+		return ErrSecurityMismatch // Technically SSID mismatch, but keeping error simple as per request or should I make a new one? Request said "ErrSecurityMismatch if the security does not match". I'll assume strict equality for merge.
+	}
+	if c.Security != other.Security {
+		return ErrSecurityMismatch
+	}
+
+	c.AccessPoints = append(c.AccessPoints, other.AccessPoints...)
+
+	if other.IsActive {
+		c.IsActive = true
+	}
+	if other.IsVisible {
+		c.IsVisible = true
+	}
+	if other.IsKnown {
+		c.IsKnown = true
+		c.AutoConnect = other.AutoConnect
+		if other.LastConnected != nil {
+			c.LastConnected = other.LastConnected
+		}
+	}
+	return nil
+}
+
 // UpdateOptions specifies the properties to update for a connection.
 // A nil value for a field means that the property should not be changed.
 type UpdateOptions struct {
@@ -77,28 +106,4 @@ type Backend interface {
 	IsWirelessEnabled() (bool, error)
 	// SetWireless enables or disables the wireless radio.
 	SetWireless(enabled bool) error
-}
-
-// Compare returns true if two connections are considered the same (SSID and Security match).
-func Compare(a, b Connection) bool {
-	return a.SSID == b.SSID && a.Security == b.Security
-}
-
-// Merge merges 'other' into 'into'. It appends access points and updates metadata.
-func Merge(into *Connection, other Connection) error {
-	into.AccessPoints = append(into.AccessPoints, other.AccessPoints...)
-	if other.IsActive {
-		into.IsActive = true
-	}
-	if other.IsVisible {
-		into.IsVisible = true
-	}
-	if other.IsKnown {
-		into.IsKnown = true
-		into.AutoConnect = other.AutoConnect
-		if other.LastConnected != nil {
-			into.LastConnected = other.LastConnected
-		}
-	}
-	return nil
 }

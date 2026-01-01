@@ -222,11 +222,10 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			}
 		}
 
-		// Try to merge with existing connection
+		// Try to add AccessPoint to existing connection
 		merged := false
 		for i := range uniqueConns {
-			if wifi.Compare(uniqueConns[i], connInfo) {
-				wifi.Merge(&uniqueConns[i], connInfo)
+			if err := uniqueConns[i].AddAccessPoint(connInfo); err == nil {
 				merged = true
 				break
 			}

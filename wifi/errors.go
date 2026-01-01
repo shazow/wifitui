@@ -20,3 +20,6 @@ var ErrOperationFailed = errors.New("operation failed")
 
 // ErrNotSupported is returned when a feature is not supported.
 var ErrNotSupported = errors.New("not supported")
+
+// ErrSecurityMismatch is returned when trying to merge connections with different security.
+var ErrSecurityMismatch = errors.New("security mismatch")
