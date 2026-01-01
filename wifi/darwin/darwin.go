@@ -102,23 +102,41 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 	scannedNetworks := parseSystemProfilerOutput(string(out))
 
-	var conns []wifi.Connection
+	// Aggregate networks by SSID
+	aggregatedConns := make(map[string]wifi.Connection)
 	processedSSIDs := make(map[string]bool)
 
 	for _, net := range scannedNetworks {
 		processedSSIDs[net.ssid] = true
 		isKnown := knownSSIDs[net.ssid]
 		isActive := net.isActive || net.ssid == currentSSID
-		conns = append(conns, wifi.Connection{
-			SSID:        net.ssid,
-			IsActive:    isActive,
-			IsKnown:     isKnown,
-			IsVisible:   true,
-			Strength:    rssiToStrength(net.rssi),
-			IsSecure:    net.security != wifi.SecurityOpen,
-			Security:    net.security,
-			AutoConnect: isKnown,
-		})
+
+		ap := wifi.AccessPoint{Strength: rssiToStrength(net.rssi)}
+
+		if conn, exists := aggregatedConns[net.ssid]; exists {
+			conn.AccessPoints = append(conn.AccessPoints, ap)
+			// Merge flags if necessary (e.g. if one BSSID is active, the whole SSID is active)
+			if isActive {
+				conn.IsActive = true
+			}
+			aggregatedConns[net.ssid] = conn
+		} else {
+			aggregatedConns[net.ssid] = wifi.Connection{
+				SSID:        net.ssid,
+				IsActive:    isActive,
+				IsKnown:     isKnown,
+				IsVisible:   true,
+				AccessPoints: []wifi.AccessPoint{ap},
+				IsSecure:    net.security != wifi.SecurityOpen,
+				Security:    net.security,
+				AutoConnect: isKnown,
+			}
+		}
+	}
+
+	var conns []wifi.Connection
+	for _, conn := range aggregatedConns {
+		conns = append(conns, conn)
 	}
 
 	// Add known networks that are not visible

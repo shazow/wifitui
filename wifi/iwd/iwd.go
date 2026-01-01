@@ -114,17 +114,14 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			connectedVar, _ := networkObj.GetProperty(iwdNetworkIface + ".Connected")
 			isActive := connectedVar.Value().(bool)
 
+			ap := wifi.AccessPoint{Strength: strength}
+
 			if existing, exists := visibleNetworks[ssid]; exists {
-				if strength > existing.Strength {
-					visibleNetworks[ssid] = wifi.Connection{
-						SSID:      ssid,
-						IsActive:  isActive,
-						IsSecure:  security != wifi.SecurityOpen,
-						Security:  security,
-						IsVisible: true,
-						Strength:  strength,
-					}
+				existing.AccessPoints = append(existing.AccessPoints, ap)
+				if isActive {
+					existing.IsActive = true
 				}
+				visibleNetworks[ssid] = existing
 			} else {
 				visibleNetworks[ssid] = wifi.Connection{
 					SSID:        ssid,
@@ -132,7 +129,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 					IsSecure:    security != wifi.SecurityOpen,
 					Security:    security,
 					IsVisible:   true,
-					Strength:    strength,
+					AccessPoints: []wifi.AccessPoint{ap},
 					AutoConnect: false, // Cannot autoconnect to unknown network
 				}
 			}

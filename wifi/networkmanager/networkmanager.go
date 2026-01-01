@@ -73,6 +73,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	}
 	newConnections := make(map[string]gonetworkmanager.Connection)
 	newAccessPoints := make(map[string]gonetworkmanager.AccessPoint)
+	ssidToAPs := make(map[string][]wifi.AccessPoint)
 
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
@@ -127,6 +128,17 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 
 		strength, _ := ap.GetPropertyStrength()
+		hwAddress, _ := ap.GetPropertyHWAddress()
+		frequency, _ := ap.GetPropertyFrequency()
+
+		wifiAP := wifi.AccessPoint{
+			SSID:      ssid,
+			BSSID:     hwAddress,
+			Strength:  strength,
+			Frequency: uint(frequency),
+		}
+		ssidToAPs[ssid] = append(ssidToAPs[ssid], wifiAP)
+
 		if existing, exists := newAccessPoints[ssid]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
 			if strength <= exStrength {
@@ -193,7 +205,6 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				IsKnown:       true,
 				IsSecure:      isSecure,
 				IsVisible:     true,
-				Strength:      strength,
 				Security:      security,
 				LastConnected: lastConnected,
 				AutoConnect:   autoConnect,
@@ -204,12 +215,32 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				IsKnown:     false,
 				IsSecure:    isSecure,
 				IsVisible:   true,
-				Strength:    strength,
 				Security:    security,
 				AutoConnect: false, // Can't autoconnect to a network we don't know
 			}
 		}
 		conns = append(conns, connInfo)
+	}
+
+	// Consolidate connections by SSID to set AccessPoints
+	uniqueConns := make(map[string]wifi.Connection)
+	for _, c := range conns {
+		if _, ok := uniqueConns[c.SSID]; ok {
+			// If already exists, we prefer the one that is known/active if possible, but
+			// here we constructed them identically mostly.
+			// Just update APs.
+			c.AccessPoints = ssidToAPs[c.SSID]
+			uniqueConns[c.SSID] = c
+		} else {
+			c.AccessPoints = ssidToAPs[c.SSID]
+			uniqueConns[c.SSID] = c
+		}
+	}
+
+	// Rebuild conns from uniqueConns
+	conns = nil
+	for _, c := range uniqueConns {
+		conns = append(conns, c)
 	}
 
 	for _, knownConn := range knownConnections {

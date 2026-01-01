@@ -52,19 +52,28 @@ func New() (wifi.Backend, error) {
 		{SSID: "YourWiFi.exe", LastConnected: ago(9 * time.Hour), Security: wifi.SecurityWPA},
 		{SSID: "I See Dead Packets", Security: wifi.SecurityWEP, LastConnected: ago(8763 * time.Hour)},
 		{SSID: "Dunder MiffLAN", Security: wifi.SecurityWPA, IsVisible: true},
-		{SSID: "Police Surveillance 2", Strength: 48, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "Police Surveillance 2", AccessPoints: []wifi.AccessPoint{{Strength: 48}}, Security: wifi.SecurityWPA, IsVisible: true},
 		{SSID: "I Believe Wi Can Fi", Security: wifi.SecurityWEP, IsVisible: true},
 		{SSID: "Hot singles in your area", Security: wifi.SecurityWPA, IsVisible: true},
-		{SSID: "TacoBoutAGoodSignal", Strength: 99, Security: wifi.SecurityWPA, IsVisible: true},
+		{SSID: "TacoBoutAGoodSignal", AccessPoints: []wifi.AccessPoint{{Strength: 99}}, Security: wifi.SecurityWPA, IsVisible: true},
 		{SSID: "Wi-Fight the Feeling?", Security: wifi.SecurityWEP},
 		{SSID: "xX_D4rkR0ut3r_Xx", Security: wifi.SecurityWPA},
 		{SSID: "Luke I am your WiFi", Security: wifi.SecurityWEP},
 		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: wifi.SecurityWPA},
+		// Multi-AP test
+		{SSID: "Mesh Network", IsVisible: true, IsKnown: true, Security: wifi.SecurityWPA, AccessPoints: []wifi.AccessPoint{
+			{BSSID: "AA:BB:CC:DD:EE:01", Strength: 80, Frequency: 2412},
+			{BSSID: "AA:BB:CC:DD:EE:02", Strength: 40, Frequency: 5180},
+			{BSSID: "AA:BB:CC:DD:EE:03", Strength: 95, Frequency: 5240},
+			{BSSID: "AA:BB:CC:DD:EE:04", Strength: 20, Frequency: 2462},
+		}},
 
-		// Dupolicates for testing
-		{SSID: "Password is password", Strength: 87, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true},
-		{SSID: "Password is password", Strength: 67, LastConnected: ago(12456 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true},
-		{SSID: "Password is password", Strength: 91, LastConnected: ago(1), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true, IsActive: true},
+		// Aggregated APs example (instead of duplicates)
+		{SSID: "Password is password", AccessPoints: []wifi.AccessPoint{
+			{Strength: 87},
+			{Strength: 67},
+			{Strength: 91},
+		}, LastConnected: ago(1), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA, IsVisible: true, IsActive: true},
 	}
 	secrets := map[string]string{
 		"Password is password": "password",
@@ -81,11 +90,11 @@ func New() (wifi.Backend, error) {
 		}
 	}
 
-	// For testing duplicate SSIDs
+	// For testing duplicate SSIDs (different security/known status, although in reality SSID+Security is the key, but backend usually keys by SSID)
 	knownConnections = append(knownConnections, mockConnection{
 		Connection: wifi.Connection{
 			SSID:     "HideYoKidsHideYoWiFi",
-			Strength: 25,
+			AccessPoints: []wifi.AccessPoint{{Strength: 25}},
 			IsKnown:  true,
 			Security: wifi.SecurityWPA,
 		},
@@ -129,34 +138,30 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 		s := rand.NewSource(time.Now().Unix())
 		r := rand.New(s)
 		for i := range m.VisibleConnections {
-			if m.VisibleConnections[i].Strength > 0 {
-				m.VisibleConnections[i].Strength = uint8(r.Intn(70) + 30)
+			for j := range m.VisibleConnections[i].AccessPoints {
+				if m.VisibleConnections[i].AccessPoints[j].Strength > 0 {
+					m.VisibleConnections[i].AccessPoints[j].Strength = uint8(r.Intn(70) + 30)
+				}
 			}
 		}
 	}
 
-	// Reproduce bug from networkmanager backend:
-	// Iterate through visible connections and append them to the result list,
-	// potentially creating duplicates if multiple APs with the same SSID exist.
-	// We still maintain a map to simulate the "updating best AP" part of the bug,
-	// but we mistakenly append to the result list every time we see a new or better AP.
+	// Aggregate and prepare result
+	// Note: In this new version of MockBackend, we assume VisibleConnections are already aggregated in New().
+	// But we still need to merge known connections if they are not visible?
+	// The original logic was complex because it simulated a bug. Now we simulate "correct" behavior.
 
 	processed := make(map[string]wifi.Connection)
-	var result []wifi.Connection
 
-	// Process visible connections with the buggy logic
+	// Process visible connections
 	for _, c := range m.VisibleConnections {
-		// We still track "processed" to simulate updating the best AP in the map,
-		// but we INTENTIONALLY skip the check that would prevent duplicates from being appended.
-		// This ensures that all duplicate entries in VisibleConnections appear in the result list,
-		// regardless of signal strength ordering.
-		processed[c.SSID] = c
-
-		// This is the bug: we append to the result list even if we've already added this SSID.
-		// In the real bug, this happened because the append was inside the loop over APs.
-		// We need to ensure we populate IsKnown correctly here too.
+		// In previous "buggy" version we appended blindly. Now we use a map if we want to ensure uniqueness,
+		// but since we manually constructed the list in New(), let's assume they are unique enough for mock purposes.
+		// However, to be safe and consistent with other backends, let's map by SSID.
 
 		connToAdd := c
+
+		// Check against known connections to update status
 		isKnown := false
 		for _, kc := range m.KnownConnections {
 			if kc.SSID == c.SSID {
@@ -167,9 +172,6 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 				connToAdd.AutoConnect = knownConn.AutoConnect
 				connToAdd.Security = knownConn.Security
 				connToAdd.LastConnected = knownConn.LastConnected
-				// Preserve the visible strength and active status
-				// connToAdd.Strength = c.Strength (already set)
-				// connToAdd.IsActive = c.IsActive (already set)
 				break
 			}
 		}
@@ -178,16 +180,19 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 			connToAdd.AutoConnect = false
 		}
 
-		result = append(result, connToAdd)
+		processed[c.SSID] = connToAdd
 	}
 
-	// Also ensure known connections that weren't visible are added (if that's desired behavior).
-	// The original mock logic added known connections even if not visible.
+	// Add known connections that weren't visible
 	for _, kc := range m.KnownConnections {
 		if _, ok := processed[kc.SSID]; !ok {
-			result = append(result, kc.Connection)
 			processed[kc.SSID] = kc.Connection
 		}
+	}
+
+	var result []wifi.Connection
+	for _, c := range processed {
+		result = append(result, c)
 	}
 
 	return result, nil

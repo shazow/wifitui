@@ -77,12 +77,17 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		connectedPart = " (Connected)"
 	}
 
+	countPart := ""
+	if len(i.AccessPoints) > 1 {
+		countPart = fmt.Sprintf(" (%d APs)", len(i.AccessPoints))
+	}
+
 	var desc string
-	if i.Strength > 0 {
-		desc = CurrentTheme.FormatSignalStrength(i.Strength) + connectedPart
+	if i.Strength() > 0 {
+		desc = CurrentTheme.FormatSignalStrength(i.Strength()) + countPart + connectedPart
 	} else {
 		// Networks that are not visible have Strength=0, show their time ago instead
-		desc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(strengthPart + connectedPart)
+		desc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(strengthPart + countPart + connectedPart)
 	}
 
 	// Now combine and render the full line
