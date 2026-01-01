@@ -73,7 +73,6 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	}
 	newConnections := make(map[string]gonetworkmanager.Connection)
 	newAccessPoints := make(map[string]gonetworkmanager.AccessPoint)
-	ssidToAPs := make(map[string][]wifi.AccessPoint)
 
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
@@ -97,9 +96,9 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		return nil, err
 	}
 
-	// We'll use a map to store unique connections by SSID as we build them.
-	// This avoids needing a second pass to consolidate.
-	uniqueConns := make(map[string]wifi.Connection)
+	var conns []wifi.Connection
+	// We use a list instead of a map to support multiple connections with same SSID but different security
+	var uniqueConns []wifi.Connection
 	processedSSIDs := make(map[string]bool)
 
 	activeConnections, err := b.NM.GetPropertyActiveConnections()
@@ -139,7 +138,6 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			Strength:  strength,
 			Frequency: uint(frequency),
 		}
-		ssidToAPs[ssid] = append(ssidToAPs[ssid], wifiAP)
 
 		if existing, exists := newAccessPoints[ssid]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
@@ -150,13 +148,6 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 		processedSSIDs[ssid] = true
 		newAccessPoints[ssid] = ap
-
-		// Only create/update the connection object if we haven't fully processed this SSID's metadata yet,
-		// OR if we want to ensure we have the "best" AP associated (which newAccessPoints logic handles above).
-		// But since we are aggregating all APs, we just need one valid Connection object per SSID.
-		// However, we still need to loop through APs to find if any are secure, etc.
-		// Actually, the original logic created a `connInfo` for EACH AP and then appended to `conns`.
-		// We want to update the existing one in `uniqueConns` or create new.
 
 		flags, _ := ap.GetPropertyFlags()
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
@@ -169,16 +160,6 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			security = wifi.SecurityWEP
 		} else {
 			security = wifi.SecurityOpen
-		}
-
-		// Check if we already have this SSID processed in uniqueConns
-		if _, exists := uniqueConns[ssid]; exists {
-			// We already have a base connection for this SSID.
-			// We just need to ensure the AP list is up to date, which we do via ssidToAPs map.
-			// The APs are added to the slice regardless.
-			// We might want to update security info if this AP is "better" or different, but usually SSID implies security.
-			// Let's assume the first one we find (or the one that passes the newAccessPoints filter if we moved logic) is good enough for metadata.
-			continue
 		}
 
 		var connInfo wifi.Connection
@@ -227,6 +208,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				Security:      security,
 				LastConnected: lastConnected,
 				AutoConnect:   autoConnect,
+				AccessPoints:  []wifi.AccessPoint{wifiAP},
 			}
 		} else {
 			connInfo = wifi.Connection{
@@ -236,17 +218,26 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				IsVisible:   true,
 				Security:    security,
 				AutoConnect: false, // Can't autoconnect to a network we don't know
+				AccessPoints: []wifi.AccessPoint{wifiAP},
 			}
 		}
-		uniqueConns[ssid] = connInfo
+
+		// Try to merge with existing connection
+		merged := false
+		for i := range uniqueConns {
+			if wifi.Compare(uniqueConns[i], connInfo) {
+				wifi.Merge(&uniqueConns[i], connInfo)
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			uniqueConns = append(uniqueConns, connInfo)
+		}
 	}
 
-	// Now build the final list from uniqueConns and attach APs
-	var conns []wifi.Connection
-	for ssid, c := range uniqueConns {
-		c.AccessPoints = ssidToAPs[ssid]
-		conns = append(conns, c)
-	}
+	// Move aggregated connections to final list
+	conns = uniqueConns
 
 	for _, knownConn := range knownConnections {
 		s, _ := knownConn.GetSettings()

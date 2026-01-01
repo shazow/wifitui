@@ -78,3 +78,27 @@ type Backend interface {
 	// SetWireless enables or disables the wireless radio.
 	SetWireless(enabled bool) error
 }
+
+// Compare returns true if two connections are considered the same (SSID and Security match).
+func Compare(a, b Connection) bool {
+	return a.SSID == b.SSID && a.Security == b.Security
+}
+
+// Merge merges 'other' into 'into'. It appends access points and updates metadata.
+func Merge(into *Connection, other Connection) error {
+	into.AccessPoints = append(into.AccessPoints, other.AccessPoints...)
+	if other.IsActive {
+		into.IsActive = true
+	}
+	if other.IsVisible {
+		into.IsVisible = true
+	}
+	if other.IsKnown {
+		into.IsKnown = true
+		into.AutoConnect = other.AutoConnect
+		if other.LastConnected != nil {
+			into.LastConnected = other.LastConnected
+		}
+	}
+	return nil
+}
