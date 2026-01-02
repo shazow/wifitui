@@ -23,13 +23,13 @@ func SortConnections(connections []Connection) {
 			return a.IsVisible
 		}
 
-		// If both are visible, sort by strength.
-		// If both are not visible, sort by timestamp.
-		if a.IsVisible || (a.Strength != b.Strength) {
-			return a.Strength > b.Strength
+		if a.IsVisible {
+			// Both are visible. Sort by strength descending.
+			if a.Strength() != b.Strength() {
+				return a.Strength() > b.Strength()
+			}
 		} else {
-			// Sort by LastConnected, most recent first.
-			// A non-nil time is considered more recent than a nil time.
+			// Both are not visible. Sort by LastConnected descending.
 			if a.LastConnected != nil && b.LastConnected == nil {
 				return true
 			}

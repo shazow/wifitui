@@ -1,103 +1,129 @@
 package wifi
 
 import (
-	"reflect"
 	"testing"
 	"time"
 )
 
 func TestSortConnections(t *testing.T) {
 	now := time.Now()
-	yesterday := now.Add(-24 * time.Hour)
-	twoDaysAgo := now.Add(-48 * time.Hour)
+	earlier := now.Add(-1 * time.Hour)
+	earlier2 := now.Add(-2 * time.Hour)
 
 	tests := []struct {
-		name        string
-		connections []Connection
-		expected    []Connection
+		name     string
+		input    []Connection
+		expected []string // SSIDs in expected order
 	}{
 		{
-			name: "Sort by active",
-			connections: []Connection{
-				{SSID: "Inactive", IsActive: false},
-				{SSID: "Active", IsActive: true},
-			},
-			expected: []Connection{
-				{SSID: "Active", IsActive: true},
-				{SSID: "Inactive", IsActive: false},
-			},
-		},
-		{
-			name: "Sort by visible",
-			connections: []Connection{
-				{SSID: "NotVisible", IsVisible: false},
-				{SSID: "Visible", IsVisible: true},
-			},
-			expected: []Connection{
-				{SSID: "Visible", IsVisible: true},
-				{SSID: "NotVisible", IsVisible: false},
-			},
-		},
-		{
 			name: "Sort by strength",
-			connections: []Connection{
-				{SSID: "Weak", IsVisible: true, Strength: 10},
-				{SSID: "Strong", IsVisible: true, Strength: 90},
+			input: []Connection{
+				{SSID: "Weak", AccessPoints: []AccessPoint{{Strength: 10}}, IsVisible: true},
+				{SSID: "Strong", AccessPoints: []AccessPoint{{Strength: 90}}, IsVisible: true},
+				{SSID: "Medium", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
 			},
-			expected: []Connection{
-				{SSID: "Strong", IsVisible: true, Strength: 90},
-				{SSID: "Weak", IsVisible: true, Strength: 10},
-			},
+			expected: []string{"Strong", "Medium", "Weak"},
 		},
 		{
-			name: "Sort by last connected",
-			connections: []Connection{
-				{SSID: "TwoDaysAgo", IsVisible: false, LastConnected: &twoDaysAgo},
-				{SSID: "Yesterday", IsVisible: false, LastConnected: &yesterday},
-				{SSID: "Never", IsVisible: false, LastConnected: nil},
+			name: "Active first",
+			input: []Connection{
+				{SSID: "Strong", AccessPoints: []AccessPoint{{Strength: 90}}, IsVisible: true},
+				{SSID: "Active", AccessPoints: []AccessPoint{{Strength: 10}}, IsVisible: true, IsActive: true},
 			},
-			expected: []Connection{
-				{SSID: "Yesterday", IsVisible: false, LastConnected: &yesterday},
-				{SSID: "TwoDaysAgo", IsVisible: false, LastConnected: &twoDaysAgo},
-				{SSID: "Never", IsVisible: false, LastConnected: nil},
-			},
+			expected: []string{"Active", "Strong"},
 		},
 		{
-			name: "Sort by SSID",
-			connections: []Connection{
-				{SSID: "B"},
-				{SSID: "A"},
+			name: "Visible before hidden known",
+			input: []Connection{
+				{SSID: "KnownHidden", IsKnown: true, LastConnected: &now},
+				{SSID: "Visible", AccessPoints: []AccessPoint{{Strength: 10}}, IsVisible: true},
 			},
-			expected: []Connection{
-				{SSID: "A"},
-				{SSID: "B"},
-			},
+			expected: []string{"Visible", "KnownHidden"},
 		},
 		{
-			name: "Complex sort",
-			connections: []Connection{
-				{SSID: "Known B", IsVisible: false, LastConnected: &twoDaysAgo},
-				{SSID: "Visible Weak", IsVisible: true, Strength: 20},
-				{SSID: "Active WiFi", IsActive: true, IsVisible: true, Strength: 80},
-				{SSID: "Known A", IsVisible: false, LastConnected: &yesterday},
-				{SSID: "Visible Strong", IsVisible: true, Strength: 90},
+			name: "Known sorted by LastConnected",
+			input: []Connection{
+				{SSID: "Old", IsKnown: true, LastConnected: &earlier2},
+				{SSID: "New", IsKnown: true, LastConnected: &earlier},
+				{SSID: "Never", IsKnown: true}, // LastConnected is nil
 			},
-			expected: []Connection{
-				{SSID: "Active WiFi", IsActive: true, IsVisible: true, Strength: 80},
-				{SSID: "Visible Strong", IsVisible: true, Strength: 90},
-				{SSID: "Visible Weak", IsVisible: true, Strength: 20},
-				{SSID: "Known A", IsVisible: false, LastConnected: &yesterday},
-				{SSID: "Known B", IsVisible: false, LastConnected: &twoDaysAgo},
+			expected: []string{"New", "Old", "Never"},
+		},
+		{
+			name: "Fallback to SSID",
+			input: []Connection{
+				{SSID: "B", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
+				{SSID: "A", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
 			},
+			expected: []string{"A", "B"},
+		},
+		{
+			name: "Complex Mix",
+			input: []Connection{
+				{SSID: "KnownOld", IsKnown: true, LastConnected: &earlier2},
+				{SSID: "Active", IsActive: true, IsVisible: true, AccessPoints: []AccessPoint{{Strength: 60}}},
+				{SSID: "VisibleWeak", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 20}}},
+				{SSID: "KnownNew", IsKnown: true, LastConnected: &earlier},
+				{SSID: "VisibleStrong", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 80}}},
+			},
+			expected: []string{"Active", "VisibleStrong", "VisibleWeak", "KnownNew", "KnownOld"},
+		},
+		// Testing duplicate SSIDs with different strengths (should just sort by strength, though duplicates shouldn't happen ideally)
+		{
+			name: "Duplicate SSIDs",
+			input: []Connection{
+				{SSID: "MyWifi", AccessPoints: []AccessPoint{{Strength: 30}}, IsVisible: true},
+				{SSID: "MyWifi", AccessPoints: []AccessPoint{{Strength: 80}}, IsVisible: true},
+			},
+			expected: []string{"MyWifi", "MyWifi"}, // Stable sort maintains relative order if equal, but strength differs so 80 comes first
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			SortConnections(tt.connections)
-			if !reflect.DeepEqual(tt.connections, tt.expected) {
-				t.Errorf("SortConnections() got = %v, want %v", tt.connections, tt.expected)
+			// Make a copy of input
+			conns := make([]Connection, len(tt.input))
+			copy(conns, tt.input)
+
+			SortConnections(conns)
+
+			if len(conns) != len(tt.expected) {
+				t.Fatalf("Expected %d connections, got %d", len(tt.expected), len(conns))
+			}
+
+			for i, ssid := range tt.expected {
+				if conns[i].SSID != ssid {
+					t.Errorf("Index %d: expected SSID %q, got %q", i, ssid, conns[i].SSID)
+				}
+			}
+			// Special check for duplicate test case to ensure order
+			if tt.name == "Duplicate SSIDs" {
+				if conns[0].Strength() != 80 {
+					t.Errorf("Expected strongest duplicate first")
+				}
 			}
 		})
+	}
+}
+
+func TestSortConnectionsStability(t *testing.T) {
+	// Test stability for items that are equal
+	input := []Connection{
+		{SSID: "A", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
+		{SSID: "B", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
+		{SSID: "A", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
+	}
+
+	// Expected: A, A, B (because A < B, and stable sort keeps original order of As)
+	// Actually, wait. SSID "A" < "B". So both As come before B.
+	// Between the two As, stable sort preserves order.
+
+	conns := make([]Connection, len(input))
+	copy(conns, input)
+
+	SortConnections(conns)
+
+	if conns[0].SSID != "A" || conns[1].SSID != "A" || conns[2].SSID != "B" {
+		t.Errorf("Sort order incorrect: %v", conns)
 	}
 }

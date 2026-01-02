@@ -20,3 +20,6 @@ var ErrOperationFailed = errors.New("operation failed")
 
 // ErrNotSupported is returned when a feature is not supported.
 var ErrNotSupported = errors.New("not supported")
+
+// ErrAccessPointMismatch is returned when trying to merge connections with different SSID or security.
+var ErrAccessPointMismatch = errors.New("SSID or security mismatch")

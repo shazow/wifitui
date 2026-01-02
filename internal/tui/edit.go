@@ -287,12 +287,24 @@ func (m *EditModel) View() string {
 			}
 		}
 		details.WriteString(fmt.Sprintf("Security: %s\n", security))
-		if m.selectedItem.Strength > 0 {
-			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength))
+		if m.selectedItem.Strength() > 0 {
+			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength()))
 		}
 		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
 			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
+
+		if len(m.selectedItem.AccessPoints) > 0 {
+			details.WriteString("\nAccess Points:\n")
+			for _, ap := range m.selectedItem.AccessPoints {
+				bssid := ap.BSSID
+				if bssid == "" {
+					bssid = "(unknown)"
+				}
+				details.WriteString(fmt.Sprintf("  %s %d%% %dMHz\n", bssid, ap.Strength, ap.Frequency))
+			}
+		}
+
 		s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(details.String()))
 		s.WriteString("\n\n")
 	}
