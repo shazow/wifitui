@@ -293,7 +293,8 @@ func (m *EditModel) View() string {
 		}
 		details.WriteString(formatLabel.Render("Security: "))
 		details.WriteString(fmt.Sprintf("%s", security))
-		if m.selectedItem.Strength() > 0 {
+		if m.selectedItem.Strength() > 0 && len(m.selectedItem.AccessPoints) == 0 {
+			// We only show "Signal" if the backend doesn't support access points
 			details.WriteString("\n")
 			details.WriteString(formatLabel.Render("Signal: "))
 			details.WriteString(CurrentTheme.FormatSignalStrength(m.selectedItem.Strength()))
