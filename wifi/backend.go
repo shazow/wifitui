@@ -61,6 +61,9 @@ func (c *Connection) AddAccessPoint(other Connection) error {
 
 	c.AccessPoints = append(c.AccessPoints, other.AccessPoints...)
 
+	// Not expecting many access points so we do a full sort here rather than merging in sorted order
+	SortAccessPoints(c.AccessPoints)
+
 	if other.IsActive {
 		c.IsActive = true
 	}

@@ -62,9 +62,9 @@ func New() (wifi.Backend, error) {
 		{SSID: "FreeHugsAndWiFi", LastConnected: ago(400 * time.Hour), Security: wifi.SecurityWPA},
 		// Multi-AP test
 		{SSID: "Mesh Network", IsVisible: true, IsKnown: true, Security: wifi.SecurityWPA, AccessPoints: []wifi.AccessPoint{
+			{BSSID: "AA:BB:CC:DD:EE:03", Strength: 95, Frequency: 5240},
 			{BSSID: "AA:BB:CC:DD:EE:01", Strength: 80, Frequency: 2412},
 			{BSSID: "AA:BB:CC:DD:EE:02", Strength: 40, Frequency: 5180},
-			{BSSID: "AA:BB:CC:DD:EE:03", Strength: 95, Frequency: 5240},
 			{BSSID: "AA:BB:CC:DD:EE:04", Strength: 20, Frequency: 2462},
 		}},
 

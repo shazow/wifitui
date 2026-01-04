@@ -47,3 +47,16 @@ func SortConnections(connections []Connection) {
 		return a.SSID < b.SSID
 	})
 }
+
+// SortAccessPoints sorts by {Signal Strength, Frequency} descending.
+func SortAccessPoints(accessPoints []AccessPoint) {
+	sort.SliceStable(accessPoints, func(i, j int) bool {
+		a := accessPoints[i]
+		b := accessPoints[j]
+
+		if a.Strength != b.Strength {
+			return a.Strength > b.Strength
+		}
+		return a.Frequency > b.Frequency
+	})
+}
