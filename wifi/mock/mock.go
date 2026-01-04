@@ -93,10 +93,10 @@ func New() (wifi.Backend, error) {
 	// For testing duplicate SSIDs (different security/known status, although in reality SSID+Security is the key, but backend usually keys by SSID)
 	knownConnections = append(knownConnections, mockConnection{
 		Connection: wifi.Connection{
-			SSID:     "HideYoKidsHideYoWiFi",
+			SSID:         "HideYoKidsHideYoWiFi",
 			AccessPoints: []wifi.AccessPoint{{Strength: 25}},
-			IsKnown:  true,
-			Security: wifi.SecurityWPA,
+			IsKnown:      true,
+			Security:     wifi.SecurityWPA,
 		},
 		Secret: "different_secret",
 	})
@@ -192,6 +192,7 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 
 	var result []wifi.Connection
 	for _, c := range processed {
+		wifi.SortAccessPoints(c.AccessPoints)
 		result = append(result, c)
 	}
 
