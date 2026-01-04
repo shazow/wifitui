@@ -296,7 +296,7 @@ func (m *EditModel) View() string {
 		if m.selectedItem.Strength() > 0 {
 			details.WriteString("\n")
 			details.WriteString(formatLabel.Render("Signal: "))
-			details.WriteString(fmt.Sprintf("%d%%", m.selectedItem.Strength()))
+			details.WriteString(CurrentTheme.FormatSignalStrength(m.selectedItem.Strength()))
 		}
 		if len(m.selectedItem.AccessPoints) > 0 {
 			details.WriteString("\n\n")
@@ -306,7 +306,9 @@ func (m *EditModel) View() string {
 				if bssid == "" {
 					bssid = "(unknown)"
 				}
-				details.WriteString(fmt.Sprintf("\n  %d%%  %dMHz  %s", ap.Strength, ap.Frequency, bssid))
+				details.WriteString("\n  ")
+				details.WriteString(CurrentTheme.FormatSignalStrength(ap.Strength))
+				details.WriteString(fmt.Sprintf("  %dMHz  %s", ap.Frequency, bssid))
 			}
 		}
 		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
