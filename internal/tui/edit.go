@@ -265,12 +265,17 @@ func (m *EditModel) IsConsumingInput() bool {
 
 func (m *EditModel) View() string {
 	var s strings.Builder
-	s.WriteString(fmt.Sprintf("\n%s\n\n", "WiFi Connection"))
+	s.WriteString("\n  ")
+	s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true).Render("WiFi Connection"))
+	s.WriteString("\n")
+
+	formatLabel := lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
 
 	isNew := m.selectedItem.SSID == ""
 	if !isNew {
 		var details strings.Builder
-		details.WriteString(fmt.Sprintf("SSID: %s\n", m.selectedItem.SSID))
+		details.WriteString(formatLabel.Render("SSID: "))
+		details.WriteString(fmt.Sprintf("%s\n", m.selectedItem.SSID))
 		var security string
 		switch m.selectedItem.Security {
 		case wifi.SecurityOpen:
@@ -286,23 +291,28 @@ func (m *EditModel) View() string {
 				security = "Open"
 			}
 		}
-		details.WriteString(fmt.Sprintf("Security: %s\n", security))
+		details.WriteString(formatLabel.Render("Security: "))
+		details.WriteString(fmt.Sprintf("%s", security))
 		if m.selectedItem.Strength() > 0 {
-			details.WriteString(fmt.Sprintf("Signal: %d%%\n", m.selectedItem.Strength()))
+			details.WriteString("\n")
+			details.WriteString(formatLabel.Render("Signal: "))
+			details.WriteString(fmt.Sprintf("%d%%", m.selectedItem.Strength()))
 		}
-		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
-			details.WriteString(fmt.Sprintf("Last connected: \n  %s (%s)\n", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
-		}
-
 		if len(m.selectedItem.AccessPoints) > 0 {
-			details.WriteString("\nAccess Points:\n")
+			details.WriteString("\n\n")
+			details.WriteString(formatLabel.Render("Access Points:"))
 			for _, ap := range m.selectedItem.AccessPoints {
 				bssid := ap.BSSID
 				if bssid == "" {
 					bssid = "(unknown)"
 				}
-				details.WriteString(fmt.Sprintf("  %s %d%% %dMHz\n", bssid, ap.Strength, ap.Frequency))
+				details.WriteString(fmt.Sprintf("\n  %d%%  %dMHz  %s", ap.Strength, ap.Frequency, bssid))
 			}
+		}
+		if m.selectedItem.IsKnown && m.selectedItem.LastConnected != nil {
+			details.WriteString("\n\n")
+			details.WriteString(formatLabel.Render("Last Connected:"))
+			details.WriteString(fmt.Sprintf("\n  %s (%s)", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
 
 		s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(details.String()))
