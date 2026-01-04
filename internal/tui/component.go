@@ -172,9 +172,9 @@ func (c *ChoiceComponent) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "right":
+		case "right", "l":
 			c.selected = (c.selected + 1) % len(c.options)
-		case "left":
+		case "left", "h":
 			c.selected = (c.selected - 1 + len(c.options)) % len(c.options)
 		}
 	}
@@ -273,9 +273,9 @@ func (b *MultiButtonComponent) Update(msg tea.Msg) (Focusable, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "right":
+		case "right", "l":
 			b.selected = (b.selected + 1) % len(b.buttons)
-		case "left":
+		case "left", "h":
 			b.selected = (b.selected - 1 + len(b.buttons)) % len(b.buttons)
 		case "enter":
 			if b.action != nil {

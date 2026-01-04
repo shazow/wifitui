@@ -231,9 +231,9 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		)
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "tab":
+		case "tab", "ctrl+j":
 			return m, m.focusManager.Next()
-		case "shift+tab":
+		case "shift+tab", "ctrl+k":
 			return m, m.focusManager.Prev()
 		case "esc":
 			return m, func() tea.Msg { return popViewMsg{} }
