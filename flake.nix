@@ -15,7 +15,7 @@
           version = "0.0.0"; # Development version is always 0.0.0
           src = ./.;
           # Updated by `make vendorHash`
-          vendorHash = "sha256-HZEE8bJC9bsSYmyu7NBoxEprW08DO5+uApVnyNkKgMk=";
+          vendorHash = "sha256-2smXAK3mRweg0yKDerKgu3fcT3ulDjRSbbkMCSe+nVs=";
           ldflags = [ "-s" "-w" ];
         };
 
