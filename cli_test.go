@@ -19,7 +19,7 @@ func TestRunListAll(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Test with all=true (should list invisible known networks)
-	if err := runList(&buf, false, true, mockBackend); err != nil {
+	if err := runList(&buf, false, true, false, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
@@ -40,7 +40,7 @@ func TestRunListDefault(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Default behavior (all=false)
-	if err := runList(&buf, false, false, mockBackend); err != nil {
+	if err := runList(&buf, false, false, false, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
@@ -108,7 +108,7 @@ func TestRunListJSON(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	if err := runList(&buf, true, true, mockBackend); err != nil {
+	if err := runList(&buf, true, true, false, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
