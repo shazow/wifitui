@@ -11,14 +11,15 @@ import (
 	"github.com/shazow/wifitui/wifi/mock"
 )
 
-func TestRunList(t *testing.T) {
+func TestRunListAll(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {
 		t.Fatalf("failed to create mock backend: %v", err)
 	}
 	var buf bytes.Buffer
 
-	if err := runList(&buf, false, mockBackend); err != nil {
+	// Test with all=true (should list invisible known networks)
+	if err := runList(&buf, false, true, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
@@ -28,6 +29,27 @@ func TestRunList(t *testing.T) {
 	}
 	if !strings.Contains(output, "Unencrypted_Honeypot") {
 		t.Errorf("runList() output missing expected network. got=%q", output)
+	}
+}
+
+func TestRunListDefault(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	// Default behavior (all=false)
+	if err := runList(&buf, false, false, mockBackend); err != nil {
+		t.Fatalf("runList() failed: %v", err)
+	}
+
+	output := buf.String()
+	if strings.Contains(output, "HideYoKidsHideYoWiFi") {
+		t.Errorf("runList() output should NOT contain invisible network. got=%q", output)
+	}
+	if !strings.Contains(output, "Unencrypted_Honeypot") {
+		t.Errorf("runList() output missing expected visible network. got=%q", output)
 	}
 }
 
@@ -86,7 +108,7 @@ func TestRunListJSON(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	if err := runList(&buf, true, mockBackend); err != nil {
+	if err := runList(&buf, true, true, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 

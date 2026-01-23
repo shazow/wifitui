@@ -40,10 +40,20 @@ func formatConnection(c wifi.Connection) string {
 	return strings.Join(parts, ", ")
 }
 
-func runList(w io.Writer, jsonOut bool, b wifi.Backend) error {
+func runList(w io.Writer, jsonOut bool, all bool, b wifi.Backend) error {
 	connections, err := b.BuildNetworkList(true)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
+	}
+
+	if !all {
+		var visible []wifi.Connection
+		for _, c := range connections {
+			if c.IsVisible {
+				visible = append(visible, c)
+			}
+		}
+		connections = visible
 	}
 
 	if jsonOut {
