@@ -31,8 +31,8 @@ type TuiCommand struct{}
 // ListCommand defines the flags and arguments for the "list" subcommand
 type ListCommand struct {
 	JSON bool `long:"json" description:"output in JSON format"`
-	All  bool `long:"all" description:"list all networks, including known ones not currently visible"`
-	Scan bool `long:"scan" description:"trigger a scan while building the list"`
+	All  bool `long:"all" description:"list all saved and visible networks"`
+	Scan bool `long:"scan" description:"scan for new visible networks"`
 }
 
 // ShowCommand defines the flags and arguments for the "show" subcommand
