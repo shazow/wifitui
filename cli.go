@@ -40,8 +40,8 @@ func formatConnection(c wifi.Connection) string {
 	return strings.Join(parts, ", ")
 }
 
-func runList(w io.Writer, jsonOut bool, all bool, b wifi.Backend) error {
-	connections, err := b.BuildNetworkList(true)
+func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) error {
+	connections, err := b.BuildNetworkList(scan)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
