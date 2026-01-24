@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -115,13 +114,12 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 type ListModel struct {
 	list         list.Model
-	help         help.Model
 	isForgetting bool
 	scanner      *ScanSchedule
 	numScans     int // Number of scans with results since enter
-	showFullHelp bool
 	width        int
 	height       int
+	showFullHelp bool
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -146,11 +144,6 @@ func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
 	m := &ListModel{}
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
-	m.help = help.New()
-	m.help.Styles.ShortKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
-	m.help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
-	m.help.Styles.FullKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
-	m.help.Styles.FullDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
 
 	delegate := itemDelegate{
 		listModel: m,
@@ -158,8 +151,15 @@ func NewListModel() *ListModel {
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-29s %s", CurrentTheme.TitleIcon+"WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
-	l.SetShowHelp(false)
+	l.SetShowHelp(false) // We manage help rendering manually to customize ShortHelp content
 
+	// Reuse the list's built-in help model, but style it
+	l.Help.Styles.ShortKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	l.Help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.FullKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	l.Help.Styles.FullDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+
+	// Define custom Short Help keys
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
@@ -170,7 +170,7 @@ func NewListModel() *ListModel {
 	// Make 'q' the only quit key
 	l.KeyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
 
-	// Disable internal help toggle
+	// Disable internal help toggle logic since we handle it
 	l.KeyMap.ShowFullHelp.SetEnabled(false)
 	l.KeyMap.CloseFullHelp.SetEnabled(false)
 
@@ -191,7 +191,9 @@ func NewListModel() *ListModel {
 }
 
 func (m *ListModel) SetSize(w, h int) {
-	m.list.SetSize(w, h)
+	m.width = w
+	m.height = h
+	m.updateListSize()
 }
 
 func (m *ListModel) SetItems(items []list.Item) {
@@ -203,15 +205,26 @@ func (m *ListModel) updateListSize() {
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 	bh, bv := listBorderStyle.GetFrameSize()
 
-	m.help.Width = m.width - h - bh
+	availableWidth := m.width - h - bh
 
-	helpStr := fmt.Sprintf("\n\n %s ", m.help.View(m))
-	helpHeight := lipgloss.Height(helpStr)
+	// Measure help height
+	m.list.Help.Width = availableWidth
+	// We render help using 'm' (ListModel) as the KeyMap to get our custom ShortHelp
+	helpView := m.list.Help.View(m)
+	helpHeight := lipgloss.Height(helpView)
 
-	// extraVerticalSpace covers margins + border + status bar (2 lines)
-	extraVerticalSpace := v + bv + 2
+	extraVerticalSpace := v + bv
+	// We add 2 for the padding newlines we insert in View
+	// Wait, do we want newlines? The previous implementation had them.
+	// If we use help.View(), it's tight.
+	// Let's stick to tight for now, or add 1 line padding.
+	// The original screenshot had padding.
+	// Let's add 1 line padding if help is shown.
+	if helpHeight > 0 {
+		helpHeight += 2 // \n\n
+	}
 
-	m.list.SetSize(m.width-h-bh, m.height-extraVerticalSpace-helpHeight)
+	m.list.SetSize(availableWidth, m.height-extraVerticalSpace-helpHeight)
 }
 
 func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
@@ -230,7 +243,6 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				return m, cmd
 			}
 		}
-		// Don't let other events pass through while forgetting
 		return m, nil
 	}
 
@@ -239,12 +251,6 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.updateListSize()
-		// Propagate resize to list as well, SetSize handles it but list needs to know about width too
-		// m.list.SetSize handles both width and height.
-		// We call m.updateListSize which calls m.list.SetSize.
-		// However, m.list needs the message to update its internal pagination sometimes?
-		// SetSize is sufficient. We don't need to pass WindowSizeMsg to list if we called SetSize.
-		return m, nil
 	case connectionsLoadedMsg:
 		items := make([]list.Item, len(msg))
 		for i, c := range msg {
@@ -262,7 +268,6 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			m.numScans++
 		}
 		if m.numScans == 3 {
-			// Slow down scanner after a few scans
 			m.scanner.SetSchedule(ScanSlow)
 		}
 		return m, nil
@@ -273,7 +278,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		switch msg.String() {
 		case "?":
 			m.showFullHelp = !m.showFullHelp
-			m.help.ShowAll = m.showFullHelp
+			m.list.Help.ShowAll = m.showFullHelp
 			m.updateListSize()
 			return m, nil
 		case "q":
@@ -328,7 +333,6 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		}
 	}
 
-	// The list bubble needs to be updated.
 	newList, newCmd := m.list.Update(msg)
 	m.list = newList
 	cmds = append(cmds, newCmd)
@@ -347,33 +351,40 @@ func (m *ListModel) OnLeave() tea.Cmd {
 }
 
 func (m *ListModel) View() string {
-	var viewBuilder strings.Builder
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 
-	help := fmt.Sprintf("\n\n %s ", m.help.View(m))
-	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
+	// We render help manually using 'm' (ListModel) to control keys
+	helpView := m.list.Help.View(m)
 
-	// Custom status bar
+	// Add padding
+	help := fmt.Sprintf("\n\n %s ", helpView)
+
+	// Combine List + Help inside the border
+	content := m.list.View() + help
+
+	listView := listBorderStyle.Render(content)
+
 	statusText := ""
 	if len(m.list.Items()) > 0 {
 		statusText = fmt.Sprintf("%d/%d", m.list.Index()+1, len(m.list.Items()))
 	}
-	viewBuilder.WriteString("\n")
-	viewBuilder.WriteString(statusText)
-	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
+
+	return lipgloss.NewStyle().Margin(1, 2).Render(listView + "\n" + statusText)
 }
 
+// ShortHelp returns the specific bindings we want to show in the short help view.
+// This allows us to exclude default list navigation keys (Up/Down) that we don't want in the short view.
 func (m *ListModel) ShortHelp() []key.Binding {
-	return []key.Binding{
+	keys := []key.Binding{
 		m.list.KeyMap.Filter,
-		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
-		key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
-		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
-		m.list.KeyMap.Quit,
-		key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "more")),
 	}
+	keys = append(keys, m.list.AdditionalShortHelpKeys()...)
+	keys = append(keys, m.list.KeyMap.Quit)
+	keys = append(keys, key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "more")))
+	return keys
 }
 
+// FullHelp delegates to the list's FullHelp, which includes all defaults (including Up/Down) + Additional keys.
 func (m *ListModel) FullHelp() [][]key.Binding {
 	return m.list.FullHelp()
 }
@@ -383,7 +394,6 @@ func truncateString(s string, maxW int) string {
 	if lipgloss.Width(s) <= maxW {
 		return s
 	}
-	// We need to fit "…" so target is maxW - 1
 	target := maxW - 1
 	var w int
 	var sb strings.Builder
