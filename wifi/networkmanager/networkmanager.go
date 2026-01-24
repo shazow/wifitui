@@ -4,6 +4,7 @@ package networkmanager
 
 import (
 	"fmt"
+	"os/user"
 	"time"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
@@ -559,6 +560,22 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 
 	settings, err := conn.GetSecrets("802-11-wireless-security")
 	if err != nil {
+		if u, errUser := user.Current(); errUser == nil {
+			if g, errGroup := user.LookupGroup("networkmanager"); errGroup == nil {
+				if gids, errGids := u.GroupIds(); errGids == nil {
+					inGroup := false
+					for _, gid := range gids {
+						if gid == g.Gid {
+							inGroup = true
+							break
+						}
+					}
+					if !inGroup {
+						return "", fmt.Errorf("need to be in the 'networkmanager' group to edit connections: %w", wifi.ErrMissingPermission)
+					}
+				}
+			}
+		}
 		return "", fmt.Errorf("failed to get secrets: %w", wifi.ErrOperationFailed)
 	}
 
