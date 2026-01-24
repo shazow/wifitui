@@ -591,7 +591,7 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 		if inGroup, errCheck := isUserInGroup("networkmanager"); errCheck == nil && !inGroup {
 			return "", fmt.Errorf("need to be in the 'networkmanager' group to edit connections: %w: %w", wifi.ErrMissingPermission, err)
 		}
-		return "", fmt.Errorf("failed to get secrets: %w", wifi.ErrOperationFailed)
+		return "", fmt.Errorf("failed to get secrets: %w: %w", wifi.ErrOperationFailed, err)
 	}
 
 	if s, ok := settings["802-11-wireless-security"]; ok {
