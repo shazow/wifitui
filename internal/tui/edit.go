@@ -29,7 +29,7 @@ type EditModel struct {
 	passwordRevealed    bool
 	isForgetting        bool
 	secretsLoaded       bool
-	secretLoadFailed    bool
+	hasError            bool
 	selectedItem        connectionItem
 }
 
@@ -64,7 +64,7 @@ func NewEditModel(item *connectionItem) *EditModel {
 		ti.EchoMode = textinput.EchoNormal
 		m.passwordRevealed = true
 		// Load secrets on first focus for known networks
-		if m.selectedItem.IsKnown && !m.secretsLoaded && !m.secretLoadFailed {
+		if m.selectedItem.IsKnown && !m.secretsLoaded && !m.hasError {
 			return func() tea.Msg { return loadSecretsMsg{item: m.selectedItem} }
 		}
 		return nil
@@ -226,7 +226,7 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		return m, nil
 	case connectionFailedMsg:
 		if errors.Is(msg.err, wifi.ErrMissingPermission) || errors.Is(msg.err, wifi.ErrOperationFailed) {
-			m.secretLoadFailed = true
+			m.hasError = true
 		}
 		return m, tea.Batch(
 			m.focusManager.SetFocus(m.passwordAdapter),

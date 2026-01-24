@@ -408,6 +408,31 @@ func (b *Backend) ActivateConnection(ssid string) error {
 	}
 }
 
+func isUserInGroup(group string) (bool, error) {
+	u, err := user.Current()
+	if err != nil {
+		return false, err
+	}
+
+	g, err := user.LookupGroup(group)
+	if err != nil {
+		return false, err
+	}
+
+	gids, err := u.GroupIds()
+	if err != nil {
+		return false, err
+	}
+
+	for _, gid := range gids {
+		if gid == g.Gid {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 func (b *Backend) ForgetNetwork(ssid string) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
@@ -560,21 +585,11 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 
 	settings, err := conn.GetSecrets("802-11-wireless-security")
 	if err != nil {
-		if u, errUser := user.Current(); errUser == nil {
-			if g, errGroup := user.LookupGroup("networkmanager"); errGroup == nil {
-				if gids, errGids := u.GroupIds(); errGids == nil {
-					inGroup := false
-					for _, gid := range gids {
-						if gid == g.Gid {
-							inGroup = true
-							break
-						}
-					}
-					if !inGroup {
-						return "", fmt.Errorf("need to be in the 'networkmanager' group to edit connections: %w", wifi.ErrMissingPermission)
-					}
-				}
-			}
+		// Only check permissions if we suspect it might be the cause.
+		// Since gonetworkmanager might return generic errors, we check if we're in the group
+		// whenever GetSecrets fails, as a helpful hint.
+		if inGroup, errCheck := isUserInGroup("networkmanager"); errCheck == nil && !inGroup {
+			return "", fmt.Errorf("need to be in the 'networkmanager' group to edit connections: %w: %w", wifi.ErrMissingPermission, err)
 		}
 		return "", fmt.Errorf("failed to get secrets: %w", wifi.ErrOperationFailed)
 	}
