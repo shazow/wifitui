@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -114,9 +115,13 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 type ListModel struct {
 	list         list.Model
+	help         help.Model
 	isForgetting bool
 	scanner      *ScanSchedule
 	numScans     int // Number of scans with results since enter
+	showFullHelp bool
+	width        int
+	height       int
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -141,17 +146,20 @@ func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
 	m := &ListModel{}
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
+	m.help = help.New()
+	m.help.Styles.ShortKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	m.help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	m.help.Styles.FullKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	m.help.Styles.FullDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+
 	delegate := itemDelegate{
 		listModel: m,
 	}
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-29s %s", CurrentTheme.TitleIcon+"WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
-	l.SetShowHelp(true)
-	l.Help.Styles.ShortKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
-	l.Help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
-	l.Help.Styles.FullKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
-	l.Help.Styles.FullDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.SetShowHelp(false)
+
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
@@ -161,6 +169,11 @@ func NewListModel() *ListModel {
 	}
 	// Make 'q' the only quit key
 	l.KeyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
+
+	// Disable internal help toggle
+	l.KeyMap.ShowFullHelp.SetEnabled(false)
+	l.KeyMap.CloseFullHelp.SetEnabled(false)
+
 	l.AdditionalFullHelpKeys = func() []key.Binding {
 		return append([]key.Binding{
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
@@ -185,6 +198,22 @@ func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
 }
 
+func (m *ListModel) updateListSize() {
+	h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+	bh, bv := listBorderStyle.GetFrameSize()
+
+	m.help.Width = m.width - h - bh
+
+	helpStr := fmt.Sprintf("\n\n %s ", m.help.View(m))
+	helpHeight := lipgloss.Height(helpStr)
+
+	// extraVerticalSpace covers margins + border + status bar (2 lines)
+	extraVerticalSpace := v + bv + 2
+
+	m.list.SetSize(m.width-h-bh, m.height-extraVerticalSpace-helpHeight)
+}
+
 func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -207,11 +236,14 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-		bh, bv := listBorderStyle.GetFrameSize()
-		extraVerticalSpace := 2
-		m.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
+		m.width = msg.Width
+		m.height = msg.Height
+		m.updateListSize()
+		// Propagate resize to list as well, SetSize handles it but list needs to know about width too
+		// m.list.SetSize handles both width and height.
+		// We call m.updateListSize which calls m.list.SetSize.
+		// However, m.list needs the message to update its internal pagination sometimes?
+		// SetSize is sufficient. We don't need to pass WindowSizeMsg to list if we called SetSize.
 		return m, nil
 	case connectionsLoadedMsg:
 		items := make([]list.Item, len(msg))
@@ -239,6 +271,11 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			break
 		}
 		switch msg.String() {
+		case "?":
+			m.showFullHelp = !m.showFullHelp
+			m.help.ShowAll = m.showFullHelp
+			m.updateListSize()
+			return m, nil
 		case "q":
 			if m.list.FilterState() != list.Filtering {
 				return m, tea.Quit
@@ -312,7 +349,9 @@ func (m *ListModel) OnLeave() tea.Cmd {
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
+
+	help := fmt.Sprintf("\n\n %s ", m.help.View(m))
+	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
 
 	// Custom status bar
 	statusText := ""
@@ -324,14 +363,19 @@ func (m *ListModel) View() string {
 	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
 }
 
-func (m *ListModel) FullHelp() [][]key.Binding {
-	return m.list.FullHelp()
+func (m *ListModel) ShortHelp() []key.Binding {
+	return []key.Binding{
+		m.list.KeyMap.Filter,
+		key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
+		key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "forget")),
+		key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "connect")),
+		m.list.KeyMap.Quit,
+		key.NewBinding(key.WithKeys("?"), key.WithHelp("?", "more")),
+	}
 }
 
-func (m *ListModel) ShortHelp() []key.Binding {
-	h := m.list.ShortHelp()
-	// Remove up/down from short help
-	return h[2:]
+func (m *ListModel) FullHelp() [][]key.Binding {
+	return m.list.FullHelp()
 }
 
 // truncateString truncates a string to maxW visual width, appending an ellipsis if truncated.
