@@ -585,9 +585,7 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 
 	settings, err := conn.GetSecrets("802-11-wireless-security")
 	if err != nil {
-		// Only check permissions if we suspect it might be the cause.
-		// Since gonetworkmanager might return generic errors, we check if we're in the group
-		// whenever GetSecrets fails, as a helpful hint.
+		// Is the failure because we're not in the networkmanager group?
 		if inGroup, errCheck := isUserInGroup("networkmanager"); errCheck == nil && !inGroup {
 			return "", fmt.Errorf("need to be in the 'networkmanager' group to edit connections: %w: %w", wifi.ErrMissingPermission, err)
 		}
