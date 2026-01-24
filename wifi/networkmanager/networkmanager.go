@@ -4,6 +4,7 @@ package networkmanager
 
 import (
 	"fmt"
+	"os/user"
 	"time"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
@@ -407,6 +408,31 @@ func (b *Backend) ActivateConnection(ssid string) error {
 	}
 }
 
+func isUserInGroup(group string) (bool, error) {
+	u, err := user.Current()
+	if err != nil {
+		return false, err
+	}
+
+	g, err := user.LookupGroup(group)
+	if err != nil {
+		return false, err
+	}
+
+	gids, err := u.GroupIds()
+	if err != nil {
+		return false, err
+	}
+
+	for _, gid := range gids {
+		if gid == g.Gid {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 func (b *Backend) ForgetNetwork(ssid string) error {
 	conn, ok := b.Connections[ssid]
 	if !ok {
@@ -559,7 +585,11 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 
 	settings, err := conn.GetSecrets("802-11-wireless-security")
 	if err != nil {
-		return "", fmt.Errorf("failed to get secrets: %w", wifi.ErrOperationFailed)
+		// Is the failure because we're not in the networkmanager group?
+		if inGroup, errCheck := isUserInGroup("networkmanager"); errCheck == nil && !inGroup {
+			return "", fmt.Errorf("need to be in the 'networkmanager' group to edit connections: %w: %w", wifi.ErrMissingPermission, err)
+		}
+		return "", fmt.Errorf("failed to get secrets: %w: %w", wifi.ErrOperationFailed, err)
 	}
 
 	if s, ok := settings["802-11-wireless-security"]; ok {

@@ -23,3 +23,6 @@ var ErrNotSupported = errors.New("not supported")
 
 // ErrAccessPointMismatch is returned when trying to merge connections with different SSID or security.
 var ErrAccessPointMismatch = errors.New("SSID or security mismatch")
+
+// ErrMissingPermission is returned when the user lacks necessary permissions.
+var ErrMissingPermission = errors.New("missing permission")
