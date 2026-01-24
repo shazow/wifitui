@@ -147,7 +147,11 @@ func NewListModel() *ListModel {
 	l := list.New([]list.Item{}, delegate, 0, 0)
 	l.Title = fmt.Sprintf("%-29s %s", CurrentTheme.TitleIcon+"WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
-	l.SetShowHelp(false)
+	l.SetShowHelp(true)
+	l.Help.Styles.ShortKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	l.Help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.FullKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	l.Help.Styles.FullDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
@@ -206,7 +210,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 		bh, bv := listBorderStyle.GetFrameSize()
-		extraVerticalSpace := 4
+		extraVerticalSpace := 2
 		m.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
 		return m, nil
 	case connectionsLoadedMsg:
@@ -308,8 +312,7 @@ func (m *ListModel) OnLeave() tea.Cmd {
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	help := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
-	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
+	viewBuilder.WriteString(listBorderStyle.Render(m.list.View()))
 
 	// Custom status bar
 	statusText := ""
