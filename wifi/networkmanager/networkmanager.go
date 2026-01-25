@@ -105,6 +105,24 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	uniqueConns := make(map[connKey]wifi.Connection)
 	processedSSIDs := make(map[string]bool)
 
+	// Pre-process known connections into a map for faster lookup.
+	knownConnectionMap := make(map[string]gonetworkmanager.Connection)
+	for _, kc := range knownConnections {
+		s, err := kc.GetSettings()
+		if err != nil {
+			continue
+		}
+		if wireless, ok := s["802-11-wireless"]; ok {
+			if ssidBytes, ok := wireless["ssid"].([]byte); ok {
+				ssid := string(ssidBytes)
+				// Only store the first occurrence to match previous behavior
+				if _, exists := knownConnectionMap[ssid]; !exists {
+					knownConnectionMap[ssid] = kc
+				}
+			}
+		}
+	}
+
 	activeConnections, err := b.NM.GetPropertyActiveConnections()
 	if err != nil {
 		return nil, err
@@ -145,13 +163,14 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 		if existing, exists := newAccessPoints[ssid]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
-			if strength <= exStrength {
-				continue
+			if strength > exStrength {
+				processedSSIDs[ssid] = true
+				newAccessPoints[ssid] = ap
 			}
+		} else {
+			processedSSIDs[ssid] = true
+			newAccessPoints[ssid] = ap
 		}
-
-		processedSSIDs[ssid] = true
-		newAccessPoints[ssid] = ap
 
 		flags, _ := ap.GetPropertyFlags()
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
@@ -166,98 +185,20 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			security = wifi.SecurityOpen
 		}
 
-		key := connKey{ssid: ssid, security: security}
-
-		// Check if we already have this Connection processed
-		if conn, exists := uniqueConns[key]; exists {
-			// We already have a base connection for this SSID/Security pair.
-			// Just add the AP. AddAccessPoint handles merging logic if needed,
-			// but since we keyed by what Compare checks, we can trust it matches.
-			_ = conn.AddAccessPoint(wifi.Connection{
-				SSID:         ssid,
-				Security:     security,
-				AccessPoints: []wifi.AccessPoint{wifiAP},
-				// Other fields like Active/Known are merged by AddAccessPoint
-				// We need to populate them if this specific AP instance has them "better" or "true"
-				// But IsKnown is per-SSID (mostly), IsActive is per-connection.
-				// Let's populate the temp struct with what we know from this AP context.
-			})
-
-			// Let's reconstruct the temp connection properly to pass to AddAccessPoint
-			tempConn := wifi.Connection{
-				SSID:         ssid,
-				Security:     security,
-				IsSecure:     isSecure,
-				IsVisible:    true,
-				AccessPoints: []wifi.AccessPoint{wifiAP},
-			}
-
-			var knownConn gonetworkmanager.Connection
-			for _, kc := range knownConnections {
-				s, err := kc.GetSettings()
-				if err != nil {
-					continue
-				}
-				if wireless, ok := s["802-11-wireless"]; ok {
-					if ssidBytes, ok := wireless["ssid"].([]byte); ok {
-						if string(ssidBytes) == ssid {
-							knownConn = kc
-							break
-						}
-					}
-				}
-			}
-
-			if knownConn != nil {
-				s, _ := knownConn.GetSettings()
-				var id string
-				var lastConnected *time.Time
-				if c, ok := s["connection"]; ok {
-					if i, ok := c["id"].(string); ok {
-						id = i
-					}
-					if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
-						t := time.Unix(int64(ts), 0)
-						lastConnected = &t
-					}
-				}
-				autoConnect := true
-				if c, ok := s["connection"]; ok {
-					if ac, ok := c["autoconnect"].(bool); ok {
-						autoConnect = ac
-					}
-				}
-				tempConn.IsKnown = true
-				tempConn.IsActive = activeConnectionID != "" && id == activeConnectionID
-				tempConn.LastConnected = lastConnected
-				tempConn.AutoConnect = autoConnect
-			}
-
-			// Now merge
-			_ = conn.AddAccessPoint(tempConn)
-			uniqueConns[key] = conn
-			continue
+		// Create a base connection object for this AP
+		connInfo := wifi.Connection{
+			SSID:         ssid,
+			IsKnown:      false,
+			IsSecure:     isSecure,
+			IsVisible:    true,
+			Security:     security,
+			AutoConnect:  false,
+			AccessPoints: []wifi.AccessPoint{wifiAP},
 		}
 
-		var connInfo wifi.Connection
-		var knownConn gonetworkmanager.Connection
-		for _, kc := range knownConnections {
-			s, err := kc.GetSettings()
-			if err != nil {
-				continue
-			}
-			if wireless, ok := s["802-11-wireless"]; ok {
-				if ssidBytes, ok := wireless["ssid"].([]byte); ok {
-					if string(ssidBytes) == ssid {
-						knownConn = kc
-						break
-					}
-				}
-			}
-		}
-
-		if knownConn != nil {
-			newConnections[ssid] = knownConn
+		// Check if it's a known connection
+		if knownConn, ok := knownConnectionMap[ssid]; ok {
+			connInfo.IsKnown = true
 			s, _ := knownConn.GetSettings()
 			var id string
 			var lastConnected *time.Time
@@ -276,29 +217,27 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 					autoConnect = ac
 				}
 			}
-			connInfo = wifi.Connection{
-				SSID:          ssid,
-				IsActive:      activeConnectionID != "" && id == activeConnectionID,
-				IsKnown:       true,
-				IsSecure:      isSecure,
-				IsVisible:     true,
-				Security:      security,
-				LastConnected: lastConnected,
-				AutoConnect:   autoConnect,
-				AccessPoints:  []wifi.AccessPoint{wifiAP},
-			}
-		} else {
-			connInfo = wifi.Connection{
-				SSID:        ssid,
-				IsKnown:     false,
-				IsSecure:    isSecure,
-				IsVisible:   true,
-				Security:    security,
-				AutoConnect: false, // Can't autoconnect to a network we don't know
-				AccessPoints: []wifi.AccessPoint{wifiAP},
-			}
+			connInfo.IsActive = activeConnectionID != "" && id == activeConnectionID
+			connInfo.LastConnected = lastConnected
+			connInfo.AutoConnect = autoConnect
+
+			// If we haven't added this known connection to newConnections yet, do so.
+			// This mirrors the logic at the end of the loop in the original code,
+			// but we can just do it here since we found a match.
+			// Actually, newConnections is populated at the end for *missing* known connections.
+			// But for *found* known connections, we should update it too?
+			// The original code did: newConnections[ssid] = knownConn (in the else block of if knownConn != nil)
+			newConnections[ssid] = knownConn
 		}
-		uniqueConns[key] = connInfo
+
+		key := connKey{ssid: ssid, security: security}
+
+		if existingConn, exists := uniqueConns[key]; exists {
+			_ = existingConn.AddAccessPoint(connInfo)
+			uniqueConns[key] = existingConn
+		} else {
+			uniqueConns[key] = connInfo
+		}
 	}
 
 	// Now build the final list from uniqueConns
