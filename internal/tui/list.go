@@ -117,6 +117,18 @@ type ListModel struct {
 	isForgetting bool
 	scanner      *ScanSchedule
 	numScans     int // Number of scans with results since enter
+	width        int // Last window width
+	height       int // Last window height
+}
+
+const helpFormatString = "\n\n%s"
+
+func (m *ListModel) outerMarginStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Margin(1, 2)
+}
+
+func (m *ListModel) listBorderStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -175,6 +187,42 @@ func NewListModel() *ListModel {
 
 func (m *ListModel) SetSize(w, h int) {
 	m.list.SetSize(w, h)
+	m.list.Help.Width = w
+}
+
+// updateSize recalculates and applies the list size based on stored window dimensions
+func (m *ListModel) updateSize() {
+	if m.width == 0 || m.height == 0 {
+		return
+	}
+	marginHorizontal, marginVertical := m.outerMarginStyle().GetFrameSize()
+	borderHorizontal, borderVertical := m.listBorderStyle().GetFrameSize()
+
+	listWidth := m.width - marginHorizontal - borderHorizontal
+
+	// Set help width first so it wraps correctly when we measure it
+	m.list.Help.Width = listWidth
+
+	// Calculate actual help text height (help is rendered inside the border)
+	helpText := m.list.Help.View(m)
+
+	// Apply the same width constraint as in View() to measure accurately
+	// In View(), we use maxWidth which is max of title/content/help widths
+	// For now, let's not apply width constraint since help already has Width set
+	helpLines := strings.Count(helpText, "\n") + 1
+
+	// Account for the formatting from helpFormatString (also inside border)
+	helpFormatOverhead := strings.Count(helpFormatString, "\n")
+
+	// Status bar is outside the border: \n moves to next line, status text on that line = 1 line total
+	statusBarHeight := 1
+
+	// Space inside the border taken by help section
+	helpSectionHeight := helpLines + helpFormatOverhead
+
+	listHeight := m.height - marginVertical - borderVertical - statusBarHeight - helpSectionHeight
+
+	m.SetSize(listWidth, listHeight)
 }
 
 func (m *ListModel) SetItems(items []list.Item) {
@@ -185,6 +233,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	oldIndex := m.list.Index()
+	oldShowAll := m.list.Help.ShowAll
 
 	if m.isForgetting {
 		selected, ok := m.list.SelectedItem().(connectionItem)
@@ -203,11 +252,9 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-		bh, bv := listBorderStyle.GetFrameSize()
-		extraVerticalSpace := 4
-		m.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
+		m.width = msg.Width
+		m.height = msg.Height
+		m.updateSize()
 		return m, nil
 	case connectionsLoadedMsg:
 		items := make([]list.Item, len(msg))
@@ -292,6 +339,11 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	m.list = newList
 	cmds = append(cmds, newCmd)
 
+	// If help toggle state changed, update the list size
+	if oldShowAll != m.list.Help.ShowAll {
+		m.updateSize()
+	}
+
 	if m.isForgetting && m.list.Index() != oldIndex {
 		m.isForgetting = false
 	}
@@ -307,9 +359,37 @@ func (m *ListModel) OnLeave() tea.Cmd {
 
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
-	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	help := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
-	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
+
+	listView := m.list.View()
+
+	// Calculate max width needed for both short and full help
+	currentShowAll := m.list.Help.ShowAll
+	m.list.Help.ShowAll = false
+	shortHelpView := m.list.Help.View(m)
+	m.list.Help.ShowAll = true
+	fullHelpView := m.list.Help.View(m)
+	m.list.Help.ShowAll = currentShowAll
+
+	helpView := m.list.Help.View(m)
+
+	// Get the max width needed: consider title width (column headers),
+	// list content width (items), and both short and full help widths
+	maxWidth := lipgloss.Width(m.list.Title)
+	if w := lipgloss.Width(listView); w > maxWidth {
+		maxWidth = w
+	}
+	if w := lipgloss.Width(shortHelpView); w > maxWidth {
+		maxWidth = w
+	}
+	if w := lipgloss.Width(fullHelpView); w > maxWidth {
+		maxWidth = w
+	}
+
+	// Apply max width to list, but not help (help width is already set via m.list.Help.Width)
+	listConstrained := lipgloss.NewStyle().Width(maxWidth).Render(listView)
+	help := fmt.Sprintf(helpFormatString, helpView)
+
+	viewBuilder.WriteString(m.listBorderStyle().Render(listConstrained + help))
 
 	// Custom status bar
 	statusText := ""
@@ -318,7 +398,8 @@ func (m *ListModel) View() string {
 	}
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
-	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
+
+	return m.outerMarginStyle().Render(viewBuilder.String())
 }
 
 func (m *ListModel) FullHelp() [][]key.Binding {
