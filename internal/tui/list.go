@@ -117,6 +117,8 @@ type ListModel struct {
 	isForgetting bool
 	scanner      *ScanSchedule
 	numScans     int // Number of scans with results since enter
+	width        int
+	height       int
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -148,6 +150,10 @@ func NewListModel() *ListModel {
 	l.Title = fmt.Sprintf("%-29s %s", CurrentTheme.TitleIcon+"WiFi Network", "Signal")
 	l.SetShowStatusBar(false)
 	l.SetShowHelp(false)
+	l.Help.Styles.ShortKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	l.Help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.FullKey = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+	l.Help.Styles.FullDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "scan")),
@@ -157,6 +163,8 @@ func NewListModel() *ListModel {
 	}
 	// Make 'q' the only quit key
 	l.KeyMap.Quit = key.NewBinding(key.WithKeys("q"), key.WithHelp("q", "quit"))
+	l.KeyMap.ShowFullHelp.SetEnabled(false)
+	l.KeyMap.CloseFullHelp.SetEnabled(false)
 	l.AdditionalFullHelpKeys = func() []key.Binding {
 		return append([]key.Binding{
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
@@ -175,6 +183,24 @@ func NewListModel() *ListModel {
 
 func (m *ListModel) SetSize(w, h int) {
 	m.list.SetSize(w, h)
+}
+
+func (m *ListModel) updateListSize() {
+	h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+	bh, bv := listBorderStyle.GetFrameSize()
+
+	availableWidth := m.width - h - bh
+	// Subtract 2 for the padding spaces in the help string format: " %s "
+	m.list.Help.Width = availableWidth - 2
+
+	helpStr := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
+	helpHeight := lipgloss.Height(helpStr)
+
+	// extraVerticalSpace covers margins + border + status bar (2 lines)
+	extraVerticalSpace := v + bv + 2
+
+	m.list.SetSize(availableWidth, m.height-extraVerticalSpace-helpHeight)
 }
 
 func (m *ListModel) SetItems(items []list.Item) {
@@ -203,11 +229,9 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-		listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-		bh, bv := listBorderStyle.GetFrameSize()
-		extraVerticalSpace := 4
-		m.SetSize(msg.Width-h-bh, msg.Height-v-bv-extraVerticalSpace)
+		m.width = msg.Width
+		m.height = msg.Height
+		m.updateListSize()
 		return m, nil
 	case connectionsLoadedMsg:
 		items := make([]list.Item, len(msg))
@@ -235,6 +259,10 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			break
 		}
 		switch msg.String() {
+		case "?":
+			m.list.Help.ShowAll = !m.list.Help.ShowAll
+			m.updateListSize()
+			return m, nil
 		case "q":
 			if m.list.FilterState() != list.Filtering {
 				return m, tea.Quit
@@ -307,7 +335,12 @@ func (m *ListModel) OnLeave() tea.Cmd {
 
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
+	h, _ := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+	bh, _ := listBorderStyle.GetFrameSize()
+	availableWidth := m.width - h - bh
+	listBorderStyle = listBorderStyle.Width(availableWidth)
+
 	help := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
 
