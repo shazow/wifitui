@@ -210,6 +210,14 @@ func (m *ListModel) updateListSize() {
 		m.ssidColumnWidth = targetSSIDWidth
 	}
 
+	// Update list title to match the new column width
+	titlePrefix := CurrentTheme.TitleIcon + "WiFi Network"
+	gap := m.ssidColumnWidth - lipgloss.Width(titlePrefix)
+	if gap < 0 {
+		gap = 0
+	}
+	m.list.Title = fmt.Sprintf("%s%s %s", titlePrefix, strings.Repeat(" ", gap), "Signal")
+
 	// Subtract 2 for the padding spaces in the help string format: " %s "
 	m.list.Help.Width = availableWidth - 2
 

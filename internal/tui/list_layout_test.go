@@ -17,8 +17,9 @@ func TestListModel_DynamicLayout(t *testing.T) {
 			t.Errorf("Width %d: expected ssidColumnWidth %d, got %d", width, expectedSSIDWidth, m.ssidColumnWidth)
 		}
 
-		// We can also verify that the list size was set correctly relative to the minimum width
-		// but checking internal list state is harder without access to private fields of bubbles/list.
+		if len(m.list.Title) == 0 {
+			t.Errorf("Width %d: Title is empty", width)
+		}
 	}
 
 	// Test cases based on the plan:
