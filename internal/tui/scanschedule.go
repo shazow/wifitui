@@ -78,4 +78,3 @@ func (s *ScanSchedule) tick() tea.Cmd {
 		return tickMsg{}
 	})
 }
-
