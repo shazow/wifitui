@@ -47,7 +47,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	title = icon + title
 
 	// Define column width for SSID
-	ssidColumnWidth := 30
+	ssidColumnWidth := d.listModel.ssidColumnWidth
 	titleWidth := lipgloss.Width(title)
 
 	// Truncate title if it's too long
@@ -113,12 +113,13 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type ListModel struct {
-	list         list.Model
-	isForgetting bool
-	scanner      *ScanSchedule
-	numScans     int // Number of scans with results since enter
-	width        int
-	height       int
+	list            list.Model
+	isForgetting    bool
+	scanner         *ScanSchedule
+	numScans        int // Number of scans with results since enter
+	width           int
+	height          int
+	ssidColumnWidth int
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -141,7 +142,9 @@ func (m *ListModel) OnEnter() tea.Cmd {
 
 func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{}
+	m := &ListModel{
+		ssidColumnWidth: 30,
+	}
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	delegate := itemDelegate{
 		listModel: m,
@@ -191,6 +194,22 @@ func (m *ListModel) updateListSize() {
 	bh, bv := listBorderStyle.GetFrameSize()
 
 	availableWidth := m.width - h - bh
+
+	// Calculate ssidColumnWidth
+	// Reserve space for: "  " (2) + " " (1) + Description (~30)
+	// We want roughly 33 chars reserved for the non-SSID parts of the line.
+	// If we have more space, we grow the SSID column up to 60.
+	const listContentOverhead = 33
+	targetSSIDWidth := availableWidth - listContentOverhead
+
+	if targetSSIDWidth < 30 {
+		m.ssidColumnWidth = 30
+	} else if targetSSIDWidth > 60 {
+		m.ssidColumnWidth = 60
+	} else {
+		m.ssidColumnWidth = targetSSIDWidth
+	}
+
 	// Subtract 2 for the padding spaces in the help string format: " %s "
 	m.list.Help.Width = availableWidth - 2
 
@@ -229,7 +248,13 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		// Introduce a reasonable minimum window width
+		const minWindowWidth = 70
+		if msg.Width < minWindowWidth {
+			m.width = minWindowWidth
+		} else {
+			m.width = msg.Width
+		}
 		m.height = msg.Height
 		m.updateListSize()
 		return m, nil
