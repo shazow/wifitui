@@ -191,7 +191,8 @@ func (m *ListModel) updateListSize() {
 	bh, bv := listBorderStyle.GetFrameSize()
 
 	availableWidth := m.width - h - bh
-	m.list.Help.Width = availableWidth
+	// Subtract 2 for the padding spaces in the help string format: " %s "
+	m.list.Help.Width = availableWidth - 2
 
 	helpStr := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
 	helpHeight := lipgloss.Height(helpStr)
@@ -334,7 +335,12 @@ func (m *ListModel) OnLeave() tea.Cmd {
 
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
+	h, _ := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+	bh, _ := listBorderStyle.GetFrameSize()
+	availableWidth := m.width - h - bh
+	listBorderStyle = listBorderStyle.Width(availableWidth)
+
 	help := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
 
