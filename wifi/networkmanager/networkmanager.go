@@ -289,12 +289,12 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			}
 		} else {
 			connInfo = wifi.Connection{
-				SSID:        ssid,
-				IsKnown:     false,
-				IsSecure:    isSecure,
-				IsVisible:   true,
-				Security:    security,
-				AutoConnect: false, // Can't autoconnect to a network we don't know
+				SSID:         ssid,
+				IsKnown:      false,
+				IsSecure:     isSecure,
+				IsVisible:    true,
+				Security:     security,
+				AutoConnect:  false, // Can't autoconnect to a network we don't know
 				AccessPoints: []wifi.AccessPoint{wifiAP},
 			}
 		}

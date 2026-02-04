@@ -126,6 +126,13 @@ func runConnect(w io.Writer, ssid string, passphrase string, security wifi.Secur
 		return b.JoinNetwork(ssid, passphrase, security, isHidden)
 	}
 
+	// Populate the backend's internal state (e.g. NetworkManager's Connections
+	// and AccessPoints maps) without triggering a new scan.
+	// ActivateConnection relies on this state being present.
+	if _, err := b.BuildNetworkList(false); err != nil {
+		return fmt.Errorf("failed to load networks: %w", err)
+	}
+
 	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
 	return b.ActivateConnection(ssid)
 }
