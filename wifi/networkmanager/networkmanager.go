@@ -408,6 +408,28 @@ func (b *Backend) ActivateConnection(ssid string) error {
 	}
 }
 
+func (b *Backend) Disconnect() error {
+	activeConnections, err := b.NM.GetPropertyActiveConnections()
+	if err != nil {
+		return err
+	}
+
+	for _, activeConn := range activeConnections {
+		typ, err := activeConn.GetPropertyType()
+		if err != nil {
+			continue
+		}
+		if typ != "802-11-wireless" {
+			continue
+		}
+		if err := b.NM.DeactivateConnection(activeConn); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func isUserInGroup(group string) (bool, error) {
 	u, err := user.Current()
 	if err != nil {

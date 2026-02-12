@@ -120,14 +120,14 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			aggregatedConns[net.ssid] = conn
 		} else {
 			aggregatedConns[net.ssid] = wifi.Connection{
-				SSID:        net.ssid,
-				IsActive:    isActive,
-				IsKnown:     isKnown,
-				IsVisible:   true,
+				SSID:         net.ssid,
+				IsActive:     isActive,
+				IsKnown:      isKnown,
+				IsVisible:    true,
 				AccessPoints: []wifi.AccessPoint{ap},
-				IsSecure:    net.security != wifi.SecurityOpen,
-				Security:    net.security,
-				AutoConnect: isKnown,
+				IsSecure:     net.security != wifi.SecurityOpen,
+				Security:     net.security,
+				AutoConnect:  isKnown,
 			}
 		}
 	}
@@ -156,6 +156,12 @@ func (b *Backend) ActivateConnection(ssid string) error {
 	// For known networks, networksetup uses stored credentials from the keychain
 	// automatically - no need to fetch the password ourselves.
 	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid)
+	return runOnly(cmd)
+}
+
+// Disconnect disconnects from the currently active network.
+func (b *Backend) Disconnect() error {
+	cmd := exec.Command("/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport", "-z")
 	return runOnly(cmd)
 }
 

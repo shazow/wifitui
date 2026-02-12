@@ -22,6 +22,7 @@ type MockBackend struct {
 	KnownConnections       []mockConnection
 	ActiveConnectionIndex  int
 	ActivateError          error
+	DisconnectError        error
 	ForgetError            error
 	JoinError              error
 	GetSecretsError        error
@@ -215,6 +216,17 @@ func (m *MockBackend) ActivateConnection(ssid string) error {
 		}
 	}
 	return fmt.Errorf("cannot activate unknown network %s: %w", ssid, wifi.ErrNotFound)
+}
+
+func (m *MockBackend) Disconnect() error {
+	time.Sleep(m.ActionSleep)
+
+	if m.DisconnectError != nil {
+		return m.DisconnectError
+	}
+
+	m.setActiveConnection("")
+	return nil
 }
 
 func (m *MockBackend) ForgetNetwork(ssid string) error {

@@ -237,6 +237,33 @@ func TestRunConnect(t *testing.T) {
 	}
 }
 
+func TestRunDisconnect(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	if err := runConnect(&buf, "Password is password", "", wifi.SecurityWPA, false, mockBackend); err != nil {
+		t.Fatalf("failed to activate network before disconnect: %v", err)
+	}
+
+	buf.Reset()
+	if err := runDisconnect(&buf, mockBackend); err != nil {
+		t.Fatalf("runDisconnect() failed: %v", err)
+	}
+
+	networks, err := mockBackend.BuildNetworkList(false)
+	if err != nil {
+		t.Fatalf("failed to get network list: %v", err)
+	}
+	for _, n := range networks {
+		if n.IsActive {
+			t.Fatalf("expected no active network after disconnect, but %q is active", n.SSID)
+		}
+	}
+}
+
 func init() {
 	mock.DefaultActionSleep = 0
 }

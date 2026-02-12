@@ -89,6 +89,23 @@ func TestActivateConnection(t *testing.T) {
 	}
 }
 
+func TestDisconnect(t *testing.T) {
+	b, _ := New()
+	mockBackend := b.(*MockBackend)
+
+	if err := b.ActivateConnection("Password is password"); err != nil {
+		t.Fatalf("ActivateConnection() failed: %v", err)
+	}
+
+	if err := b.Disconnect(); err != nil {
+		t.Fatalf("Disconnect() failed: %v", err)
+	}
+
+	if mockBackend.ActiveConnectionIndex != -1 {
+		t.Fatalf("expected no active connection after disconnect, got index %d", mockBackend.ActiveConnectionIndex)
+	}
+}
+
 func TestForgetNetwork(t *testing.T) {
 	b, _ := New()
 	mockBackend := b.(*MockBackend)

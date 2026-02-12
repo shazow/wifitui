@@ -19,10 +19,11 @@ type Options struct {
 	Theme   string `long:"theme" description:"path to theme toml file" env:"WIFITUI_THEME"`
 	Version bool   `long:"version" description:"display version"`
 
-	Tui     TuiCommand     `command:"tui" description:"Run the TUI (default)"`
-	List    ListCommand    `command:"list" description:"List wifi networks"`
-	Show    ShowCommand    `command:"show" description:"Show a wifi network"`
-	Connect ConnectCommand `command:"connect" description:"Connect to a wifi network"`
+	Tui        TuiCommand        `command:"tui" description:"Run the TUI (default)"`
+	List       ListCommand       `command:"list" description:"List wifi networks"`
+	Show       ShowCommand       `command:"show" description:"Show a wifi network"`
+	Connect    ConnectCommand    `command:"connect" description:"Connect to a wifi network"`
+	Disconnect DisconnectCommand `command:"disconnect" description:"Disconnect from the active wifi network"`
 }
 
 // TuiCommand defines the handler for the "tui" subcommand
@@ -52,6 +53,9 @@ type ConnectCommand struct {
 		SSID string `positional-arg-name:"ssid" required:"true"`
 	} `positional-args:"yes"`
 }
+
+// DisconnectCommand defines the handler for the "disconnect" subcommand
+type DisconnectCommand struct{}
 
 // We need a global backend to be accessible by the command handlers.
 var b wifi.Backend
@@ -98,6 +102,11 @@ func (c *ConnectCommand) Execute(args []string) error {
 		return fmt.Errorf("invalid security type: %s", c.Security)
 	}
 	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, b)
+}
+
+// Execute is the handler for the "disconnect" subcommand
+func (c *DisconnectCommand) Execute(args []string) error {
+	return runDisconnect(os.Stdout, b)
 }
 
 // main is the entry point of the application

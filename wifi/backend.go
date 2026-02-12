@@ -93,6 +93,8 @@ type Backend interface {
 	BuildNetworkList(shouldScan bool) ([]Connection, error)
 	// ActivateConnection activates a known network.
 	ActivateConnection(ssid string) error
+	// Disconnect disconnects from the currently active network.
+	Disconnect() error
 	// ForgetNetwork removes a known network configuration.
 	ForgetNetwork(ssid string) error
 	// JoinNetwork connects to a new network, potentially creating a new configuration.

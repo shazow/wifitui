@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/shazow/wifitui/wifi"
-	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/internal/helpers"
+	"github.com/shazow/wifitui/internal/tui"
+	"github.com/shazow/wifitui/wifi"
 )
 
 func runTUI(b wifi.Backend) error {
@@ -135,4 +135,9 @@ func runConnect(w io.Writer, ssid string, passphrase string, security wifi.Secur
 
 	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
 	return b.ActivateConnection(ssid)
+}
+
+func runDisconnect(w io.Writer, b wifi.Backend) error {
+	fmt.Fprintln(w, "Disconnecting from active network...")
+	return b.Disconnect()
 }

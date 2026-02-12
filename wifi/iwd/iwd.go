@@ -124,13 +124,13 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				visibleNetworks[ssid] = existing
 			} else {
 				visibleNetworks[ssid] = wifi.Connection{
-					SSID:        ssid,
-					IsActive:    isActive,
-					IsSecure:    security != wifi.SecurityOpen,
-					Security:    security,
-					IsVisible:   true,
+					SSID:         ssid,
+					IsActive:     isActive,
+					IsSecure:     security != wifi.SecurityOpen,
+					Security:     security,
+					IsVisible:    true,
 					AccessPoints: []wifi.AccessPoint{ap},
-					AutoConnect: false, // Cannot autoconnect to unknown network
+					AutoConnect:  false, // Cannot autoconnect to unknown network
 				}
 			}
 		}
@@ -194,6 +194,18 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return err
 	}
 	return b.waitForConnection(ssid)
+}
+
+func (b *Backend) Disconnect() error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+	station, err := b.getStationDevice(conn)
+	if err != nil {
+		return err
+	}
+	return conn.Object(iwdDest, station).Call(iwdStationIface+".Disconnect", 0).Store()
 }
 
 func (b *Backend) ForgetNetwork(ssid string) error {

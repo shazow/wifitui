@@ -15,7 +15,7 @@
 - [x] Join new and hidden networks (`c` and `n` keys)
 - [x] Initiate a scan (`s` key)
 - [x] Multiple backends (experimental `iwd` and darwin support, untested)
-- [x] Non-interactive modes (`list` `show` `connect` commands)
+- [x] Non-interactive modes (`list` `show` `connect` `disconnect` commands)
 - [x] Bring your own color scheme and theme (`--theme=./theme.toml` or set `WIFITUI_THEME=./theme.toml`)
 
 ## Getting Started
@@ -69,9 +69,10 @@ USAGE
   wifitui [flags] <subcommand> [args...]
 
 SUBCOMMANDS
-  list     List wifi networks
-  show     Show a wifi network
-  connect  Connect to a wifi network
+  list        List wifi networks
+  show        Show a wifi network
+  connect     Connect to a wifi network
+  disconnect  Disconnect from the active wifi network
 
 FLAGS
   -version=false  display version
