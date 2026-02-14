@@ -237,6 +237,77 @@ func TestRunConnect(t *testing.T) {
 	}
 }
 
+func TestRunRadio(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	if err := runRadio(&buf, "off", mockBackend); err != nil {
+		t.Fatalf("runRadio(off) failed: %v", err)
+	}
+	enabled, err := mockBackend.IsWirelessEnabled()
+	if err != nil {
+		t.Fatalf("IsWirelessEnabled() failed: %v", err)
+	}
+	if enabled {
+		t.Fatalf("expected wireless to be disabled")
+	}
+
+	buf.Reset()
+	if err := runRadio(&buf, "on", mockBackend); err != nil {
+		t.Fatalf("runRadio(on) failed: %v", err)
+	}
+	enabled, err = mockBackend.IsWirelessEnabled()
+	if err != nil {
+		t.Fatalf("IsWirelessEnabled() failed: %v", err)
+	}
+	if !enabled {
+		t.Fatalf("expected wireless to be enabled")
+	}
+
+	buf.Reset()
+	if err := runRadio(&buf, "toggle", mockBackend); err != nil {
+		t.Fatalf("runRadio(toggle) failed: %v", err)
+	}
+	enabled, err = mockBackend.IsWirelessEnabled()
+	if err != nil {
+		t.Fatalf("IsWirelessEnabled() failed: %v", err)
+	}
+	if enabled {
+		t.Fatalf("expected wireless to be disabled after toggle")
+	}
+
+	buf.Reset()
+	if err := runRadio(&buf, "", mockBackend); err != nil {
+		t.Fatalf("runRadio(default toggle) failed: %v", err)
+	}
+	enabled, err = mockBackend.IsWirelessEnabled()
+	if err != nil {
+		t.Fatalf("IsWirelessEnabled() failed: %v", err)
+	}
+	if !enabled {
+		t.Fatalf("expected wireless to be enabled after default toggle")
+	}
+}
+
+func TestRunRadioInvalidAction(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	err = runRadio(&buf, "wat", mockBackend)
+	if err == nil {
+		t.Fatal("expected invalid action error")
+	}
+	if !strings.Contains(err.Error(), "invalid radio action") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func init() {
 	mock.DefaultActionSleep = 0
 }
