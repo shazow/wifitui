@@ -72,6 +72,7 @@ SUBCOMMANDS
   list     List wifi networks
   show     Show a wifi network
   connect  Connect to a wifi network
+  radio    Control the wifi radio (on|off|toggle)
 
 FLAGS
   -version=false  display version

@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/shazow/wifitui/wifi"
-	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/internal/helpers"
+	"github.com/shazow/wifitui/internal/tui"
+	"github.com/shazow/wifitui/wifi"
 )
 
 func runTUI(b wifi.Backend) error {
@@ -135,4 +135,39 @@ func runConnect(w io.Writer, ssid string, passphrase string, security wifi.Secur
 
 	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
 	return b.ActivateConnection(ssid)
+}
+
+func runRadio(w io.Writer, action string, b wifi.Backend) error {
+	var enabled bool
+	switch action {
+	case "on":
+		enabled = true
+	case "off":
+		enabled = false
+	case "", "toggle":
+		current, err := b.IsWirelessEnabled()
+		if err != nil {
+			return fmt.Errorf("failed to get wireless state: %w", err)
+		}
+		enabled = !current
+	default:
+		return fmt.Errorf("invalid radio action: %q (expected on, off, or toggle)", action)
+	}
+
+	if enabled {
+		fmt.Fprintln(w, "Enabling WiFi radio...")
+	} else {
+		fmt.Fprintln(w, "Disabling WiFi radio...")
+	}
+
+	if err := b.SetWireless(enabled); err != nil {
+		return fmt.Errorf("failed to set wireless state: %w", err)
+	}
+
+	if enabled {
+		fmt.Fprintln(w, "WiFi radio is on")
+	} else {
+		fmt.Fprintln(w, "WiFi radio is off")
+	}
+	return nil
 }

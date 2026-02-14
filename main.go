@@ -23,6 +23,7 @@ type Options struct {
 	List    ListCommand    `command:"list" description:"List wifi networks"`
 	Show    ShowCommand    `command:"show" description:"Show a wifi network"`
 	Connect ConnectCommand `command:"connect" description:"Connect to a wifi network"`
+	Radio   RadioCommand   `command:"radio" description:"Control the wifi radio (on|off|toggle)"`
 }
 
 // TuiCommand defines the handler for the "tui" subcommand
@@ -50,6 +51,14 @@ type ConnectCommand struct {
 	Hidden     bool   `long:"hidden" description:"network is hidden"`
 	Args       struct {
 		SSID string `positional-arg-name:"ssid" required:"true"`
+	} `positional-args:"yes"`
+}
+
+// RadioCommand defines the argument for the "radio" subcommand
+// Action may be one of: on, off, toggle.
+type RadioCommand struct {
+	Args struct {
+		Action string `positional-arg-name:"action"`
 	} `positional-args:"yes"`
 }
 
@@ -98,6 +107,11 @@ func (c *ConnectCommand) Execute(args []string) error {
 		return fmt.Errorf("invalid security type: %s", c.Security)
 	}
 	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, b)
+}
+
+// Execute is the handler for the "radio" subcommand
+func (c *RadioCommand) Execute(args []string) error {
+	return runRadio(os.Stdout, c.Args.Action, b)
 }
 
 // main is the entry point of the application
