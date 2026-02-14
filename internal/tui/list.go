@@ -177,6 +177,16 @@ func NewListModel() *ListModel {
 	l.Styles.Title = lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true)
 	l.Styles.FilterPrompt = lipgloss.NewStyle().Foreground(CurrentTheme.Normal)
 	l.Styles.FilterCursor = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
+
+	// Apply theme to help
+	l.Help.Styles.ShortKey = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.ShortDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.Ellipsis = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.FullKey = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.FullDesc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+	l.Help.Styles.FullSeparator = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
+
 	m.list = l
 	return m
 }
