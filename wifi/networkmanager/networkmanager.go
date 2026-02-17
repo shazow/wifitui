@@ -348,10 +348,34 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	return conns, nil
 }
 
-func (b *Backend) ActivateConnection(ssid string) error {
+func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
+	if b.Connections == nil {
+		b.Connections = make(map[string]gonetworkmanager.Connection)
+	}
+
 	conn, ok := b.Connections[ssid]
-	if !ok {
-		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
+	if ok {
+		return conn, nil
+	}
+
+	if len(b.Connections) == 0 {
+		_, err := b.BuildNetworkList(false)
+		if err != nil {
+			return nil, err
+		}
+		conn, ok = b.Connections[ssid]
+		if ok {
+			return conn, nil
+		}
+	}
+
+	return nil, fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
+}
+
+func (b *Backend) ActivateConnection(ssid string) error {
+	conn, err := b.getConnection(ssid)
+	if err != nil {
+		return err
 	}
 
 	ap, apOK := b.AccessPoints[ssid]
@@ -434,9 +458,9 @@ func isUserInGroup(group string) (bool, error) {
 }
 
 func (b *Backend) ForgetNetwork(ssid string) error {
-	conn, ok := b.Connections[ssid]
-	if !ok {
-		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
+	conn, err := b.getConnection(ssid)
+	if err != nil {
+		return err
 	}
 	return conn.Delete()
 }
@@ -569,9 +593,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 }
 
 func (b *Backend) GetSecrets(ssid string) (string, error) {
-	conn, ok := b.Connections[ssid]
-	if !ok {
-		return "", fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
+	conn, err := b.getConnection(ssid)
+	if err != nil {
+		return "", err
 	}
 
 	s, err := conn.GetSettings()
@@ -624,9 +648,9 @@ func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
 }
 
 func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
-	conn, ok := b.Connections[ssid]
-	if !ok {
-		return fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
+	conn, err := b.getConnection(ssid)
+	if err != nil {
+		return err
 	}
 
 	settings, err := conn.GetSettings()
