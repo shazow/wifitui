@@ -8,6 +8,7 @@ import (
 	"time"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
+	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
 	"github.com/shazow/wifitui/wifi"
 )
@@ -63,6 +64,64 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 	return nil, fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 }
 
+func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return fmt.Errorf("failed to connect to system bus: %w", err)
+	}
+
+	path := device.GetPath()
+	rule := fmt.Sprintf("type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='%s'", path)
+
+	// We need to add the match rule to receiving signals matching this rule.
+	call := conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, rule)
+	if call.Err != nil {
+		return fmt.Errorf("failed to add match rule: %w", call.Err)
+	}
+	defer conn.BusObject().Call("org.freedesktop.DBus.RemoveMatch", 0, rule)
+
+	// Channel to receive signals
+	c := make(chan *dbus.Signal, 10)
+	conn.Signal(c)
+	defer conn.RemoveSignal(c)
+
+	err = device.RequestScan()
+	if err != nil {
+		return err
+	}
+
+	// Wait for the signal
+	timeout := 30 * time.Second // Scans can take a while
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case sig := <-c:
+			// Signal body for PropertiesChanged:
+			// interface_name (string)
+			// changed_properties (map[string]dbus.Variant)
+			// invalidated_properties ([]string)
+			if len(sig.Body) < 2 {
+				continue
+			}
+			iface, ok := sig.Body[0].(string)
+			if !ok || iface != "org.freedesktop.NetworkManager.Device.Wireless" {
+				continue
+			}
+			changed, ok := sig.Body[1].(map[string]dbus.Variant)
+			if !ok {
+				continue
+			}
+			if _, ok := changed["LastScan"]; ok {
+				return nil
+			}
+		case <-timer.C:
+			return fmt.Errorf("scan timed out")
+		}
+	}
+}
+
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
 func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	enabled, err := b.IsWirelessEnabled()
@@ -81,7 +140,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	}
 
 	if shouldScan {
-		err = wirelessDevice.RequestScan()
+		err = b.scanAndWait(wirelessDevice)
 		if err != nil {
 			return nil, err
 		}
