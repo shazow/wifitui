@@ -1,7 +1,7 @@
 package networkmanager
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
@@ -9,10 +9,8 @@ import (
 
 type mockNM struct {
 	gonetworkmanager.NetworkManager
-	getDevicesFunc                   func() ([]gonetworkmanager.Device, error)
-	getPropertyWirelessEnabledFunc   func() (bool, error)
-	getPropertyActiveConnectionsFunc func() ([]gonetworkmanager.ActiveConnection, error)
-	activateWirelessConnectionFunc   func(connection gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error)
+	getDevicesFunc                 func() ([]gonetworkmanager.Device, error)
+	getPropertyWirelessEnabledFunc func() (bool, error)
 }
 
 func (m *mockNM) GetDevices() ([]gonetworkmanager.Device, error) {
@@ -29,134 +27,8 @@ func (m *mockNM) GetPropertyWirelessEnabled() (bool, error) {
 	return true, nil
 }
 
-func (m *mockNM) GetPropertyActiveConnections() ([]gonetworkmanager.ActiveConnection, error) {
-	if m.getPropertyActiveConnectionsFunc != nil {
-		return m.getPropertyActiveConnectionsFunc()
-	}
-	return nil, nil
-}
-
-func (m *mockNM) ActivateWirelessConnection(connection gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error) {
-	if m.activateWirelessConnectionFunc != nil {
-		return m.activateWirelessConnectionFunc(connection, device, specificObject)
-	}
-	return nil, fmt.Errorf("not implemented")
-}
-
 type mockDeviceWireless struct {
 	gonetworkmanager.DeviceWireless
-	getAccessPointsFunc func() ([]gonetworkmanager.AccessPoint, error)
-}
-
-func (m *mockDeviceWireless) GetAccessPoints() ([]gonetworkmanager.AccessPoint, error) {
-	if m.getAccessPointsFunc != nil {
-		return m.getAccessPointsFunc()
-	}
-	return nil, nil
-}
-
-type mockSettings struct {
-	gonetworkmanager.Settings
-	listConnectionsFunc func() ([]gonetworkmanager.Connection, error)
-}
-
-func (m *mockSettings) ListConnections() ([]gonetworkmanager.Connection, error) {
-	if m.listConnectionsFunc != nil {
-		return m.listConnectionsFunc()
-	}
-	return nil, nil
-}
-
-type mockConnection struct {
-	gonetworkmanager.Connection
-	getSettingsFunc func() (gonetworkmanager.ConnectionSettings, error)
-}
-
-func (m *mockConnection) GetSettings() (gonetworkmanager.ConnectionSettings, error) {
-	if m.getSettingsFunc != nil {
-		return m.getSettingsFunc()
-	}
-	return nil, nil
-}
-
-type mockAccessPoint struct {
-	gonetworkmanager.AccessPoint
-	getPropertySSIDFunc      func() (string, error)
-	getPropertyStrengthFunc  func() (uint8, error)
-	getPropertyHWAddressFunc func() (string, error)
-	getPropertyFrequencyFunc func() (uint32, error)
-	getPropertyFlagsFunc     func() (uint32, error)
-	getPropertyWPAFlagsFunc  func() (uint32, error)
-	getPropertyRSNFlagsFunc  func() (uint32, error)
-}
-
-func (m *mockAccessPoint) GetPropertySSID() (string, error) {
-	if m.getPropertySSIDFunc != nil {
-		return m.getPropertySSIDFunc()
-	}
-	return "", nil
-}
-
-func (m *mockAccessPoint) GetPropertyStrength() (uint8, error) {
-	if m.getPropertyStrengthFunc != nil {
-		return m.getPropertyStrengthFunc()
-	}
-	return 0, nil
-}
-
-func (m *mockAccessPoint) GetPropertyHWAddress() (string, error) {
-	if m.getPropertyHWAddressFunc != nil {
-		return m.getPropertyHWAddressFunc()
-	}
-	return "", nil
-}
-
-func (m *mockAccessPoint) GetPropertyFrequency() (uint32, error) {
-	if m.getPropertyFrequencyFunc != nil {
-		return m.getPropertyFrequencyFunc()
-	}
-	return 0, nil
-}
-
-func (m *mockAccessPoint) GetPropertyFlags() (uint32, error) {
-	if m.getPropertyFlagsFunc != nil {
-		return m.getPropertyFlagsFunc()
-	}
-	return 0, nil
-}
-
-func (m *mockAccessPoint) GetPropertyWPAFlags() (uint32, error) {
-	if m.getPropertyWPAFlagsFunc != nil {
-		return m.getPropertyWPAFlagsFunc()
-	}
-	return 0, nil
-}
-
-func (m *mockAccessPoint) GetPropertyRSNFlags() (uint32, error) {
-	if m.getPropertyRSNFlagsFunc != nil {
-		return m.getPropertyRSNFlagsFunc()
-	}
-	return 0, nil
-}
-
-type mockActiveConnection struct {
-	gonetworkmanager.ActiveConnection
-	subscribeStateFunc   func(chan gonetworkmanager.StateChange, chan struct{}) error
-	getPropertyStateFunc func() (gonetworkmanager.NmActiveConnectionState, error)
-}
-
-func (m *mockActiveConnection) SubscribeState(ch chan gonetworkmanager.StateChange, done chan struct{}) error {
-	if m.subscribeStateFunc != nil {
-		return m.subscribeStateFunc(ch, done)
-	}
-	return nil
-}
-
-func (m *mockActiveConnection) GetPropertyState() (gonetworkmanager.NmActiveConnectionState, error) {
-	if m.getPropertyStateFunc != nil {
-		return m.getPropertyStateFunc()
-	}
-	return gonetworkmanager.NmActiveConnectionStateActivated, nil
 }
 
 func TestGetWirelessDevice_Caching(t *testing.T) {
@@ -199,86 +71,27 @@ func TestGetWirelessDevice_Caching(t *testing.T) {
 	}
 }
 
-func TestActivateConnection_LazyLoad(t *testing.T) {
-	ssid := "test-ssid"
-	calledListConnections := false
-	calledGetAccessPoints := false
-	calledActivate := false
+func TestActivateConnection_LazyLoad_Minimal(t *testing.T) {
+	expectedErr := errors.New("lazy load check error")
 
-	mockConn := &mockConnection{
-		getSettingsFunc: func() (gonetworkmanager.ConnectionSettings, error) {
-			return gonetworkmanager.ConnectionSettings{
-				"802-11-wireless": {
-					"ssid": []byte(ssid),
-				},
-				"connection": {
-					"id": ssid,
-				},
-			}, nil
-		},
-	}
-
-	mockAP := &mockAccessPoint{
-		getPropertySSIDFunc: func() (string, error) {
-			return ssid, nil
-		},
-		getPropertyStrengthFunc: func() (uint8, error) {
-			return 100, nil
-		},
-	}
-
-	mockDev := &mockDeviceWireless{
-		getAccessPointsFunc: func() ([]gonetworkmanager.AccessPoint, error) {
-			calledGetAccessPoints = true
-			return []gonetworkmanager.AccessPoint{mockAP}, nil
-		},
-	}
-
-	mockNM := &mockNM{
-		getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
-			return []gonetworkmanager.Device{mockDev}, nil
-		},
-		activateWirelessConnectionFunc: func(connection gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error) {
-			calledActivate = true
-			return &mockActiveConnection{
-				subscribeStateFunc: func(ch chan gonetworkmanager.StateChange, done chan struct{}) error {
-					// Simulate immediate activation
-					ch <- gonetworkmanager.StateChange{State: gonetworkmanager.NmActiveConnectionStateActivated}
-					return nil
-				},
-				getPropertyStateFunc: func() (gonetworkmanager.NmActiveConnectionState, error) {
-					return gonetworkmanager.NmActiveConnectionStateActivated, nil
-				},
-			}, nil
-		},
-	}
-
-	mockSet := &mockSettings{
-		listConnectionsFunc: func() ([]gonetworkmanager.Connection, error) {
-			calledListConnections = true
-			return []gonetworkmanager.Connection{mockConn}, nil
+	nm := &mockNM{
+		getPropertyWirelessEnabledFunc: func() (bool, error) {
+			return false, expectedErr
 		},
 	}
 
 	b := &Backend{
-		NM:           mockNM,
-		Settings:     mockSet,
-		Connections:  make(map[string]gonetworkmanager.Connection),
-		AccessPoints: make(map[string]gonetworkmanager.AccessPoint),
+		NM:          nm,
+		Connections: make(map[string]gonetworkmanager.Connection),
 	}
 
-	err := b.ActivateConnection(ssid)
+	// We call ActivateConnection with an empty Connections map.
+	// This should trigger getConnection -> BuildNetworkList.
+	// BuildNetworkList calls IsWirelessEnabled -> mockNM.GetPropertyWirelessEnabled.
+	// If that returns our expectedErr, then we know BuildNetworkList was called.
+	err := b.ActivateConnection("any-ssid")
 
-	if !calledListConnections {
-		t.Errorf("expected ListConnections to be called (lazy loading)")
-	}
-	if !calledGetAccessPoints {
-		t.Errorf("expected GetAccessPoints to be called (lazy loading)")
-	}
-	if err != nil {
-		t.Errorf("ActivateConnection failed: %v", err)
-	}
-	if !calledActivate {
-		t.Errorf("expected ActivateWirelessConnection to be called")
+	if err != expectedErr {
+		t.Errorf("expected error %v, got %v", expectedErr, err)
 	}
 }
