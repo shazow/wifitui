@@ -67,7 +67,7 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
-		return fmt.Errorf("failed to connect to system bus: %w", err)
+		return fmt.Errorf("failed to connect to dbus: %w", err)
 	}
 
 	path := device.GetPath()
