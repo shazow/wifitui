@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	flags "github.com/jessevdk/go-flags"
 	"github.com/shazow/wifitui/internal/tui"
@@ -49,6 +50,7 @@ type ConnectCommand struct {
 	Passphrase string `long:"passphrase" description:"passphrase for the network"`
 	Security   string `long:"security" default:"wpa" description:"security type (open, wep, wpa)"`
 	Hidden     bool   `long:"hidden" description:"network is hidden"`
+	RetryFor   string `long:"retry-for" description:"duration to retry connection (e.g. 60s)"`
 	Args       struct {
 		SSID string `positional-arg-name:"ssid" required:"true"`
 	} `positional-args:"yes"`
@@ -106,7 +108,17 @@ func (c *ConnectCommand) Execute(args []string) error {
 	default:
 		return fmt.Errorf("invalid security type: %s", c.Security)
 	}
-	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, b)
+
+	var retryFor time.Duration
+	if c.RetryFor != "" {
+		var err error
+		retryFor, err = time.ParseDuration(c.RetryFor)
+		if err != nil {
+			return fmt.Errorf("invalid duration format for --retry-for: %w", err)
+		}
+	}
+
+	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, retryFor, b)
 }
 
 // Execute is the handler for the "radio" subcommand
