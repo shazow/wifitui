@@ -30,24 +30,11 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	title := i.Title()
 
 	// Add icons for security
-	var icon string
-	if i.IsVisible {
-		switch i.Security {
-		case wifi.SecurityOpen:
-			icon = CurrentTheme.NetworkOpenIcon
-		case wifi.SecurityUnknown:
-			icon = CurrentTheme.NetworkUnknownIcon
-		default:
-			icon = CurrentTheme.NetworkSecureIcon
-		}
-	}
-	if i.IsKnown {
-		icon = CurrentTheme.NetworkSavedIcon
-	}
+	icon := getIcon(i)
 	title = icon + title
 
 	// Define column width for SSID
-	ssidColumnWidth := 30
+	ssidColumnWidth := d.listModel.ssidColumnWidth
 	titleWidth := lipgloss.Width(title)
 
 	// Truncate title if it's too long
@@ -113,12 +100,14 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type ListModel struct {
-	list         list.Model
-	isForgetting bool
-	scanner      *ScanSchedule
-	numScans     int // Number of scans with results since enter
-	width        int
-	height       int
+	list            list.Model
+	isForgetting    bool
+	scanner         *ScanSchedule
+	numScans         int // Number of scans with results since enter
+	width           int
+	height          int
+	ssidColumnWidth int
+	contentWidth    int
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -141,7 +130,10 @@ func (m *ListModel) OnEnter() tea.Cmd {
 
 func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{}
+	m := &ListModel{
+		ssidColumnWidth: 30,
+		contentWidth:    32, // Default 30 + 2 padding
+	}
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	delegate := itemDelegate{
 		listModel: m,
@@ -191,6 +183,42 @@ func (m *ListModel) updateListSize() {
 	bh, bv := listBorderStyle.GetFrameSize()
 
 	availableWidth := m.width - h - bh
+
+	// Calculate ssidColumnWidth
+	// Reserve space for: "  " (2) + " " (1) + Description (~30)
+	// We want roughly 33 chars reserved for the non-SSID parts of the line.
+	const listContentOverhead = 33
+	availableForSSID := availableWidth - listContentOverhead
+
+	// Target is content width (which includes padding)
+	targetSSIDWidth := m.contentWidth
+
+	// Clamp between 30 and 60
+	if targetSSIDWidth < 30 {
+		targetSSIDWidth = 30
+	} else if targetSSIDWidth > 60 {
+		targetSSIDWidth = 60
+	}
+
+	// Ensure we don't exceed available space, but respect the absolute minimum of 30
+	if targetSSIDWidth > availableForSSID {
+		targetSSIDWidth = availableForSSID
+	}
+	// Hard floor of 30, even if it causes overflow (preserves usability of column)
+	if targetSSIDWidth < 30 {
+		targetSSIDWidth = 30
+	}
+
+	m.ssidColumnWidth = targetSSIDWidth
+
+	// Update list title to match the new column width
+	titlePrefix := CurrentTheme.TitleIcon + "WiFi Network"
+	gap := m.ssidColumnWidth - lipgloss.Width(titlePrefix)
+	if gap < 0 {
+		gap = 0
+	}
+	m.list.Title = fmt.Sprintf("%s%s %s", titlePrefix, strings.Repeat(" ", gap), "Signal")
+
 	// Subtract 2 for the padding spaces in the help string format: " %s "
 	m.list.Help.Width = availableWidth - 2
 
@@ -205,6 +233,11 @@ func (m *ListModel) updateListSize() {
 
 func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
+}
+
+func (m *ListModel) SetColumnWidth(width int) {
+	m.contentWidth = width
+	m.updateListSize()
 }
 
 func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
@@ -229,7 +262,13 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		// Introduce a reasonable minimum window width
+		const minWindowWidth = 70
+		if msg.Width < minWindowWidth {
+			m.width = minWindowWidth
+		} else {
+			m.width = msg.Width
+		}
 		m.height = msg.Height
 		m.updateListSize()
 		return m, nil
@@ -239,6 +278,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			items[i] = connectionItem{Connection: c}
 		}
 		m.list.SetItems(items)
+		m.updateListSize()
 		return m, nil
 	case scanFinishedMsg:
 		items := make([]list.Item, len(msg))
@@ -246,6 +286,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			items[i] = connectionItem{Connection: c}
 		}
 		m.list.SetItems(items)
+		m.updateListSize()
 		if len(items) > 0 {
 			m.numScans++
 		}
@@ -383,4 +424,22 @@ func truncateString(s string, maxW int) string {
 	}
 	sb.WriteString("…")
 	return sb.String()
+}
+
+func getIcon(i connectionItem) string {
+	var icon string
+	if i.IsVisible {
+		switch i.Security {
+		case wifi.SecurityOpen:
+			icon = CurrentTheme.NetworkOpenIcon
+		case wifi.SecurityUnknown:
+			icon = CurrentTheme.NetworkUnknownIcon
+		default:
+			icon = CurrentTheme.NetworkSecureIcon
+		}
+	}
+	if i.IsKnown {
+		icon = CurrentTheme.NetworkSavedIcon
+	}
+	return icon
 }
