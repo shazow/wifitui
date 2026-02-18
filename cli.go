@@ -130,9 +130,9 @@ func attemptConnect(w io.Writer, ssid string, passphrase string, security wifi.S
 	}
 
 	// Populate the backend's internal state (e.g. NetworkManager's Connections
-	// and AccessPoints maps) without triggering a new scan.
+	// and AccessPoints maps) with a new scan.
 	// ActivateConnection relies on this state being present.
-	if _, err := b.BuildNetworkList(false); err != nil {
+	if _, err := b.BuildNetworkList(true); err != nil {
 		return fmt.Errorf("failed to load networks: %w", err)
 	}
 
