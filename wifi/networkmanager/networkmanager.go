@@ -13,7 +13,10 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
-const connectionTimeout = 10 * time.Second
+const (
+	connectionTimeout = 10 * time.Second
+	scanTimeout       = 30 * time.Second
+)
 
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
 type Backend struct {
@@ -67,7 +70,7 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
-		return fmt.Errorf("failed to connect to dbus: %w", err)
+		return fmt.Errorf("failed to connect to system bus: %w", err)
 	}
 
 	path := device.GetPath()
@@ -81,7 +84,7 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	defer conn.BusObject().Call("org.freedesktop.DBus.RemoveMatch", 0, rule)
 
 	// Channel to receive signals
-	c := make(chan *dbus.Signal, 10)
+	c := make(chan *dbus.Signal, 1)
 	conn.Signal(c)
 	defer conn.RemoveSignal(c)
 
@@ -91,8 +94,7 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	}
 
 	// Wait for the signal
-	timeout := 30 * time.Second // Scans can take a while
-	timer := time.NewTimer(timeout)
+	timer := time.NewTimer(scanTimeout)
 	defer timer.Stop()
 
 	for {
@@ -142,7 +144,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	if shouldScan {
 		err = b.scanAndWait(wirelessDevice)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to scan: %w: %w", wifi.ErrOperationFailed, err)
 		}
 	}
 
