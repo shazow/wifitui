@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/shazow/wifitui/internal/helpers"
@@ -120,21 +121,37 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 	return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, b wifi.Backend) error {
-	if passphrase != "" || isHidden {
-		fmt.Fprintf(w, "Joining network %q...\n", ssid)
-		return b.JoinNetwork(ssid, passphrase, security, isHidden)
-	}
+func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, retryFor time.Duration, b wifi.Backend) error {
+	start := time.Now()
 
-	// Populate the backend's internal state (e.g. NetworkManager's Connections
-	// and AccessPoints maps) without triggering a new scan.
-	// ActivateConnection relies on this state being present.
-	if _, err := b.BuildNetworkList(false); err != nil {
-		return fmt.Errorf("failed to load networks: %w", err)
-	}
+	for {
+		var err error
+		if passphrase != "" || isHidden {
+			fmt.Fprintf(w, "Joining network %q...\n", ssid)
+			err = b.JoinNetwork(ssid, passphrase, security, isHidden)
+		} else {
+			// Populate the backend's internal state (e.g. NetworkManager's Connections
+			// and AccessPoints maps) without triggering a new scan.
+			// ActivateConnection relies on this state being present.
+			if _, listErr := b.BuildNetworkList(false); listErr != nil {
+				err = fmt.Errorf("failed to load networks: %w", listErr)
+			} else {
+				fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
+				err = b.ActivateConnection(ssid)
+			}
+		}
 
-	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
-	return b.ActivateConnection(ssid)
+		if err == nil {
+			return nil
+		}
+
+		if retryFor == 0 || time.Since(start) >= retryFor {
+			return err
+		}
+
+		fmt.Fprintf(w, "Connection failed: %v. Retrying in 5 seconds...\n", err)
+		time.Sleep(5 * time.Second)
+	}
 }
 
 func runRadio(w io.Writer, action string, b wifi.Backend) error {
