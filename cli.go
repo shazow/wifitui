@@ -123,16 +123,16 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 	return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func attemptConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, b wifi.Backend) error {
+func attemptConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, shouldScan bool, b wifi.Backend) error {
 	if passphrase != "" || isHidden {
 		fmt.Fprintf(w, "Joining network %q...\n", ssid)
 		return b.JoinNetwork(ssid, passphrase, security, isHidden)
 	}
 
 	// Populate the backend's internal state (e.g. NetworkManager's Connections
-	// and AccessPoints maps) with a new scan.
+	// and AccessPoints maps).
 	// ActivateConnection relies on this state being present.
-	if _, err := b.BuildNetworkList(true); err != nil {
+	if _, err := b.BuildNetworkList(shouldScan); err != nil {
 		return fmt.Errorf("failed to load networks: %w", err)
 	}
 
@@ -142,11 +142,20 @@ func attemptConnect(w io.Writer, ssid string, passphrase string, security wifi.S
 
 func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, retryFor time.Duration, b wifi.Backend) error {
 	start := time.Now()
+	shouldScan := false
 
 	for {
-		err := attemptConnect(w, ssid, passphrase, security, isHidden, b)
+		err := attemptConnect(w, ssid, passphrase, security, isHidden, shouldScan, b)
 		if err == nil {
 			return nil
+		}
+
+		if !shouldScan {
+			shouldScan = true
+			if retryFor > 0 && time.Since(start) < retryFor {
+				fmt.Fprintf(w, "Fast connection failed: %v. Retrying with scan...\n", err)
+				continue
+			}
 		}
 
 		if retryFor == 0 || time.Since(start) >= retryFor {
