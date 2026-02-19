@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/shazow/wifitui/internal/helpers"
 	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/wifi"
 )
+
+const connectionRetryInterval = 5 * time.Second
 
 func runTUI(b wifi.Backend) error {
 	m, err := tui.NewModel(b)
@@ -120,21 +123,48 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 	return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, b wifi.Backend) error {
+func attemptConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, shouldScan bool, b wifi.Backend) error {
 	if passphrase != "" || isHidden {
 		fmt.Fprintf(w, "Joining network %q...\n", ssid)
 		return b.JoinNetwork(ssid, passphrase, security, isHidden)
 	}
 
 	// Populate the backend's internal state (e.g. NetworkManager's Connections
-	// and AccessPoints maps) without triggering a new scan.
+	// and AccessPoints maps).
 	// ActivateConnection relies on this state being present.
-	if _, err := b.BuildNetworkList(false); err != nil {
+	if _, err := b.BuildNetworkList(shouldScan); err != nil {
 		return fmt.Errorf("failed to load networks: %w", err)
 	}
 
 	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
 	return b.ActivateConnection(ssid)
+}
+
+func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, retryFor time.Duration, b wifi.Backend) error {
+	start := time.Now()
+	shouldScan := false
+
+	for {
+		err := attemptConnect(w, ssid, passphrase, security, isHidden, shouldScan, b)
+		if err == nil {
+			return nil
+		}
+
+		if !shouldScan {
+			shouldScan = true
+			if retryFor > 0 && time.Since(start) < retryFor {
+				fmt.Fprintf(w, "Fast connection failed: %v. Retrying with scan...\n", err)
+				continue
+			}
+		}
+
+		if retryFor == 0 || time.Since(start) >= retryFor {
+			return err
+		}
+
+		fmt.Fprintf(w, "Connection failed: %v. Retrying in %v...\n", err, connectionRetryInterval)
+		time.Sleep(connectionRetryInterval)
+	}
 }
 
 func runRadio(w io.Writer, action string, b wifi.Backend) error {

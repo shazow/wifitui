@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/shazow/wifitui/wifi"
 	"github.com/shazow/wifitui/wifi/mock"
@@ -192,7 +193,7 @@ func TestRunConnect(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Test case: connect to a new network with a passphrase
-	if err := runConnect(&buf, "new-network", "new-password", wifi.SecurityWPA, false, mockBackend); err != nil {
+	if err := runConnect(&buf, "new-network", "new-password", wifi.SecurityWPA, false, 0, mockBackend); err != nil {
 		t.Fatalf("runConnect() with passphrase failed: %v", err)
 	}
 
@@ -214,7 +215,7 @@ func TestRunConnect(t *testing.T) {
 
 	// Test case: connect to a known network without a passphrase
 	buf.Reset()
-	if err := runConnect(&buf, "Password is password", "", wifi.SecurityWPA, false, mockBackend); err != nil {
+	if err := runConnect(&buf, "Password is password", "", wifi.SecurityWPA, false, 0, mockBackend); err != nil {
 		t.Fatalf("runConnect() without passphrase failed: %v", err)
 	}
 
@@ -305,6 +306,112 @@ func TestRunRadioInvalidAction(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid radio action") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+type flakyBackend struct {
+	*mock.MockBackend
+	failCount int
+	maxFails  int
+}
+
+func (f *flakyBackend) JoinNetwork(ssid, passphrase string, security wifi.SecurityType, isHidden bool) error {
+	if f.failCount < f.maxFails {
+		f.failCount++
+		return errors.New("transient failure")
+	}
+	return f.MockBackend.JoinNetwork(ssid, passphrase, security, isHidden)
+}
+
+func TestRunConnectRetry(t *testing.T) {
+	baseBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	mb, ok := baseBackend.(*mock.MockBackend)
+	if !ok {
+		t.Fatalf("expected *mock.MockBackend, got %T", baseBackend)
+	}
+
+	// fail count = 2.
+	// 1st try: fail (no scan).
+	// 2nd try: fail (scan, immediate).
+	// 3rd try: succeed (after sleep).
+	// Total time ~5s.
+	fb := &flakyBackend{
+		MockBackend: mb,
+		maxFails:    2,
+	}
+
+	var buf bytes.Buffer
+	retryFor := 7 * time.Second
+
+	// We set ActionSleep to 0 to make the mock actions fast, only our loop sleep matters.
+	fb.MockBackend.ActionSleep = 0
+
+	start := time.Now()
+	// Using passphrase triggers JoinNetwork which we overrode
+	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, retryFor, fb); err != nil {
+		t.Fatalf("runConnect() with retry failed: %v", err)
+	}
+	duration := time.Since(start)
+
+	if duration < 5*time.Second {
+		t.Errorf("runConnect() returned too quickly, expected at least 5s delay, got %v", duration)
+	}
+
+	// Check output for retry messages
+	output := buf.String()
+	// We expect 2 failures:
+	// 1. "Fast connection failed..."
+	// 2. "Connection failed: ... Retrying in 5s..."
+	if !strings.Contains(output, "Fast connection failed") {
+		t.Errorf("expected fast retry message, got:\n%s", output)
+	}
+	if !strings.Contains(output, "Connection failed: transient failure") {
+		t.Errorf("expected regular retry message, got:\n%s", output)
+	}
+}
+
+func TestRunConnectFastRetry(t *testing.T) {
+	baseBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	mb, ok := baseBackend.(*mock.MockBackend)
+	if !ok {
+		t.Fatalf("expected *mock.MockBackend, got %T", baseBackend)
+	}
+
+	// fail count = 1.
+	// 1st try: fail (no scan).
+	// 2nd try: succeed (scan, immediate).
+	// Total time < 1s.
+	fb := &flakyBackend{
+		MockBackend: mb,
+		maxFails:    1,
+	}
+
+	var buf bytes.Buffer
+	retryFor := 7 * time.Second
+
+	// We set ActionSleep to 0 to make the mock actions fast.
+	fb.MockBackend.ActionSleep = 0
+
+	start := time.Now()
+	// Using passphrase triggers JoinNetwork which we overrode
+	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, retryFor, fb); err != nil {
+		t.Fatalf("runConnect() with fast retry failed: %v", err)
+	}
+	duration := time.Since(start)
+
+	if duration > 2*time.Second {
+		t.Errorf("runConnect() took too long for fast retry, got %v", duration)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Fast connection failed") {
+		t.Errorf("expected fast retry message, got:\n%s", output)
 	}
 }
 
