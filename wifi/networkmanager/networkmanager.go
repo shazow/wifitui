@@ -88,6 +88,8 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	conn.Signal(c)
 	defer conn.RemoveSignal(c)
 
+	// FIXME: Would be nice if we could detect whether a scan was already in progress (or if the device is ready to scan again),
+	// otherwise it seems scan requests get dropped if they're requested too frequently.
 	err = device.RequestScan()
 	if err != nil {
 		return err
