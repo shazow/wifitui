@@ -34,7 +34,9 @@ LATEST_RELEASE="https://github.com/shazow/wifitui/releases/download/${TAG}/wifit
 wget -q -O- "${LATEST_RELEASE}.tar.gz" | tar xzv
 
 # Debian
-sudo apt install "${LATEST_RELEASE}.deb"
+curl -Lfs "${LATEST_RELEASE}.deb" -o /tmp/wifitui.deb
+sudo apt install /tmp/wifitui.deb
+rm -f /tmp/wifitui.deb
 
 # Arch Linux (from AUR)
 yay -S wifitui-bin
