@@ -311,8 +311,16 @@ func TestRunRadioInvalidAction(t *testing.T) {
 
 type flakyBackend struct {
 	*mock.MockBackend
-	failCount int
-	maxFails  int
+	failCount    int
+	maxFails     int
+	scannedSSIDs []string // SSIDs that were scanned
+}
+
+func (f *flakyBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	if shouldScan {
+		f.scannedSSIDs = append(f.scannedSSIDs, "any")
+	}
+	return f.MockBackend.BuildNetworkList(shouldScan)
 }
 
 func (f *flakyBackend) JoinNetwork(ssid, passphrase string, security wifi.SecurityType, isHidden bool) error {
@@ -360,12 +368,17 @@ func TestRunConnectRetry(t *testing.T) {
 		t.Errorf("runConnect() returned too quickly, expected at least 5s delay, got %v", duration)
 	}
 
+	// Check if scan was performed
+	if len(fb.scannedSSIDs) == 0 {
+		t.Errorf("expected at least one scan attempt, got 0")
+	}
+
 	// Check output for retry messages
 	output := buf.String()
 	// We expect 2 failures:
-	// 1. "Fast connection failed..."
+	// 1. "Fast connection attempt failed..."
 	// 2. "Connection failed: ... Retrying in 5s..."
-	if !strings.Contains(output, "Fast connection failed") {
+	if !strings.Contains(output, "Fast connection attempt failed") {
 		t.Errorf("expected fast retry message, got:\n%s", output)
 	}
 	if !strings.Contains(output, "Connection failed: transient failure") {
@@ -409,8 +422,13 @@ func TestRunConnectFastRetry(t *testing.T) {
 		t.Errorf("runConnect() took too long for fast retry, got %v", duration)
 	}
 
+	// Check if scan was performed
+	if len(fb.scannedSSIDs) == 0 {
+		t.Errorf("expected at least one scan attempt, got 0")
+	}
+
 	output := buf.String()
-	if !strings.Contains(output, "Fast connection failed") {
+	if !strings.Contains(output, "Fast connection attempt failed") {
 		t.Errorf("expected fast retry message, got:\n%s", output)
 	}
 }

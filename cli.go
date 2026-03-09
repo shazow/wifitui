@@ -123,29 +123,33 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 	return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func attemptConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, shouldScan bool, b wifi.Backend) error {
-	if passphrase != "" || isHidden {
-		fmt.Fprintf(w, "Joining network %q...\n", ssid)
-		return b.JoinNetwork(ssid, passphrase, security, isHidden)
-	}
-
+func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, isHidden bool, shouldScan bool, b wifi.Backend) error {
 	// Populate the backend's internal state (e.g. NetworkManager's Connections
 	// and AccessPoints maps).
-	// ActivateConnection relies on this state being present.
+	// ActivateConnection and JoinNetwork rely on this state being present.
 	if _, err := b.BuildNetworkList(shouldScan); err != nil {
 		return fmt.Errorf("failed to load networks: %w", err)
 	}
 
-	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
+	if passphrase != "" || isHidden {
+		return b.JoinNetwork(ssid, passphrase, security, isHidden)
+	}
+
 	return b.ActivateConnection(ssid)
 }
 
 func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, retryFor time.Duration, b wifi.Backend) error {
+	if passphrase != "" || isHidden {
+		fmt.Fprintf(w, "Joining network %q...\n", ssid)
+	} else {
+		fmt.Fprintf(w, "Connecting to network %q...\n", ssid)
+	}
+
 	start := time.Now()
 	shouldScan := false
 
 	for {
-		err := attemptConnect(w, ssid, passphrase, security, isHidden, shouldScan, b)
+		err := attemptConnect(ssid, passphrase, security, isHidden, shouldScan, b)
 		if err == nil {
 			return nil
 		}
@@ -153,7 +157,7 @@ func runConnect(w io.Writer, ssid string, passphrase string, security wifi.Secur
 		if !shouldScan {
 			shouldScan = true
 			if retryFor > 0 && time.Since(start) < retryFor {
-				fmt.Fprintf(w, "Fast connection failed: %v. Retrying with scan...\n", err)
+				fmt.Fprintf(w, "Fast connection attempt failed: %v. Retrying with scan...\n", err)
 				continue
 			}
 		}
