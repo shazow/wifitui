@@ -376,12 +376,12 @@ func TestRunConnectRetry(t *testing.T) {
 	// Check output for retry messages
 	output := buf.String()
 	// We expect 2 failures:
-	// 1. "Fast connection attempt failed..."
+	// 1. "Quick connect failed..."
 	// 2. "Connection failed: ... Retrying in 5s..."
-	if !strings.Contains(output, "Fast connection attempt failed") {
+	if !strings.Contains(output, "Quick connect failed") {
 		t.Errorf("expected fast retry message, got:\n%s", output)
 	}
-	if !strings.Contains(output, "Connection failed: transient failure") {
+	if !strings.Contains(output, "Connection failed: \"transient failure\"") {
 		t.Errorf("expected regular retry message, got:\n%s", output)
 	}
 }
@@ -428,7 +428,7 @@ func TestRunConnectFastRetry(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Fast connection attempt failed") {
+	if !strings.Contains(output, "Quick connect failed") {
 		t.Errorf("expected fast retry message, got:\n%s", output)
 	}
 }
