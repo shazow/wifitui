@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	flags "github.com/jessevdk/go-flags"
 	"github.com/shazow/wifitui/internal/tui"
@@ -47,8 +49,9 @@ type ShowCommand struct {
 // ConnectCommand defines the flags and arguments for the "connect" subcommand
 type ConnectCommand struct {
 	Passphrase string `long:"passphrase" description:"passphrase for the network"`
-	Security   string `long:"security" default:"wpa" description:"security type (open, wep, wpa)"`
+	Security   string `long:"security" default:"wpa" description:"security type" choice:"open" choice:"wep" choice:"wpa"`
 	Hidden     bool   `long:"hidden" description:"network is hidden"`
+	RetryFor   string `long:"retry-for" description:"duration to retry connection (e.g. 60s or 2m:20s)" value-name:"DURATION[:INTERVAL]"`
 	Args       struct {
 		SSID string `positional-arg-name:"ssid" required:"true"`
 	} `positional-args:"yes"`
@@ -106,7 +109,27 @@ func (c *ConnectCommand) Execute(args []string) error {
 	default:
 		return fmt.Errorf("invalid security type: %s", c.Security)
 	}
-	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, b)
+
+	var retry RetryConfig
+	retry.Interval = connectionRetryInterval
+
+	if c.RetryFor != "" {
+		parts := strings.Split(c.RetryFor, ":")
+		var err error
+		retry.Total, err = time.ParseDuration(parts[0])
+		if err != nil {
+			return fmt.Errorf("invalid duration format for --retry-for: %w", err)
+		}
+
+		if len(parts) > 1 {
+			retry.Interval, err = time.ParseDuration(parts[1])
+			if err != nil {
+				return fmt.Errorf("invalid sleep duration format for --retry-for: %w", err)
+			}
+		}
+	}
+
+	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, retry, b)
 }
 
 // Execute is the handler for the "radio" subcommand

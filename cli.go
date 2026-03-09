@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/shazow/wifitui/internal/helpers"
 	"github.com/shazow/wifitui/internal/tui"
 	"github.com/shazow/wifitui/wifi"
 )
+
+const connectionRetryInterval = 5 * time.Second
 
 func runTUI(b wifi.Backend) error {
 	m, err := tui.NewModel(b)
@@ -120,21 +123,56 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 	return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, b wifi.Backend) error {
-	if passphrase != "" || isHidden {
-		fmt.Fprintf(w, "Joining network %q...\n", ssid)
-		return b.JoinNetwork(ssid, passphrase, security, isHidden)
-	}
-
+func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, isHidden bool, shouldScan bool, b wifi.Backend) error {
 	// Populate the backend's internal state (e.g. NetworkManager's Connections
-	// and AccessPoints maps) without triggering a new scan.
-	// ActivateConnection relies on this state being present.
-	if _, err := b.BuildNetworkList(false); err != nil {
+	// and AccessPoints maps).
+	// ActivateConnection and JoinNetwork rely on this state being present.
+	if _, err := b.BuildNetworkList(shouldScan); err != nil {
 		return fmt.Errorf("failed to load networks: %w", err)
 	}
 
-	fmt.Fprintf(w, "Activating existing network %q...\n", ssid)
+	if passphrase != "" || isHidden {
+		return b.JoinNetwork(ssid, passphrase, security, isHidden)
+	}
+
 	return b.ActivateConnection(ssid)
+}
+
+// RetryConfig defines the configuration for connection retries.
+type RetryConfig struct {
+	// Total is the maximum duration to keep retrying the connection.
+	Total time.Duration
+	// Interval is the duration to wait between each retry attempt.
+	Interval time.Duration
+}
+
+func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, retry RetryConfig, b wifi.Backend) error {
+	start := time.Now()
+	shouldScan := false
+
+	for {
+		fmt.Fprintf(w, "Connecting to network %q with scan=%v...\n", ssid, shouldScan)
+
+		err := attemptConnect(ssid, passphrase, security, isHidden, shouldScan, b)
+		if err == nil {
+			return nil
+		}
+
+		if !shouldScan {
+			shouldScan = true
+			if retry.Total > 0 && time.Since(start) < retry.Total {
+				fmt.Fprintf(w, "Quick connect failed: %q\n", err)
+				continue
+			}
+		}
+
+		if retry.Total == 0 || time.Since(start) >= retry.Total {
+			return err
+		}
+
+		fmt.Fprintf(w, "Connection failed: %q.\nRetrying in %v...\n", err, retry.Interval)
+		time.Sleep(retry.Interval)
+	}
 }
 
 func runRadio(w io.Writer, action string, b wifi.Backend) error {
