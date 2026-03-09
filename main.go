@@ -14,6 +14,9 @@ import (
 var (
 	// Version is the version of the application. It is set at build time.
 	Version string = "dev"
+
+	// Avoid retrying scans too frequently, else the scan requests get lost.
+	defaultRetryInterval = 10 * time.Second
 )
 
 // Options defines the root-level flags
@@ -111,7 +114,7 @@ func (c *ConnectCommand) Execute(args []string) error {
 	}
 
 	var retry RetryConfig
-	retry.Interval = connectionRetryInterval
+	retry.Interval = defaultRetryInterval
 
 	if c.RetryFor != "" {
 		parts := strings.Split(c.RetryFor, ":")

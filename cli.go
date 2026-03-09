@@ -13,8 +13,6 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
-const connectionRetryInterval = 5 * time.Second
-
 func runTUI(b wifi.Backend) error {
 	m, err := tui.NewModel(b)
 	if err != nil {
@@ -170,7 +168,7 @@ func runConnect(w io.Writer, ssid string, passphrase string, security wifi.Secur
 			return err
 		}
 
-		fmt.Fprintf(w, "Connection failed: %q.\nRetrying in %v...\n", err, retry.Interval)
+		fmt.Fprintf(w, "Connection failed: %q\nRetrying in %v...\n", err, retry.Interval)
 		time.Sleep(retry.Interval)
 	}
 }
