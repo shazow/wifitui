@@ -49,9 +49,9 @@ type ShowCommand struct {
 // ConnectCommand defines the flags and arguments for the "connect" subcommand
 type ConnectCommand struct {
 	Passphrase string `long:"passphrase" description:"passphrase for the network"`
-	Security   string `long:"security" default:"wpa" description:"security type (open, wep, wpa)"`
+	Security   string `long:"security" default:"wpa" description:"security type" choice:"open" choice:"wep" choice:"wpa"`
 	Hidden     bool   `long:"hidden" description:"network is hidden"`
-	RetryFor   string `long:"retry-for" description:"duration to retry connection (e.g. 60s)"`
+	RetryFor   string `long:"retry-for" description:"duration to retry connection (e.g. 60s or 2m:20s)" value-name:"DURATION[:INTERVAL]"`
 	Args       struct {
 		SSID string `positional-arg-name:"ssid" required:"true"`
 	} `positional-args:"yes"`
