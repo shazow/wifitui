@@ -90,6 +90,7 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 
 	// FIXME: Would be nice if we could detect whether a scan was already in progress (or if the device is ready to scan again),
 	// otherwise it seems scan requests get dropped if they're requested too frequently.
+	// Alternatively we can try to autodetect intervals that are too frequent by seeing how often scanTimeout is getting triggered, but this is not ideal.
 	err = device.RequestScan()
 	if err != nil {
 		return err
