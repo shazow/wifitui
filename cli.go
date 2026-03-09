@@ -138,17 +138,21 @@ func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, 
 	return b.ActivateConnection(ssid)
 }
 
-func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, retryFor time.Duration, b wifi.Backend) error {
-	if passphrase != "" || isHidden {
-		fmt.Fprintf(w, "Joining network %q...\n", ssid)
-	} else {
-		fmt.Fprintf(w, "Connecting to network %q...\n", ssid)
-	}
+// RetryConfig defines the configuration for connection retries.
+type RetryConfig struct {
+	// Total is the maximum duration to keep retrying the connection.
+	Total time.Duration
+	// Interval is the duration to wait between each retry attempt.
+	Interval time.Duration
+}
 
+func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, retry RetryConfig, b wifi.Backend) error {
 	start := time.Now()
 	shouldScan := false
 
 	for {
+		fmt.Fprintf(w, "Connecting to network %q with scan=%v...\n", ssid, shouldScan)
+
 		err := attemptConnect(ssid, passphrase, security, isHidden, shouldScan, b)
 		if err == nil {
 			return nil
@@ -156,18 +160,18 @@ func runConnect(w io.Writer, ssid string, passphrase string, security wifi.Secur
 
 		if !shouldScan {
 			shouldScan = true
-			if retryFor > 0 && time.Since(start) < retryFor {
-				fmt.Fprintf(w, "Fast connection attempt failed: %v. Retrying with scan...\n", err)
+			if retry.Total > 0 && time.Since(start) < retry.Total {
+				fmt.Fprintf(w, "Quick connect failed: %q\n", err)
 				continue
 			}
 		}
 
-		if retryFor == 0 || time.Since(start) >= retryFor {
+		if retry.Total == 0 || time.Since(start) >= retry.Total {
 			return err
 		}
 
-		fmt.Fprintf(w, "Connection failed: %v. Retrying in %v...\n", err, connectionRetryInterval)
-		time.Sleep(connectionRetryInterval)
+		fmt.Fprintf(w, "Connection failed: %q.\nRetrying in %v...\n", err, retry.Interval)
+		time.Sleep(retry.Interval)
 	}
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	flags "github.com/jessevdk/go-flags"
@@ -109,16 +110,26 @@ func (c *ConnectCommand) Execute(args []string) error {
 		return fmt.Errorf("invalid security type: %s", c.Security)
 	}
 
-	var retryFor time.Duration
+	var retry RetryConfig
+	retry.Interval = connectionRetryInterval
+
 	if c.RetryFor != "" {
+		parts := strings.Split(c.RetryFor, ":")
 		var err error
-		retryFor, err = time.ParseDuration(c.RetryFor)
+		retry.Total, err = time.ParseDuration(parts[0])
 		if err != nil {
 			return fmt.Errorf("invalid duration format for --retry-for: %w", err)
 		}
+
+		if len(parts) > 1 {
+			retry.Interval, err = time.ParseDuration(parts[1])
+			if err != nil {
+				return fmt.Errorf("invalid sleep duration format for --retry-for: %w", err)
+			}
+		}
 	}
 
-	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, retryFor, b)
+	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, retry, b)
 }
 
 // Execute is the handler for the "radio" subcommand
