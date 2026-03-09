@@ -1,4 +1,5 @@
 wifitui
 vendor/
+/result
 # Added by goreleaser init:
 dist/
