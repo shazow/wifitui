@@ -529,7 +529,7 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Delete()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(opts wifi.JoinOptions) error {
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
 		return err
@@ -538,7 +538,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 
 	connection := map[string]map[string]interface{}{
 		"connection": {
-			"id":             ssid,
+			"id":             opts.SSID,
 			"uuid":           uuid.New().String(),
 			"type":           "802-11-wireless",
 			"interface-name": deviceInterface,
@@ -546,29 +546,54 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		},
 		"802-11-wireless": {
 			"mode": "infrastructure",
-			"ssid": []byte(ssid),
+			"ssid": []byte(opts.SSID),
 		},
 		"ipv4": {"method": "auto"},
 		"ipv6": {"method": "auto"},
 	}
-	if isHidden {
+	if opts.IsHidden {
 		connection["802-11-wireless"]["hidden"] = true
 	}
 
-	switch security {
+	switch opts.Security {
 	case wifi.SecurityOpen:
 		// No security settings needed
 	case wifi.SecurityWEP:
 		connection["802-11-wireless"]["security"] = "802-11-wireless-security"
 		connection["802-11-wireless-security"] = map[string]interface{}{
 			"key-mgmt": "none",
-			"wep-key0": password,
+			"wep-key0": opts.Password,
 		}
-	default: // WPA/WPA2
+	case wifi.SecurityWPAEAP:
+		connection["802-11-wireless"]["security"] = "802-11-wireless-security"
+		connection["802-11-wireless-security"] = map[string]interface{}{
+			"key-mgmt": "wpa-eap",
+		}
+		// For WPA-EAP, eduroam often uses peap/mschapv2. Let's start with basic peap
+		// or let NM negotiate if possible. A typical PEAP config:
+		eap := opts.EAP
+		if eap == "" {
+			eap = "peap"
+		}
+		phase2 := opts.Phase2Auth
+		if phase2 == "" {
+			phase2 = "mschapv2"
+		}
+		eapConfig := map[string]interface{}{
+			"eap":         []string{eap},
+			"identity":    opts.Identity,
+			"password":    opts.Password,
+			"phase2-auth": phase2,
+		}
+		if opts.AnonymousIdentity != "" {
+			eapConfig["anonymous-identity"] = opts.AnonymousIdentity
+		}
+		connection["802-1x"] = eapConfig
+	default: // WPA/WPA2 PSK
 		connection["802-11-wireless"]["security"] = "802-11-wireless-security"
 		connection["802-11-wireless-security"] = map[string]interface{}{
 			"key-mgmt": "wpa-psk",
-			"psk":      password,
+			"psk":      opts.Password,
 		}
 	}
 
@@ -584,11 +609,11 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 	}()
 
 	var activeConn gonetworkmanager.ActiveConnection
-	if isHidden {
+	if opts.IsHidden {
 		// Use the generic ActivateConnection for hidden networks as there is no specific object.
 		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
 	} else {
-		ap, ok := b.AccessPoints[ssid]
+		ap, ok := b.AccessPoints[opts.SSID]
 		if !ok {
 			// It's possible for the access point to disappear between the scan and the join attempt.
 			// In this case, we can try to join without the AP object.

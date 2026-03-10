@@ -19,7 +19,7 @@ var (
 	defaultRetryInterval = 10 * time.Second
 )
 
-// parseSecurityType converts a security string (open, wep, wpa) to a wifi.SecurityType.
+// parseSecurityType converts a security string (open, wep, wpa, wpa-eap) to a wifi.SecurityType.
 func parseSecurityType(s string) (wifi.SecurityType, error) {
 	switch s {
 	case "open":
@@ -28,6 +28,8 @@ func parseSecurityType(s string) (wifi.SecurityType, error) {
 		return wifi.SecurityWEP, nil
 	case "wpa":
 		return wifi.SecurityWPA, nil
+	case "wpa-eap":
+		return wifi.SecurityWPAEAP, nil
 	default:
 		return wifi.SecurityUnknown, fmt.Errorf("invalid security type: %s", s)
 	}
@@ -90,11 +92,15 @@ type ShowCommand struct {
 
 // ConnectCommand defines the flags and arguments for the "connect" subcommand
 type ConnectCommand struct {
-	Passphrase string `long:"passphrase" description:"passphrase for the network"`
-	Security   string `long:"security" default:"wpa" description:"security type" choice:"open" choice:"wep" choice:"wpa"`
-	Hidden     bool   `long:"hidden" description:"network is hidden"`
-	RetryFor   string `long:"retry-for" description:"duration to retry connection (e.g. 60s or 2m:20s)" value-name:"DURATION[:INTERVAL]"`
-	Args       struct {
+	Passphrase           string `long:"passphrase" description:"passphrase for the network"`
+	EapIdentity          string `long:"eap-identity" description:"identity/username for enterprise networks (WPA-EAP)"`
+	EapAnonymousIdentity string `long:"eap-anonymous-identity" description:"anonymous identity for enterprise networks"`
+	EapMethod            string `long:"eap-method" default:"peap" description:"EAP method for enterprise networks" choice:"peap" choice:"ttls" choice:"tls"`
+	EapPhase2Auth        string `long:"eap-phase2-auth" default:"mschapv2" description:"Phase 2 authentication for enterprise networks" choice:"mschapv2" choice:"pap"`
+	Security             string `long:"security" default:"wpa" description:"security type" choice:"open" choice:"wep" choice:"wpa" choice:"wpa-eap"`
+	Hidden               bool   `long:"hidden" description:"network is hidden"`
+	RetryFor             string `long:"retry-for" description:"duration to retry connection (e.g. 60s or 2m:20s)" value-name:"DURATION[:INTERVAL]"`
+	Args                 struct {
 		SSID string `positional-arg-name:"ssid" required:"true"`
 	} `positional-args:"yes"`
 }
@@ -150,7 +156,18 @@ func (c *ConnectCommand) Execute(args []string) error {
 		return err
 	}
 
-	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, retry, b)
+	opts := wifi.JoinOptions{
+		SSID:              c.Args.SSID,
+		Password:          c.Passphrase,
+		Identity:          c.EapIdentity,
+		AnonymousIdentity: c.EapAnonymousIdentity,
+		EAP:               c.EapMethod,
+		Phase2Auth:        c.EapPhase2Auth,
+		Security:          security,
+		IsHidden:          c.Hidden,
+	}
+
+	return runConnect(os.Stdout, opts, retry, b)
 }
 
 // Execute is the handler for the "radio" subcommand

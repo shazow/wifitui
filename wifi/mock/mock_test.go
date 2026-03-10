@@ -142,7 +142,13 @@ func TestJoinNetwork(t *testing.T) {
 
 	newSSID := "new-network"
 	password := "password"
-	err := b.JoinNetwork(newSSID, password, wifi.SecurityWPA, false)
+	opts := wifi.JoinOptions{
+		SSID:     newSSID,
+		Password: password,
+		Security: wifi.SecurityWPA,
+		IsHidden: false,
+	}
+	err := b.JoinNetwork(opts)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed: %v", err)
 	}
@@ -195,7 +201,13 @@ func TestGetSecretsForKnownNetworkWithoutSecret(t *testing.T) {
 	b, _ := New()
 	ssid := "Unencrypted_Honeypot"
 
-	err := b.JoinNetwork(ssid, "", wifi.SecurityOpen, false)
+	opts := wifi.JoinOptions{
+		SSID:     ssid,
+		Password: "",
+		Security: wifi.SecurityOpen,
+		IsHidden: false,
+	}
+	err := b.JoinNetwork(opts)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed: %v", err)
 	}
@@ -294,7 +306,13 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 	password := "password123"
 
 	// 1. Join the network for the first time
-	err := b.JoinNetwork(ssid, password, wifi.SecurityWPA, false)
+	opts1 := wifi.JoinOptions{
+		SSID:     ssid,
+		Password: password,
+		Security: wifi.SecurityWPA,
+		IsHidden: false,
+	}
+	err := b.JoinNetwork(opts1)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed on first join: %v", err)
 	}
@@ -323,7 +341,13 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 
 	// 3. Join the same network again with a new password
 	newPassword := "newPassword456"
-	err = b.JoinNetwork(ssid, newPassword, wifi.SecurityWPA, false)
+	opts2 := wifi.JoinOptions{
+		SSID:     ssid,
+		Password: newPassword,
+		Security: wifi.SecurityWPA,
+		IsHidden: false,
+	}
+	err = b.JoinNetwork(opts2)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed on second join: %v", err)
 	}

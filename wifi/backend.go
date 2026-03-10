@@ -10,7 +10,20 @@ const (
 	SecurityOpen
 	SecurityWEP
 	SecurityWPA
+	SecurityWPAEAP
 )
+
+// JoinOptions specifies the properties required to join a new network.
+type JoinOptions struct {
+	SSID             string
+	Password         string
+	Identity         string // Used for WPA-EAP (Enterprise) networks
+	AnonymousIdentity string // Optional, used for WPA-EAP networks
+	EAP              string // EAP method (e.g., peap, ttls)
+	Phase2Auth       string // Phase 2 authentication (e.g., mschapv2)
+	Security         SecurityType
+	IsHidden         bool
+}
 
 // AccessPoint represents a single access point for a network.
 type AccessPoint struct {
@@ -94,7 +107,7 @@ type Backend interface {
 	// ForgetNetwork removes a known network configuration.
 	ForgetNetwork(ssid string) error
 	// JoinNetwork connects to a new network, potentially creating a new configuration.
-	JoinNetwork(ssid string, password string, security SecurityType, isHidden bool) error
+	JoinNetwork(opts JoinOptions) error
 	// GetSecrets retrieves the password for a known connection.
 	GetSecrets(ssid string) (string, error)
 	// UpdateConnection updates a known connection.

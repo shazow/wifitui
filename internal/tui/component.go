@@ -77,10 +77,14 @@ type (
 		autoConnect bool
 	}
 	joinNetworkMsg struct {
-		ssid     string
-		password string
-		security wifi.SecurityType
-		isHidden bool
+		ssid              string
+		password          string
+		identity          string
+		anonymousIdentity string
+		eap               string
+		phase2Auth        string
+		security          wifi.SecurityType
+		isHidden          bool
 	}
 	loadSecretsMsg  struct{ item connectionItem }
 	updateSecretMsg struct {

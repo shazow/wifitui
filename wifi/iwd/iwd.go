@@ -211,7 +211,15 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Object(iwdDest, iwdPath).Call(iwdIface+".ForgetNetwork", 0, path).Store()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(opts wifi.JoinOptions) error {
+	if opts.Security == wifi.SecurityWPAEAP {
+		// IWD typically requires WPA-EAP configuration files to be created in /var/lib/iwd/
+		// or expects an Agent to handle the credentials. Since we don't have an agent registered,
+		// and creating config files requires root, WPA-EAP join via generic Connect() might fail
+		// or block. For now, we return an error or attempt to send it (which likely fails).
+		return fmt.Errorf("WPA2-Enterprise joining is currently not supported natively in the iwd backend. Please configure it in /var/lib/iwd/%s.8021x manually", opts.SSID)
+	}
+
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -221,9 +229,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 
-	if isHidden {
+	if opts.IsHidden {
 		var securityType string
-		switch security {
+		switch opts.Security {
 		case wifi.SecurityOpen:
 			securityType = "open"
 		case wifi.SecurityWEP:
@@ -231,14 +239,14 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		default:
 			securityType = "psk" // Default to WPA/WPA2 PSK
 		}
-		err = conn.Object(iwdDest, station).Call(iwdStationIface+".ConnectHidden", 0, ssid, securityType, password).Store()
+		err = conn.Object(iwdDest, station).Call(iwdStationIface+".ConnectHidden", 0, opts.SSID, securityType, opts.Password).Store()
 	} else {
-		err = conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, ssid, password).Store()
+		err = conn.Object(iwdDest, station).Call(iwdStationIface+".Connect", 0, opts.SSID, opts.Password).Store()
 	}
 	if err != nil {
 		return err
 	}
-	return b.waitForConnection(ssid)
+	return b.waitForConnection(opts.SSID)
 }
 
 func (b *Backend) GetSecrets(ssid string) (string, error) {
