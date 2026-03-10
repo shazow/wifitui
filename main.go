@@ -19,6 +19,45 @@ var (
 	defaultRetryInterval = 10 * time.Second
 )
 
+// parseSecurityType converts a security string (open, wep, wpa) to a wifi.SecurityType.
+func parseSecurityType(s string) (wifi.SecurityType, error) {
+	switch s {
+	case "open":
+		return wifi.SecurityOpen, nil
+	case "wep":
+		return wifi.SecurityWEP, nil
+	case "wpa":
+		return wifi.SecurityWPA, nil
+	default:
+		return wifi.SecurityUnknown, fmt.Errorf("invalid security type: %s", s)
+	}
+}
+
+// parseRetryConfig parses a retry duration string of the form "DURATION" or "DURATION:INTERVAL"
+// into a RetryConfig. The default retry interval is used when no interval is specified.
+func parseRetryConfig(s string) (RetryConfig, error) {
+	retry := RetryConfig{Interval: defaultRetryInterval}
+	if s == "" {
+		return retry, nil
+	}
+
+	parts := strings.Split(s, ":")
+	var err error
+	retry.Total, err = time.ParseDuration(parts[0])
+	if err != nil {
+		return RetryConfig{}, fmt.Errorf("invalid duration format for --retry-for: %w", err)
+	}
+
+	if len(parts) > 1 {
+		retry.Interval, err = time.ParseDuration(parts[1])
+		if err != nil {
+			return RetryConfig{}, fmt.Errorf("invalid sleep duration format for --retry-for: %w", err)
+		}
+	}
+
+	return retry, nil
+}
+
 // Options defines the root-level flags
 type Options struct {
 	Theme   string `long:"theme" description:"path to theme toml file" env:"WIFITUI_THEME"`
@@ -101,35 +140,14 @@ func (c *ShowCommand) Execute(args []string) error {
 
 // Execute is the handler for the "connect" subcommand
 func (c *ConnectCommand) Execute(args []string) error {
-	var security wifi.SecurityType
-	switch c.Security {
-	case "open":
-		security = wifi.SecurityOpen
-	case "wep":
-		security = wifi.SecurityWEP
-	case "wpa":
-		security = wifi.SecurityWPA
-	default:
-		return fmt.Errorf("invalid security type: %s", c.Security)
+	security, err := parseSecurityType(c.Security)
+	if err != nil {
+		return err
 	}
 
-	var retry RetryConfig
-	retry.Interval = defaultRetryInterval
-
-	if c.RetryFor != "" {
-		parts := strings.Split(c.RetryFor, ":")
-		var err error
-		retry.Total, err = time.ParseDuration(parts[0])
-		if err != nil {
-			return fmt.Errorf("invalid duration format for --retry-for: %w", err)
-		}
-
-		if len(parts) > 1 {
-			retry.Interval, err = time.ParseDuration(parts[1])
-			if err != nil {
-				return fmt.Errorf("invalid sleep duration format for --retry-for: %w", err)
-			}
-		}
+	retry, err := parseRetryConfig(c.RetryFor)
+	if err != nil {
+		return err
 	}
 
 	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, retry, b)
@@ -140,17 +158,13 @@ func (c *RadioCommand) Execute(args []string) error {
 	return runRadio(os.Stdout, c.Args.Action, b)
 }
 
-// main is the entry point of the application
-func main() {
-	parser := flags.NewParser(&opts, flags.HelpFlag)
-	parser.ShortDescription = "A simple TUI for managing wifi connections."
-	parser.LongDescription = "wifitui is a TUI and CLI for managing wifi connections."
-
+// run is the main entry point that returns an error instead of calling os.Exit directly.
+func run() error {
 	// Manually check for --version flag before parsing to avoid unnecessary backend init.
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" {
 			fmt.Println(Version)
-			os.Exit(0)
+			return nil
 		}
 	}
 
@@ -158,9 +172,12 @@ func main() {
 	var err error
 	b, err = GetBackend()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("error: %w", err)
 	}
+
+	parser := flags.NewParser(&opts, flags.HelpFlag)
+	parser.ShortDescription = "A simple TUI for managing wifi connections."
+	parser.LongDescription = "wifitui is a TUI and CLI for managing wifi connections."
 
 	// Parse arguments.
 	_, err = parser.Parse()
@@ -169,19 +186,24 @@ func main() {
 			if flagsErr.Type == flags.ErrHelp {
 				// Help was requested, so print the help message.
 				parser.WriteHelp(os.Stdout)
-				os.Exit(0)
+				return nil
 			}
 			if flagsErr.Type == flags.ErrCommandRequired {
 				// No command was specified, so run the TUI by default.
-				if err := opts.Tui.Execute(nil); err != nil {
-					fmt.Fprintf(os.Stderr, "error: %v\n", err)
-					os.Exit(1)
-				}
-				os.Exit(0)
+				return opts.Tui.Execute(nil)
 			}
 		}
 
-		// For any other error, print it and exit.
+		// For any other error, return it.
+		return err
+	}
+
+	return nil
+}
+
+// main is the entry point of the application
+func main() {
+	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
