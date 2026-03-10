@@ -15,7 +15,7 @@
 - [x] Join new and hidden networks (`c` and `n` keys)
 - [x] Initiate a scan (`s` key)
 - [x] Multiple backends (experimental `iwd` and darwin support, untested)
-- [x] Non-interactive modes (`list` `show` `connect` commands)
+- [x] Non-interactive modes (`list` `show` `connect` `radio` commands), perfect for scripts and bots.
 - [x] Bring your own color scheme and theme (`--theme=./theme.toml` or set `WIFITUI_THEME=./theme.toml`)
 
 ## Getting Started
