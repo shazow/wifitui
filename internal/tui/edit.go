@@ -19,19 +19,23 @@ type startForgettingMsg struct{}
 
 type connectionFailedMsg struct{ err error }
 
-type EditModel struct {
-	focusManager          *FocusManager
-	ssidAdapter           *TextInput
+type EapComponents struct {
 	identityAdapter       *TextInput
 	anonymousIdentAdapter *TextInput
 	eapAdapter            *TextInput
 	phase2AuthAdapter     *TextInput
-	passwordAdapter       *TextInput
-	securityGroup         *ChoiceComponent
-	autoConnectCheckbox   *Checkbox
-	buttonGroup           *MultiButtonComponent
-	passwordRevealed      bool
-	isForgetting          bool
+}
+
+type EditModel struct {
+	focusManager        *FocusManager
+	ssidAdapter         *TextInput
+	eapComponents       *EapComponents
+	passwordAdapter     *TextInput
+	securityGroup       *ChoiceComponent
+	autoConnectCheckbox *Checkbox
+	buttonGroup         *MultiButtonComponent
+	passwordRevealed    bool
+	isForgetting        bool
 	secretsLoaded       bool
 	hasError            bool
 	selectedItem        connectionItem
@@ -87,24 +91,23 @@ func NewEditModel(item *connectionItem) *EditModel {
 		label: "SSID:",
 	}
 
-	m.identityAdapter = &TextInput{
-		Model: identityInput,
-		label: "Identity:",
-	}
-
-	m.anonymousIdentAdapter = &TextInput{
-		Model: anonymousIdentInput,
-		label: "Anonymous Identity:",
-	}
-
-	m.eapAdapter = &TextInput{
-		Model: eapInput,
-		label: "EAP Method:",
-	}
-
-	m.phase2AuthAdapter = &TextInput{
-		Model: phase2AuthInput,
-		label: "Phase 2 Auth:",
+	m.eapComponents = &EapComponents{
+		identityAdapter: &TextInput{
+			Model: identityInput,
+			label: "Identity:",
+		},
+		anonymousIdentAdapter: &TextInput{
+			Model: anonymousIdentInput,
+			label: "Anonymous Identity:",
+		},
+		eapAdapter: &TextInput{
+			Model: eapInput,
+			label: "EAP Method:",
+		},
+		phase2AuthAdapter: &TextInput{
+			Model: phase2AuthInput,
+			label: "Phase 2 Auth:",
+		},
 	}
 
 	onPasswordFocus := func(ti *textinput.Model) tea.Cmd {
@@ -147,11 +150,11 @@ func NewEditModel(item *connectionItem) *EditModel {
 		}
 	}
 
-	if ShouldDisplayIdentityField(security) {
-		items = append(items, m.identityAdapter)
-		items = append(items, m.anonymousIdentAdapter)
-		items = append(items, m.eapAdapter)
-		items = append(items, m.phase2AuthAdapter)
+	if ShouldDisplayIdentityField(security) && m.eapComponents != nil {
+		items = append(items, m.eapComponents.identityAdapter)
+		items = append(items, m.eapComponents.anonymousIdentAdapter)
+		items = append(items, m.eapComponents.eapAdapter)
+		items = append(items, m.eapComponents.phase2AuthAdapter)
 	}
 
 	if ShouldDisplayPasswordField(security) {
@@ -196,10 +199,10 @@ func NewEditModel(item *connectionItem) *EditModel {
 					return joinNetworkMsg{
 						ssid:              m.ssidAdapter.Model.Value(),
 						password:          m.passwordAdapter.Model.Value(),
-						identity:          m.identityAdapter.Model.Value(),
-						anonymousIdentity: m.anonymousIdentAdapter.Model.Value(),
-						eap:               m.eapAdapter.Model.Value(),
-						phase2Auth:        m.phase2AuthAdapter.Model.Value(),
+						identity:          m.eapComponents.identityAdapter.Model.Value(),
+						anonymousIdentity: m.eapComponents.anonymousIdentAdapter.Model.Value(),
+						eap:               m.eapComponents.eapAdapter.Model.Value(),
+						phase2Auth:        m.eapComponents.phase2AuthAdapter.Model.Value(),
 						security:          sec,
 						isHidden:          true,
 					}
@@ -241,10 +244,10 @@ func NewEditModel(item *connectionItem) *EditModel {
 					return joinNetworkMsg{
 						ssid:              m.selectedItem.SSID,
 						password:          m.passwordAdapter.Model.Value(),
-						identity:          m.identityAdapter.Model.Value(),
-						anonymousIdentity: m.anonymousIdentAdapter.Model.Value(),
-						eap:               m.eapAdapter.Model.Value(),
-						phase2Auth:        m.phase2AuthAdapter.Model.Value(),
+						identity:          m.eapComponents.identityAdapter.Model.Value(),
+						anonymousIdentity: m.eapComponents.anonymousIdentAdapter.Model.Value(),
+						eap:               m.eapComponents.eapAdapter.Model.Value(),
+						phase2Auth:        m.eapComponents.phase2AuthAdapter.Model.Value(),
 						security:          m.selectedItem.Security,
 						isHidden:          m.selectedItem.IsHidden,
 					}
@@ -314,10 +317,12 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			newWidth = 80
 		}
 		m.ssidAdapter.Model.Width = newWidth
-		m.identityAdapter.Model.Width = newWidth
-		m.anonymousIdentAdapter.Model.Width = newWidth
-		m.eapAdapter.Model.Width = newWidth
-		m.phase2AuthAdapter.Model.Width = newWidth
+		if m.eapComponents != nil {
+			m.eapComponents.identityAdapter.Model.Width = newWidth
+			m.eapComponents.anonymousIdentAdapter.Model.Width = newWidth
+			m.eapComponents.eapAdapter.Model.Width = newWidth
+			m.eapComponents.phase2AuthAdapter.Model.Width = newWidth
+		}
 		m.passwordAdapter.Model.Width = newWidth
 		return m, nil
 	case secretsLoadedMsg:
@@ -359,16 +364,18 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	if ta, ok := newFocusable.(*TextInput); ok {
 		if ta.label == "SSID:" {
 			m.ssidAdapter.Model = ta.Model
-		} else if ta.label == "Identity:" {
-			m.identityAdapter.Model = ta.Model
-		} else if ta.label == "Anonymous Identity:" {
-			m.anonymousIdentAdapter.Model = ta.Model
-		} else if ta.label == "EAP Method:" {
-			m.eapAdapter.Model = ta.Model
-		} else if ta.label == "Phase 2 Auth:" {
-			m.phase2AuthAdapter.Model = ta.Model
 		} else if ta.label == "Passphrase:" {
 			m.passwordAdapter.Model = ta.Model
+		} else if m.eapComponents != nil {
+			if ta.label == "Identity:" {
+				m.eapComponents.identityAdapter.Model = ta.Model
+			} else if ta.label == "Anonymous Identity:" {
+				m.eapComponents.anonymousIdentAdapter.Model = ta.Model
+			} else if ta.label == "EAP Method:" {
+				m.eapComponents.eapAdapter.Model = ta.Model
+			} else if ta.label == "Phase 2 Auth:" {
+				m.eapComponents.phase2AuthAdapter.Model = ta.Model
+			}
 		}
 	}
 
@@ -396,11 +403,11 @@ func (m *EditModel) updateFocusManagerItems(security wifi.SecurityType) {
 	var items []Focusable
 	items = append(items, m.ssidAdapter)
 
-	if ShouldDisplayIdentityField(security) {
-		items = append(items, m.identityAdapter)
-		items = append(items, m.anonymousIdentAdapter)
-		items = append(items, m.eapAdapter)
-		items = append(items, m.phase2AuthAdapter)
+	if ShouldDisplayIdentityField(security) && m.eapComponents != nil {
+		items = append(items, m.eapComponents.identityAdapter)
+		items = append(items, m.eapComponents.anonymousIdentAdapter)
+		items = append(items, m.eapComponents.eapAdapter)
+		items = append(items, m.eapComponents.phase2AuthAdapter)
 	}
 	if ShouldDisplayPasswordField(security) {
 		items = append(items, m.passwordAdapter)
@@ -431,7 +438,14 @@ func (m *EditModel) updateFocusManagerItems(security wifi.SecurityType) {
 }
 
 func (m *EditModel) IsConsumingInput() bool {
-	return m.ssidAdapter.Model.Focused() || m.identityAdapter.Model.Focused() || m.anonymousIdentAdapter.Model.Focused() || m.eapAdapter.Model.Focused() || m.phase2AuthAdapter.Model.Focused() || m.passwordAdapter.Model.Focused()
+	consuming := m.ssidAdapter.Model.Focused() || m.passwordAdapter.Model.Focused()
+	if m.eapComponents != nil {
+		consuming = consuming || m.eapComponents.identityAdapter.Model.Focused() ||
+			m.eapComponents.anonymousIdentAdapter.Model.Focused() ||
+			m.eapComponents.eapAdapter.Model.Focused() ||
+			m.eapComponents.phase2AuthAdapter.Model.Focused()
+	}
+	return consuming
 }
 
 func (m *EditModel) View() string {

@@ -92,15 +92,15 @@ type ShowCommand struct {
 
 // ConnectCommand defines the flags and arguments for the "connect" subcommand
 type ConnectCommand struct {
-	Passphrase        string `long:"passphrase" description:"passphrase for the network"`
-	Identity          string `long:"identity" description:"identity/username for enterprise networks (WPA-EAP)"`
-	AnonymousIdentity string `long:"anonymous-identity" description:"anonymous identity for enterprise networks"`
-	EAP               string `long:"eap" description:"EAP method for enterprise networks (e.g. peap, ttls)"`
-	Phase2Auth        string `long:"phase2-auth" description:"Phase 2 authentication for enterprise networks (e.g. mschapv2)"`
-	Security          string `long:"security" default:"wpa" description:"security type" choice:"open" choice:"wep" choice:"wpa" choice:"wpa-eap"`
-	Hidden            bool   `long:"hidden" description:"network is hidden"`
-	RetryFor          string `long:"retry-for" description:"duration to retry connection (e.g. 60s or 2m:20s)" value-name:"DURATION[:INTERVAL]"`
-	Args              struct {
+	Passphrase           string `long:"passphrase" description:"passphrase for the network"`
+	EapIdentity          string `long:"eap-identity" description:"identity/username for enterprise networks (WPA-EAP)"`
+	EapAnonymousIdentity string `long:"eap-anonymous-identity" description:"anonymous identity for enterprise networks"`
+	EapMethod            string `long:"eap-method" default:"peap" description:"EAP method for enterprise networks" choice:"peap" choice:"ttls" choice:"tls"`
+	EapPhase2Auth        string `long:"eap-phase2-auth" default:"mschapv2" description:"Phase 2 authentication for enterprise networks" choice:"mschapv2" choice:"pap"`
+	Security             string `long:"security" default:"wpa" description:"security type" choice:"open" choice:"wep" choice:"wpa" choice:"wpa-eap"`
+	Hidden               bool   `long:"hidden" description:"network is hidden"`
+	RetryFor             string `long:"retry-for" description:"duration to retry connection (e.g. 60s or 2m:20s)" value-name:"DURATION[:INTERVAL]"`
+	Args                 struct {
 		SSID string `positional-arg-name:"ssid" required:"true"`
 	} `positional-args:"yes"`
 }
@@ -159,10 +159,10 @@ func (c *ConnectCommand) Execute(args []string) error {
 	opts := wifi.JoinOptions{
 		SSID:              c.Args.SSID,
 		Password:          c.Passphrase,
-		Identity:          c.Identity,
-		AnonymousIdentity: c.AnonymousIdentity,
-		EAP:               c.EAP,
-		Phase2Auth:        c.Phase2Auth,
+		Identity:          c.EapIdentity,
+		AnonymousIdentity: c.EapAnonymousIdentity,
+		EAP:               c.EapMethod,
+		Phase2Auth:        c.EapPhase2Auth,
 		Security:          security,
 		IsHidden:          c.Hidden,
 	}
