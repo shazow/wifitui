@@ -254,7 +254,7 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 	return nil
 }
 
-func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (m *MockBackend) JoinNetwork(opts wifi.JoinOptions) error {
 	time.Sleep(m.ActionSleep)
 
 	if m.JoinError != nil {
@@ -265,7 +265,7 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 	found := false
 	foundIndex := -1
 	for i, vc := range m.VisibleConnections {
-		if vc.SSID == ssid {
+		if vc.SSID == opts.SSID {
 			c = vc
 			found = true
 			foundIndex = i
@@ -274,9 +274,9 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 	}
 	if !found {
 		c = wifi.Connection{
-			SSID:     ssid,
-			Security: security,
-			IsHidden: isHidden,
+			SSID:     opts.SSID,
+			Security: opts.Security,
+			IsHidden: opts.IsHidden,
 		}
 	}
 
@@ -288,13 +288,13 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 
 	newConnection := mockConnection{
 		Connection: c,
-		Secret:     password,
+		Secret:     opts.Password,
 	}
 
 	// Check if we are replacing an existing known connection, otherwise append.
 	foundInKnown := false
 	for i, kc := range m.KnownConnections {
-		if kc.SSID == ssid {
+		if kc.SSID == opts.SSID {
 			m.KnownConnections[i] = newConnection
 			foundInKnown = true
 			break
@@ -304,7 +304,7 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 		m.KnownConnections = append(m.KnownConnections, newConnection)
 	}
 
-	m.setActiveConnection(ssid)
+	m.setActiveConnection(opts.SSID)
 	now := time.Now()
 	if m.ActiveConnectionIndex != -1 {
 		m.KnownConnections[m.ActiveConnectionIndex].LastConnected = &now

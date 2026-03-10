@@ -147,7 +147,7 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 	return writeConnectionDetails(w, c, secret)
 }
 
-func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, isHidden bool, shouldScan bool, b wifi.Backend) error {
+func attemptConnect(opts wifi.JoinOptions, shouldScan bool, b wifi.Backend) error {
 	// Populate the backend's internal state (e.g. NetworkManager's Connections
 	// and AccessPoints maps).
 	// ActivateConnection and JoinNetwork rely on this state being present.
@@ -155,11 +155,11 @@ func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, 
 		return fmt.Errorf("failed to load networks: %w", err)
 	}
 
-	if passphrase != "" || isHidden {
-		return b.JoinNetwork(ssid, passphrase, security, isHidden)
+	if opts.Password != "" || opts.Identity != "" || opts.IsHidden {
+		return b.JoinNetwork(opts)
 	}
 
-	return b.ActivateConnection(ssid)
+	return b.ActivateConnection(opts.SSID)
 }
 
 // RetryConfig defines the configuration for connection retries.
@@ -170,14 +170,14 @@ type RetryConfig struct {
 	Interval time.Duration
 }
 
-func runConnect(w io.Writer, ssid string, passphrase string, security wifi.SecurityType, isHidden bool, retry RetryConfig, b wifi.Backend) error {
+func runConnect(w io.Writer, opts wifi.JoinOptions, retry RetryConfig, b wifi.Backend) error {
 	start := time.Now()
 	shouldScan := false
 
 	for {
-		fmt.Fprintf(w, "Connecting to network %q with scan=%v...\n", ssid, shouldScan)
+		fmt.Fprintf(w, "Connecting to network %q with scan=%v...\n", opts.SSID, shouldScan)
 
-		err := attemptConnect(ssid, passphrase, security, isHidden, shouldScan, b)
+		err := attemptConnect(opts, shouldScan, b)
 		if err == nil {
 			return nil
 		}

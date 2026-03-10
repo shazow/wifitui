@@ -20,14 +20,18 @@ type startForgettingMsg struct{}
 type connectionFailedMsg struct{ err error }
 
 type EditModel struct {
-	focusManager        *FocusManager
-	ssidAdapter         *TextInput
-	passwordAdapter     *TextInput
-	securityGroup       *ChoiceComponent
-	autoConnectCheckbox *Checkbox
-	buttonGroup         *MultiButtonComponent
-	passwordRevealed    bool
-	isForgetting        bool
+	focusManager          *FocusManager
+	ssidAdapter           *TextInput
+	identityAdapter       *TextInput
+	anonymousIdentAdapter *TextInput
+	eapAdapter            *TextInput
+	phase2AuthAdapter     *TextInput
+	passwordAdapter       *TextInput
+	securityGroup         *ChoiceComponent
+	autoConnectCheckbox   *Checkbox
+	buttonGroup           *MultiButtonComponent
+	passwordRevealed      bool
+	isForgetting          bool
 	secretsLoaded       bool
 	hasError            bool
 	selectedItem        connectionItem
@@ -48,6 +52,28 @@ func NewEditModel(item *connectionItem) *EditModel {
 		ssidInput.SetValue(item.SSID)
 	}
 
+	identityInput := textinput.New()
+	identityInput.Focus()
+	identityInput.CharLimit = 64
+	identityInput.Width = 45
+
+	anonymousIdentInput := textinput.New()
+	anonymousIdentInput.Focus()
+	anonymousIdentInput.CharLimit = 64
+	anonymousIdentInput.Width = 45
+
+	eapInput := textinput.New()
+	eapInput.Focus()
+	eapInput.CharLimit = 64
+	eapInput.Width = 45
+	eapInput.SetValue("peap")
+
+	phase2AuthInput := textinput.New()
+	phase2AuthInput.Focus()
+	phase2AuthInput.CharLimit = 64
+	phase2AuthInput.Width = 45
+	phase2AuthInput.SetValue("mschapv2")
+
 	passwordInput := textinput.New()
 	passwordInput.Focus()
 	passwordInput.CharLimit = 64
@@ -60,6 +86,27 @@ func NewEditModel(item *connectionItem) *EditModel {
 		Model: ssidInput,
 		label: "SSID:",
 	}
+
+	m.identityAdapter = &TextInput{
+		Model: identityInput,
+		label: "Identity:",
+	}
+
+	m.anonymousIdentAdapter = &TextInput{
+		Model: anonymousIdentInput,
+		label: "Anonymous Identity:",
+	}
+
+	m.eapAdapter = &TextInput{
+		Model: eapInput,
+		label: "EAP Method:",
+	}
+
+	m.phase2AuthAdapter = &TextInput{
+		Model: phase2AuthInput,
+		label: "Phase 2 Auth:",
+	}
+
 	onPasswordFocus := func(ti *textinput.Model) tea.Cmd {
 		ti.EchoMode = textinput.EchoNormal
 		m.passwordRevealed = true
@@ -86,8 +133,25 @@ func NewEditModel(item *connectionItem) *EditModel {
 
 	security := m.selectedItem.Security
 	if isNew {
-		m.securityGroup = NewChoiceComponent("Security:", []string{"Open", "WEP", "WPA/WPA2"})
-		security = wifi.SecurityType(m.securityGroup.Selected())
+		m.securityGroup = NewChoiceComponent("Security:", []string{"Open", "WEP", "WPA/WPA2", "WPA2 Enterprise"})
+		sel := m.securityGroup.Selected()
+		switch sel {
+		case 0:
+			security = wifi.SecurityOpen
+		case 1:
+			security = wifi.SecurityWEP
+		case 2:
+			security = wifi.SecurityWPA
+		case 3:
+			security = wifi.SecurityWPAEAP
+		}
+	}
+
+	if ShouldDisplayIdentityField(security) {
+		items = append(items, m.identityAdapter)
+		items = append(items, m.anonymousIdentAdapter)
+		items = append(items, m.eapAdapter)
+		items = append(items, m.phase2AuthAdapter)
 	}
 
 	if ShouldDisplayPasswordField(security) {
@@ -117,11 +181,27 @@ func NewEditModel(item *connectionItem) *EditModel {
 			switch index {
 			case 0: // Join
 				return func() tea.Msg {
+					sec := wifi.SecurityOpen
+					switch m.securityGroup.Selected() {
+					case 0:
+						sec = wifi.SecurityOpen
+					case 1:
+						sec = wifi.SecurityWEP
+					case 2:
+						sec = wifi.SecurityWPA
+					case 3:
+						sec = wifi.SecurityWPAEAP
+					}
+
 					return joinNetworkMsg{
-						ssid:     m.ssidAdapter.Model.Value(),
-						password: m.passwordAdapter.Model.Value(),
-						security: wifi.SecurityType(m.securityGroup.Selected()),
-						isHidden: true,
+						ssid:              m.ssidAdapter.Model.Value(),
+						password:          m.passwordAdapter.Model.Value(),
+						identity:          m.identityAdapter.Model.Value(),
+						anonymousIdentity: m.anonymousIdentAdapter.Model.Value(),
+						eap:               m.eapAdapter.Model.Value(),
+						phase2Auth:        m.phase2AuthAdapter.Model.Value(),
+						security:          sec,
+						isHidden:          true,
 					}
 				}
 			case 1: // Cancel
@@ -159,10 +239,14 @@ func NewEditModel(item *connectionItem) *EditModel {
 			case 0: // Join
 				return func() tea.Msg {
 					return joinNetworkMsg{
-						ssid:     m.selectedItem.SSID,
-						password: m.passwordAdapter.Model.Value(),
-						security: m.selectedItem.Security,
-						isHidden: m.selectedItem.IsHidden,
+						ssid:              m.selectedItem.SSID,
+						password:          m.passwordAdapter.Model.Value(),
+						identity:          m.identityAdapter.Model.Value(),
+						anonymousIdentity: m.anonymousIdentAdapter.Model.Value(),
+						eap:               m.eapAdapter.Model.Value(),
+						phase2Auth:        m.phase2AuthAdapter.Model.Value(),
+						security:          m.selectedItem.Security,
+						isHidden:          m.selectedItem.IsHidden,
 					}
 				}
 			case 1: // Cancel
@@ -208,6 +292,21 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		return m, nil
 	}
 
+	isNew := m.selectedItem.SSID == ""
+	oldSecurity := wifi.SecurityUnknown
+	if isNew && m.securityGroup != nil {
+		switch m.securityGroup.Selected() {
+		case 0:
+			oldSecurity = wifi.SecurityOpen
+		case 1:
+			oldSecurity = wifi.SecurityWEP
+		case 2:
+			oldSecurity = wifi.SecurityWPA
+		case 3:
+			oldSecurity = wifi.SecurityWPAEAP
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		newWidth := int(float64(msg.Width) * 0.8)
@@ -215,6 +314,10 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			newWidth = 80
 		}
 		m.ssidAdapter.Model.Width = newWidth
+		m.identityAdapter.Model.Width = newWidth
+		m.anonymousIdentAdapter.Model.Width = newWidth
+		m.eapAdapter.Model.Width = newWidth
+		m.phase2AuthAdapter.Model.Width = newWidth
 		m.passwordAdapter.Model.Width = newWidth
 		return m, nil
 	case secretsLoadedMsg:
@@ -256,16 +359,79 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	if ta, ok := newFocusable.(*TextInput); ok {
 		if ta.label == "SSID:" {
 			m.ssidAdapter.Model = ta.Model
+		} else if ta.label == "Identity:" {
+			m.identityAdapter.Model = ta.Model
+		} else if ta.label == "Anonymous Identity:" {
+			m.anonymousIdentAdapter.Model = ta.Model
+		} else if ta.label == "EAP Method:" {
+			m.eapAdapter.Model = ta.Model
+		} else if ta.label == "Phase 2 Auth:" {
+			m.phase2AuthAdapter.Model = ta.Model
 		} else if ta.label == "Passphrase:" {
 			m.passwordAdapter.Model = ta.Model
+		}
+	}
+
+	if isNew && m.securityGroup != nil {
+		newSecurity := wifi.SecurityUnknown
+		switch m.securityGroup.Selected() {
+		case 0:
+			newSecurity = wifi.SecurityOpen
+		case 1:
+			newSecurity = wifi.SecurityWEP
+		case 2:
+			newSecurity = wifi.SecurityWPA
+		case 3:
+			newSecurity = wifi.SecurityWPAEAP
+		}
+		if newSecurity != oldSecurity {
+			m.updateFocusManagerItems(newSecurity)
 		}
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
+func (m *EditModel) updateFocusManagerItems(security wifi.SecurityType) {
+	var items []Focusable
+	items = append(items, m.ssidAdapter)
+
+	if ShouldDisplayIdentityField(security) {
+		items = append(items, m.identityAdapter)
+		items = append(items, m.anonymousIdentAdapter)
+		items = append(items, m.eapAdapter)
+		items = append(items, m.phase2AuthAdapter)
+	}
+	if ShouldDisplayPasswordField(security) {
+		items = append(items, m.passwordAdapter)
+	}
+
+	items = append(items, m.securityGroup)
+
+	if m.autoConnectCheckbox != nil {
+		items = append(items, m.autoConnectCheckbox)
+	}
+
+	items = append(items, m.buttonGroup)
+
+	// Preserve focus if possible, otherwise reset
+	currentFocused := m.focusManager.Focused()
+	m.focusManager = NewFocusManager(items...)
+	found := false
+	for _, item := range items {
+		if item == currentFocused {
+			m.focusManager.SetFocus(item)
+			found = true
+			break
+		}
+	}
+	if !found {
+		m.focusManager.Focus()
+	}
+}
+
 func (m *EditModel) IsConsumingInput() bool {
-	return m.ssidAdapter.Model.Focused() || m.passwordAdapter.Model.Focused()
+	return m.ssidAdapter.Model.Focused() || m.identityAdapter.Model.Focused() || m.anonymousIdentAdapter.Model.Focused() || m.eapAdapter.Model.Focused() || m.phase2AuthAdapter.Model.Focused() || m.passwordAdapter.Model.Focused()
 }
 
 func (m *EditModel) View() string {
@@ -289,6 +455,8 @@ func (m *EditModel) View() string {
 			security = "WEP"
 		case wifi.SecurityWPA:
 			security = "WPA/WPA2"
+		case wifi.SecurityWPAEAP:
+			security = "WPA2 Enterprise"
 		default:
 			if m.selectedItem.IsSecure {
 				security = "Secure"
@@ -351,6 +519,10 @@ func (m *EditModel) View() string {
 	}
 
 	return s.String()
+}
+
+func ShouldDisplayIdentityField(security wifi.SecurityType) bool {
+	return security == wifi.SecurityWPAEAP
 }
 
 func ShouldDisplayPasswordField(security wifi.SecurityType) bool {

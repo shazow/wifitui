@@ -193,7 +193,13 @@ func TestRunConnect(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Test case: connect to a new network with a passphrase
-	if err := runConnect(&buf, "new-network", "new-password", wifi.SecurityWPA, false, RetryConfig{Interval: time.Second}, mockBackend); err != nil {
+	opts1 := wifi.JoinOptions{
+		SSID:     "new-network",
+		Password: "new-password",
+		Security: wifi.SecurityWPA,
+		IsHidden: false,
+	}
+	if err := runConnect(&buf, opts1, RetryConfig{Interval: time.Second}, mockBackend); err != nil {
 		t.Fatalf("runConnect() with passphrase failed: %v", err)
 	}
 
@@ -215,7 +221,13 @@ func TestRunConnect(t *testing.T) {
 
 	// Test case: connect to a known network without a passphrase
 	buf.Reset()
-	if err := runConnect(&buf, "Password is password", "", wifi.SecurityWPA, false, RetryConfig{Interval: time.Second}, mockBackend); err != nil {
+	opts2 := wifi.JoinOptions{
+		SSID:     "Password is password",
+		Password: "",
+		Security: wifi.SecurityWPA,
+		IsHidden: false,
+	}
+	if err := runConnect(&buf, opts2, RetryConfig{Interval: time.Second}, mockBackend); err != nil {
 		t.Fatalf("runConnect() without passphrase failed: %v", err)
 	}
 
@@ -323,12 +335,12 @@ func (f *flakyBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, err
 	return f.MockBackend.BuildNetworkList(shouldScan)
 }
 
-func (f *flakyBackend) JoinNetwork(ssid, passphrase string, security wifi.SecurityType, isHidden bool) error {
+func (f *flakyBackend) JoinNetwork(opts wifi.JoinOptions) error {
 	if f.failCount < f.maxFails {
 		f.failCount++
 		return errors.New("transient failure")
 	}
-	return f.MockBackend.JoinNetwork(ssid, passphrase, security, isHidden)
+	return f.MockBackend.JoinNetwork(opts)
 }
 
 func TestRunConnectRetry(t *testing.T) {
@@ -345,27 +357,33 @@ func TestRunConnectRetry(t *testing.T) {
 	// 1st try: fail (no scan).
 	// 2nd try: fail (scan, immediate).
 	// 3rd try: succeed (after sleep).
-	// Total time ~5s.
+	// Total time ~1s.
 	fb := &flakyBackend{
 		MockBackend: mb,
 		maxFails:    2,
 	}
 
 	var buf bytes.Buffer
-	retryTotal := 7 * time.Second
+	retryTotal := 3 * time.Second
 
 	// We set ActionSleep to 0 to make the mock actions fast, only our loop sleep matters.
 	fb.MockBackend.ActionSleep = 0
 
 	start := time.Now()
 	// Using passphrase triggers JoinNetwork which we overrode
-	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, RetryConfig{Total: retryTotal, Interval: 5 * time.Second}, fb); err != nil {
+	opts := wifi.JoinOptions{
+		SSID:     "retry-network",
+		Password: "password",
+		Security: wifi.SecurityWPA,
+		IsHidden: false,
+	}
+	if err := runConnect(&buf, opts, RetryConfig{Total: retryTotal, Interval: 1 * time.Millisecond}, fb); err != nil {
 		t.Fatalf("runConnect() with retry failed: %v", err)
 	}
 	duration := time.Since(start)
 
-	if duration < 5*time.Second {
-		t.Errorf("runConnect() returned too quickly, expected at least 5s delay, got %v", duration)
+	if duration < 1*time.Millisecond {
+		t.Errorf("runConnect() returned too quickly, expected at least 1ms delay, got %v", duration)
 	}
 
 	// Check if scan was performed
@@ -413,7 +431,13 @@ func TestRunConnectFastRetry(t *testing.T) {
 
 	start := time.Now()
 	// Using passphrase triggers JoinNetwork which we overrode
-	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, RetryConfig{Total: retryTotal, Interval: 5 * time.Second}, fb); err != nil {
+	opts := wifi.JoinOptions{
+		SSID:     "retry-network",
+		Password: "password",
+		Security: wifi.SecurityWPA,
+		IsHidden: false,
+	}
+	if err := runConnect(&buf, opts, RetryConfig{Total: retryTotal, Interval: 1 * time.Millisecond}, fb); err != nil {
 		t.Fatalf("runConnect() with fast retry failed: %v", err)
 	}
 	duration := time.Since(start)
@@ -454,25 +478,31 @@ func TestRunConnectCustomRetryInterval(t *testing.T) {
 
 	var buf bytes.Buffer
 	retryTotal := 5 * time.Second
-	retryInterval := 2 * time.Second
+	retryInterval := 2 * time.Millisecond
 
 	fb.MockBackend.ActionSleep = 0
 
 	start := time.Now()
-	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, RetryConfig{Total: retryTotal, Interval: retryInterval}, fb); err != nil {
+	opts := wifi.JoinOptions{
+		SSID:     "retry-network",
+		Password: "password",
+		Security: wifi.SecurityWPA,
+		IsHidden: false,
+	}
+	if err := runConnect(&buf, opts, RetryConfig{Total: retryTotal, Interval: retryInterval}, fb); err != nil {
 		t.Fatalf("runConnect() failed: %v", err)
 	}
 	duration := time.Since(start)
 
-	// Expected wait: 1st retry (fast) is immediate, 2nd retry waits for retryInterval (2s).
-	// Total wait should be around 2s.
-	if duration < 2*time.Second || duration > 3*time.Second {
-		t.Errorf("expected duration around 2s, got %v", duration)
+	// Expected wait: 1st retry (fast) is immediate, 2nd retry waits for retryInterval (2ms).
+	// Total wait should be around 2ms.
+	if duration < 2*time.Millisecond || duration > 2*time.Second {
+		t.Errorf("expected duration around 2ms, got %v", duration)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Retrying in 2s") {
-		t.Errorf("expected retry message with 2s interval, got:\n%s", output)
+	if !strings.Contains(output, "Retrying in 2ms") {
+		t.Errorf("expected retry message with 2ms interval, got:\n%s", output)
 	}
 }
 

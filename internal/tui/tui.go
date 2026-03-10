@@ -133,7 +133,17 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Joining %q...", msg.ssid), loading: true} },
 			func() tea.Msg {
-				err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden)
+				opts := wifi.JoinOptions{
+					SSID:              msg.ssid,
+					Password:          msg.password,
+					Identity:          msg.identity,
+					AnonymousIdentity: msg.anonymousIdentity,
+					EAP:               msg.eap,
+					Phase2Auth:        msg.phase2Auth,
+					Security:          msg.security,
+					IsHidden:          msg.isHidden,
+				}
+				err := m.backend.JoinNetwork(opts)
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 				}

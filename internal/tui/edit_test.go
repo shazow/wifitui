@@ -26,14 +26,24 @@ func TestEditModel_TabKey(t *testing.T) {
 
 func TestEditModel_PasswordReveal(t *testing.T) {
 	item := &connectionItem{
-		Connection: wifi.Connection{IsKnown: true, IsSecure: true},
+		// Need WPA to show the password field
+		Connection: wifi.Connection{SSID: "KnownNet", IsKnown: true, IsSecure: true, Security: wifi.SecurityWPA},
 	}
 	m := NewEditModel(item)
 	m.passwordAdapter.Model.SetValue("password")
 
-	// Focus the password field
-	for m.focusManager.Focused() != m.passwordAdapter {
+	// The items are: ssidAdapter, passwordAdapter, autoConnectCheckbox, buttonGroup.
+	// But `IsKnown` focuses the `buttonGroup` first!
+	// We need to tab around until we hit passwordAdapter.
+	// Limit iterations to prevent infinite loop
+	for i := 0; i < len(m.focusManager.items)*2; i++ {
+		if m.focusManager.Focused() == m.passwordAdapter {
+			break
+		}
 		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("tab")})
+	}
+	if m.focusManager.Focused() != m.passwordAdapter {
+		t.Fatalf("could not focus password field (total items: %d)", len(m.focusManager.items))
 	}
 
 	if m.passwordAdapter.Model.EchoMode != textinput.EchoNormal {

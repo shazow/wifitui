@@ -188,14 +188,22 @@ func (b *Backend) SetWireless(enabled bool) error {
 }
 
 // JoinNetwork connects to a new network, potentially creating a new configuration.
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
-	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
+func (b *Backend) JoinNetwork(opts wifi.JoinOptions) error {
+	if opts.Security == wifi.SecurityWPAEAP {
+		// `networksetup` doesn't natively support providing WPA2 Enterprise credentials directly
+		// via `-setairportnetwork` or `-addpreferredwirelessnetworkatindex` (which takes WPA2E but lacks identity inputs).
+		// Typically, a profile (.mobileconfig) is required on macOS for fully programmatic Enterprise setup.
+		// We'll return an error to instruct the user.
+		return fmt.Errorf("WPA2-Enterprise joining is not supported natively via macOS command line tools. Please join %q via the macOS Wi-Fi menu", opts.SSID)
+	}
+
+	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, opts.SSID, opts.Password)
 	if err := runOnly(cmd); err != nil {
 		return err
 	}
 	// Add to preferred networks so it becomes "known"
 	var securityType string
-	switch security {
+	switch opts.Security {
 	case wifi.SecurityOpen:
 		securityType = "OPEN"
 	case wifi.SecurityWEP:
@@ -203,7 +211,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 	default:
 		securityType = "WPA2" // Default to WPA2 for WPA/WPA2
 	}
-	cmd = exec.Command("networksetup", "-addpreferredwirelessnetworkatindex", b.WifiInterface, ssid, "0", securityType)
+	cmd = exec.Command("networksetup", "-addpreferredwirelessnetworkatindex", b.WifiInterface, opts.SSID, "0", securityType)
 	return runOnly(cmd)
 }
 
