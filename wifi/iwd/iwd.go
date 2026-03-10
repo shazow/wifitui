@@ -4,7 +4,11 @@
 package iwd
 
 import (
+	"encoding/hex"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/godbus/dbus/v5"
@@ -13,6 +17,8 @@ import (
 
 const connectionTimeout = 30 * time.Second
 const propertyChangeTimeout = 5 * time.Second
+
+var iwdProfileDir = "/var/lib/iwd"
 
 // IWD constants
 const (
@@ -124,13 +130,13 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				visibleNetworks[ssid] = existing
 			} else {
 				visibleNetworks[ssid] = wifi.Connection{
-					SSID:        ssid,
-					IsActive:    isActive,
-					IsSecure:    security != wifi.SecurityOpen,
-					Security:    security,
-					IsVisible:   true,
+					SSID:         ssid,
+					IsActive:     isActive,
+					IsSecure:     security != wifi.SecurityOpen,
+					Security:     security,
+					IsVisible:    true,
 					AccessPoints: []wifi.AccessPoint{ap},
-					AutoConnect: false, // Cannot autoconnect to unknown network
+					AutoConnect:  false, // Cannot autoconnect to unknown network
 				}
 			}
 		}
@@ -213,11 +219,10 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 
 func (b *Backend) JoinNetwork(opts wifi.JoinOptions) error {
 	if opts.Security == wifi.SecurityWPAEAP {
-		// IWD typically requires WPA-EAP configuration files to be created in /var/lib/iwd/
-		// or expects an Agent to handle the credentials. Since we don't have an agent registered,
-		// and creating config files requires root, WPA-EAP join via generic Connect() might fail
-		// or block. For now, we return an error or attempt to send it (which likely fails).
-		return fmt.Errorf("WPA2-Enterprise joining is currently not supported natively in the iwd backend. Please configure it in /var/lib/iwd/%s.8021x manually", opts.SSID)
+		if err := write8021xProfile(opts); err != nil {
+			return err
+		}
+		opts.Password = ""
 	}
 
 	conn, err := dbus.SystemBus()
@@ -236,6 +241,8 @@ func (b *Backend) JoinNetwork(opts wifi.JoinOptions) error {
 			securityType = "open"
 		case wifi.SecurityWEP:
 			securityType = "wep"
+		case wifi.SecurityWPAEAP:
+			securityType = "8021x"
 		default:
 			securityType = "psk" // Default to WPA/WPA2 PSK
 		}
@@ -396,6 +403,149 @@ func (b *Backend) waitForConnection(ssid string) error {
 }
 
 // --- iwd Helper Functions ---
+
+func write8021xProfile(opts wifi.JoinOptions) error {
+	if err := os.MkdirAll(iwdProfileDir, 0o700); err != nil {
+		return fmt.Errorf("failed to create iwd profile directory %q (writing iwd profiles typically requires root): %w", iwdProfileDir, err)
+	}
+
+	path := filepath.Join(iwdProfileDir, encodeSSIDForProfileName(opts.SSID)+".8021x")
+	if err := os.WriteFile(path, []byte(build8021xProfile(opts)), 0o600); err != nil {
+		return fmt.Errorf("failed to write iwd WPA-EAP profile %q: %w", path, err)
+	}
+
+	return nil
+}
+
+func build8021xProfile(opts wifi.JoinOptions) string {
+	lines := []string{
+		"[Settings]",
+		"AutoConnect=true",
+	}
+	if opts.IsHidden {
+		lines = append(lines, "Hidden=true")
+	}
+
+	lines = append(lines, "", "[Security]")
+
+	method := normalizeEAPMethod(opts.EAP)
+	switch method {
+	case "PEAP":
+		lines = append(lines, "EAP-Method=PEAP")
+		if outerIdentity := firstNonEmpty(opts.AnonymousIdentity, opts.Identity); outerIdentity != "" {
+			lines = append(lines, "EAP-Identity="+escapeIWDSettingValue(outerIdentity))
+		}
+		lines = append(lines, "EAP-PEAP-Phase2-Method="+normalizePEAPPhase2(opts.Phase2Auth))
+		if opts.Identity != "" {
+			lines = append(lines, "EAP-PEAP-Phase2-Identity="+escapeIWDSettingValue(opts.Identity))
+		}
+		if opts.Password != "" {
+			lines = append(lines, "EAP-PEAP-Phase2-Password="+escapeIWDSettingValue(opts.Password))
+		}
+	case "TTLS":
+		lines = append(lines, "EAP-Method=TTLS")
+		if outerIdentity := firstNonEmpty(opts.AnonymousIdentity, opts.Identity); outerIdentity != "" {
+			lines = append(lines, "EAP-Identity="+escapeIWDSettingValue(outerIdentity))
+		}
+		lines = append(lines, "EAP-TTLS-Phase2-Method="+normalizeTTLSPhase2(opts.Phase2Auth))
+		if opts.Identity != "" {
+			lines = append(lines, "EAP-TTLS-Phase2-Identity="+escapeIWDSettingValue(opts.Identity))
+		}
+		if opts.Password != "" {
+			lines = append(lines, "EAP-TTLS-Phase2-Password="+escapeIWDSettingValue(opts.Password))
+		}
+	default:
+		lines = append(lines, "EAP-Method="+method)
+		if opts.Identity != "" {
+			lines = append(lines, "EAP-Identity="+escapeIWDSettingValue(opts.Identity))
+		}
+		if opts.Password != "" {
+			lines = append(lines, "EAP-Password="+escapeIWDSettingValue(opts.Password))
+		}
+	}
+
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func encodeSSIDForProfileName(ssid string) string {
+	// Match iwd.network(5): only ASCII alphanumerics, spaces, underscores, and
+	// hyphens are used verbatim; anything else is encoded as "=" + lowercase hex.
+	for i := 0; i < len(ssid); i++ {
+		if isAllowedSSIDChar(ssid[i]) {
+			continue
+		}
+		return "=" + hex.EncodeToString([]byte(ssid))
+	}
+	return ssid
+}
+
+func isAllowedSSIDChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' || c == '_' || c == '-'
+}
+
+func normalizeEAPMethod(method string) string {
+	if method == "" {
+		return "PEAP"
+	}
+	return strings.ToUpper(method)
+}
+
+func normalizePEAPPhase2(method string) string {
+	if method == "" {
+		// Match the CLI/TUI defaults and common eduroam-style PEAP deployments.
+		return "MSCHAPV2"
+	}
+	return strings.ToUpper(method)
+}
+
+func normalizeTTLSPhase2(method string) string {
+	switch strings.ToLower(method) {
+	case "", "mschapv2":
+		// Match the CLI/TUI defaults and common TTLS enterprise deployments.
+		return "Tunneled-MSCHAPv2"
+	case "pap":
+		return "Tunneled-PAP"
+	default:
+		return strings.ToUpper(method)
+	}
+}
+
+func escapeIWDSettingValue(value string) string {
+	// Match iwd.network(5) keyfile escaping rules for leading/trailing spaces,
+	// tabs, newlines, carriage returns, and backslashes.
+	last := len(value) - 1
+	var b strings.Builder
+	for i, r := range value {
+		switch r {
+		case '\\':
+			b.WriteString("\\\\")
+		case '\n':
+			b.WriteString("\\n")
+		case '\r':
+			b.WriteString("\\r")
+		case '\t':
+			b.WriteString("\\t")
+		case ' ':
+			if i == 0 || i == last {
+				b.WriteString("\\s")
+			} else {
+				b.WriteRune(r)
+			}
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}
 
 func (b *Backend) getDevices(conn *dbus.Conn) ([]dbus.ObjectPath, error) {
 	var devices []dbus.ObjectPath
