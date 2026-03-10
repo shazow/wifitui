@@ -469,13 +469,16 @@ func build8021xProfile(opts wifi.JoinOptions) string {
 
 func encodeSSIDForProfileName(ssid string) string {
 	for i := 0; i < len(ssid); i++ {
-		c := ssid[i]
-		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' || c == '_' || c == '-' {
+		if isAllowedSSIDChar(ssid[i]) {
 			continue
 		}
 		return "=" + hex.EncodeToString([]byte(ssid))
 	}
 	return ssid
+}
+
+func isAllowedSSIDChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == ' ' || c == '_' || c == '-'
 }
 
 func normalizeEAPMethod(method string) string {
@@ -487,6 +490,7 @@ func normalizeEAPMethod(method string) string {
 
 func normalizePEAPPhase2(method string) string {
 	if method == "" {
+		// Match the CLI/TUI defaults and common eduroam-style PEAP deployments.
 		return "MSCHAPV2"
 	}
 	return strings.ToUpper(method)
@@ -495,6 +499,7 @@ func normalizePEAPPhase2(method string) string {
 func normalizeTTLSPhase2(method string) string {
 	switch strings.ToLower(method) {
 	case "", "mschapv2":
+		// Match the CLI/TUI defaults and common TTLS enterprise deployments.
 		return "Tunneled-MSCHAPv2"
 	case "pap":
 		return "Tunneled-PAP"
