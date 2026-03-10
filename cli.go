@@ -41,6 +41,58 @@ func formatConnection(c wifi.Connection) string {
 	return strings.Join(parts, ", ")
 }
 
+// writeJSON encodes v as indented JSON and writes it to w.
+func writeJSON(w io.Writer, v any) error {
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
+// filterVisibleConnections returns only the connections that are currently visible.
+func filterVisibleConnections(connections []wifi.Connection) []wifi.Connection {
+	var visible []wifi.Connection
+	for _, c := range connections {
+		if c.IsVisible {
+			visible = append(visible, c)
+		}
+	}
+	return visible
+}
+
+// findConnectionBySSID returns the first connection matching the given SSID and true,
+// or the zero value and false if no match is found.
+func findConnectionBySSID(connections []wifi.Connection, ssid string) (wifi.Connection, bool) {
+	for _, c := range connections {
+		if c.SSID == ssid {
+			return c, true
+		}
+	}
+	return wifi.Connection{}, false
+}
+
+// writeConnectionDetails writes human-readable details for a connection to w.
+func writeConnectionDetails(w io.Writer, c wifi.Connection, secret string) error {
+	var writeErr error
+	write := func(format string, args ...any) {
+		if writeErr != nil {
+			return
+		}
+		_, writeErr = fmt.Fprintf(w, format, args...)
+	}
+	write("SSID: %s\n", c.SSID)
+	write("Passphrase: %s\n", secret)
+	write("Active: %t\n", c.IsActive)
+	write("Known: %t\n", c.IsKnown)
+	write("Secure: %t\n", c.IsSecure)
+	write("Visible: %t\n", c.IsVisible)
+	write("Hidden: %t\n", c.IsHidden)
+	write("Strength: %d%%\n", c.Strength())
+	if c.LastConnected != nil {
+		write("Last Connected: %s\n", helpers.FormatDuration(*c.LastConnected))
+	}
+	return writeErr
+}
+
 func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) error {
 	connections, err := b.BuildNetworkList(scan)
 	if err != nil {
@@ -48,19 +100,11 @@ func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) err
 	}
 
 	if !all {
-		var visible []wifi.Connection
-		for _, c := range connections {
-			if c.IsVisible {
-				visible = append(visible, c)
-			}
-		}
-		connections = visible
+		connections = filterVisibleConnections(connections)
 	}
 
 	if jsonOut {
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(connections)
+		return writeJSON(w, connections)
 	}
 
 	for _, c := range connections {
@@ -76,49 +120,31 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
 
-	for _, c := range connections {
-		if c.SSID == ssid {
-			secret, err := b.GetSecrets(ssid)
-			if err != nil {
-				// If we can't get a secret for a known network, that's an error.
-				// But for a visible-only network, it's expected.
-				if c.IsKnown {
-					return fmt.Errorf("failed to get network secret: %w", err)
-				}
-				secret = "" // No secret available
-			}
-
-			if jsonOut {
-				// We need a custom struct to include the passphrase
-				type connectionWithSecret struct {
-					wifi.Connection
-					Passphrase string `json:"passphrase,omitempty"`
-				}
-				data := connectionWithSecret{
-					Connection: c,
-					Passphrase: secret,
-				}
-				enc := json.NewEncoder(w)
-				enc.SetIndent("", "  ")
-				return enc.Encode(data)
-			}
-
-			fmt.Fprintf(w, "SSID: %s\n", c.SSID)
-			fmt.Fprintf(w, "Passphrase: %s\n", secret)
-			fmt.Fprintf(w, "Active: %t\n", c.IsActive)
-			fmt.Fprintf(w, "Known: %t\n", c.IsKnown)
-			fmt.Fprintf(w, "Secure: %t\n", c.IsSecure)
-			fmt.Fprintf(w, "Visible: %t\n", c.IsVisible)
-			fmt.Fprintf(w, "Hidden: %t\n", c.IsHidden)
-			fmt.Fprintf(w, "Strength: %d%%\n", c.Strength())
-			if c.LastConnected != nil {
-				fmt.Fprintf(w, "Last Connected: %s\n", helpers.FormatDuration(*c.LastConnected))
-			}
-			return nil
-		}
+	c, found := findConnectionBySSID(connections, ssid)
+	if !found {
+		return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 	}
 
-	return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
+	secret, err := b.GetSecrets(ssid)
+	if err != nil {
+		// If we can't get a secret for a known network, that's an error.
+		// But for a visible-only network, it's expected.
+		if c.IsKnown {
+			return fmt.Errorf("failed to get network secret: %w", err)
+		}
+		secret = "" // No secret available
+	}
+
+	if jsonOut {
+		// We need a custom struct to include the passphrase
+		type connectionWithSecret struct {
+			wifi.Connection
+			Passphrase string `json:"passphrase,omitempty"`
+		}
+		return writeJSON(w, connectionWithSecret{Connection: c, Passphrase: secret})
+	}
+
+	return writeConnectionDetails(w, c, secret)
 }
 
 func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, isHidden bool, shouldScan bool, b wifi.Backend) error {

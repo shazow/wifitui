@@ -42,7 +42,7 @@ func ago(duration time.Duration) *time.Time {
 	return &t
 }
 
-// NewBackend creates a new mock.Backend with a list of fun wifi networks.
+// New creates a new mock.Backend with a list of fun wifi networks.
 func New() (wifi.Backend, error) {
 	initialConnections := []wifi.Connection{
 		{SSID: "HideYoKidsHideYoWiFi", LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA},

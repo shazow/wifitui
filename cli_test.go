@@ -479,3 +479,117 @@ func TestRunConnectCustomRetryInterval(t *testing.T) {
 func init() {
 	mock.DefaultActionSleep = 0
 }
+
+func TestParseSecurityType(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    wifi.SecurityType
+		wantErr bool
+	}{
+		{"open", wifi.SecurityOpen, false},
+		{"wep", wifi.SecurityWEP, false},
+		{"wpa", wifi.SecurityWPA, false},
+		{"", wifi.SecurityUnknown, true},
+		{"WPA", wifi.SecurityUnknown, true},
+		{"invalid", wifi.SecurityUnknown, true},
+	}
+	for _, tt := range tests {
+		got, err := parseSecurityType(tt.input)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("parseSecurityType(%q) expected error, got nil", tt.input)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("parseSecurityType(%q) unexpected error: %v", tt.input, err)
+			}
+			if got != tt.want {
+				t.Errorf("parseSecurityType(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		}
+	}
+}
+
+func TestParseRetryConfig(t *testing.T) {
+	tests := []struct {
+		input        string
+		wantTotal    time.Duration
+		wantInterval time.Duration
+		wantErr      bool
+	}{
+		{"", 0, defaultRetryInterval, false},
+		{"60s", 60 * time.Second, defaultRetryInterval, false},
+		{"2m", 2 * time.Minute, defaultRetryInterval, false},
+		{"2m:20s", 2 * time.Minute, 20 * time.Second, false},
+		{"invalid", 0, 0, true},
+		{"60s:invalid", 0, 0, true},
+	}
+	for _, tt := range tests {
+		got, err := parseRetryConfig(tt.input)
+		if tt.wantErr {
+			if err == nil {
+				t.Errorf("parseRetryConfig(%q) expected error, got nil", tt.input)
+			}
+		} else {
+			if err != nil {
+				t.Errorf("parseRetryConfig(%q) unexpected error: %v", tt.input, err)
+			}
+			if got.Total != tt.wantTotal {
+				t.Errorf("parseRetryConfig(%q).Total = %v, want %v", tt.input, got.Total, tt.wantTotal)
+			}
+			if got.Interval != tt.wantInterval {
+				t.Errorf("parseRetryConfig(%q).Interval = %v, want %v", tt.input, got.Interval, tt.wantInterval)
+			}
+		}
+	}
+}
+
+func TestFilterVisibleConnections(t *testing.T) {
+	connections := []wifi.Connection{
+		{SSID: "visible1", IsVisible: true},
+		{SSID: "hidden1", IsVisible: false},
+		{SSID: "visible2", IsVisible: true},
+		{SSID: "hidden2", IsVisible: false},
+	}
+
+	visible := filterVisibleConnections(connections)
+	if len(visible) != 2 {
+		t.Fatalf("filterVisibleConnections() returned %d connections, want 2", len(visible))
+	}
+	for _, c := range visible {
+		if !c.IsVisible {
+			t.Errorf("filterVisibleConnections() returned non-visible connection %q", c.SSID)
+		}
+	}
+
+	// Empty input
+	if got := filterVisibleConnections(nil); got != nil {
+		t.Errorf("filterVisibleConnections(nil) = %v, want nil", got)
+	}
+}
+
+func TestFindConnectionBySSID(t *testing.T) {
+	connections := []wifi.Connection{
+		{SSID: "NetworkA"},
+		{SSID: "NetworkB"},
+		{SSID: "NetworkC"},
+	}
+
+	c, found := findConnectionBySSID(connections, "NetworkB")
+	if !found {
+		t.Fatal("findConnectionBySSID() did not find existing network")
+	}
+	if c.SSID != "NetworkB" {
+		t.Errorf("findConnectionBySSID() returned wrong network: got %q, want %q", c.SSID, "NetworkB")
+	}
+
+	_, found = findConnectionBySSID(connections, "NotThere")
+	if found {
+		t.Error("findConnectionBySSID() returned true for missing network")
+	}
+
+	_, found = findConnectionBySSID(nil, "NetworkA")
+	if found {
+		t.Error("findConnectionBySSID() returned true for empty slice")
+	}
+}

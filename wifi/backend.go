@@ -39,9 +39,7 @@ func (c Connection) Strength() uint8 {
 	if len(c.AccessPoints) == 0 {
 		return 0
 	}
-	// Sort access points by strength descending to ensure the first one is the strongest.
-	// Note: We return the strength of the first AP, assuming the list is sorted or we sort it here.
-	// Since AccessPoints might be unsorted, let's find the max.
+	// Find the maximum strength across all access points.
 	maxStrength := uint8(0)
 	for _, ap := range c.AccessPoints {
 		if ap.Strength > maxStrength {
