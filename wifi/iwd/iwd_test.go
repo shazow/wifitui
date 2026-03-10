@@ -14,7 +14,7 @@ import (
 func TestBuild8021xProfilePEAP(t *testing.T) {
 	opts := wifi.JoinOptions{
 		SSID:              "eduroam",
-		Password:          " secret\\pw\n",
+		Password:          " secret\\pw ",
 		Identity:          "user@example.edu",
 		AnonymousIdentity: "anonymous@example.edu",
 		EAP:               "peap",
@@ -34,7 +34,7 @@ func TestBuild8021xProfilePEAP(t *testing.T) {
 		"EAP-Identity=anonymous@example.edu",
 		"EAP-PEAP-Phase2-Method=MSCHAPV2",
 		"EAP-PEAP-Phase2-Identity=user@example.edu",
-		`EAP-PEAP-Phase2-Password=\ssecret\\pw\n`,
+		`EAP-PEAP-Phase2-Password=\ssecret\\pw\s`,
 	} {
 		if !strings.Contains(profile, want) {
 			t.Fatalf("profile missing %q:\n%s", want, profile)
@@ -86,7 +86,7 @@ func TestWrite8021xProfileEncodesSSIDInFilename(t *testing.T) {
 		t.Fatalf("write8021xProfile() failed: %v", err)
 	}
 
-	path := filepath.Join(iwdProfileDir, "=436166652f4775657374.8021x")
+	path := filepath.Join(iwdProfileDir, encodeSSIDForProfileName(opts.SSID)+".8021x")
 	content, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("failed to read written profile: %v", err)

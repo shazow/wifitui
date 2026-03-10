@@ -406,7 +406,7 @@ func (b *Backend) waitForConnection(ssid string) error {
 
 func write8021xProfile(opts wifi.JoinOptions) error {
 	if err := os.MkdirAll(iwdProfileDir, 0o700); err != nil {
-		return fmt.Errorf("failed to create iwd profile directory: %w", err)
+		return fmt.Errorf("failed to create iwd profile directory %q (writing iwd profiles typically requires root): %w", iwdProfileDir, err)
 	}
 
 	path := filepath.Join(iwdProfileDir, encodeSSIDForProfileName(opts.SSID)+".8021x")
@@ -468,6 +468,8 @@ func build8021xProfile(opts wifi.JoinOptions) string {
 }
 
 func encodeSSIDForProfileName(ssid string) string {
+	// Match iwd.network(5): only ASCII alphanumerics, spaces, underscores, and
+	// hyphens are used verbatim; anything else is encoded as "=" + lowercase hex.
 	for i := 0; i < len(ssid); i++ {
 		if isAllowedSSIDChar(ssid[i]) {
 			continue
@@ -509,6 +511,9 @@ func normalizeTTLSPhase2(method string) string {
 }
 
 func escapeIWDSettingValue(value string) string {
+	// Match iwd.network(5) keyfile escaping rules for leading/trailing spaces,
+	// tabs, newlines, carriage returns, and backslashes.
+	last := len(value) - 1
 	var b strings.Builder
 	for i, r := range value {
 		switch r {
@@ -521,7 +526,7 @@ func escapeIWDSettingValue(value string) string {
 		case '\t':
 			b.WriteString("\\t")
 		case ' ':
-			if i == 0 {
+			if i == 0 || i == last {
 				b.WriteString("\\s")
 			} else {
 				b.WriteRune(r)
