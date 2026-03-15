@@ -39,6 +39,40 @@ type Backend struct {
 	WifiInterface string
 }
 
+func (b *Backend) ListDevices() ([]wifi.Device, error) {
+	cmd := exec.Command("networksetup", "-listallhardwareports")
+	out, err := runWithOutput(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list hardware ports: %w", wifi.ErrOperationFailed)
+	}
+
+	device, err := findWifiDevice(string(out))
+	if err != nil {
+		return nil, err
+	}
+
+	return []wifi.Device{{
+		Name:    device,
+		Type:    "wifi",
+		Backend: "darwin",
+		State:   "available",
+	}}, nil
+}
+
+func (b *Backend) SetDevice(name string) error {
+	devices, err := b.ListDevices()
+	if err != nil {
+		return err
+	}
+	for _, d := range devices {
+		if d.Name == name {
+			b.WifiInterface = name
+			return nil
+		}
+	}
+	return fmt.Errorf("device not found: %s: %w", name, wifi.ErrNotFound)
+}
+
 // New creates a new darwin.Backend.
 func New() (wifi.Backend, error) {
 	// Find the Wi-Fi interface name (e.g., en0)
@@ -120,14 +154,14 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			aggregatedConns[net.ssid] = conn
 		} else {
 			aggregatedConns[net.ssid] = wifi.Connection{
-				SSID:        net.ssid,
-				IsActive:    isActive,
-				IsKnown:     isKnown,
-				IsVisible:   true,
+				SSID:         net.ssid,
+				IsActive:     isActive,
+				IsKnown:      isKnown,
+				IsVisible:    true,
 				AccessPoints: []wifi.AccessPoint{ap},
-				IsSecure:    net.security != wifi.SecurityOpen,
-				Security:    net.security,
-				AutoConnect: isKnown,
+				IsSecure:     net.security != wifi.SecurityOpen,
+				Security:     net.security,
+				AutoConnect:  isKnown,
 			}
 		}
 	}

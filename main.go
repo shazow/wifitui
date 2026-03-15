@@ -17,6 +17,7 @@ var (
 
 	// Avoid retrying scans too frequently, else the scan requests get lost.
 	defaultRetryInterval = 10 * time.Second
+	defaultWaitDuration  = 60 * time.Second
 )
 
 // parseSecurityType converts a security string (open, wep, wpa) to a wifi.SecurityType.
@@ -45,13 +46,13 @@ func parseRetryConfig(s string) (RetryConfig, error) {
 	var err error
 	retry.Total, err = time.ParseDuration(parts[0])
 	if err != nil {
-		return RetryConfig{}, fmt.Errorf("invalid duration format for --retry-for: %w", err)
+		return RetryConfig{}, fmt.Errorf("invalid duration format for --retry: %w", err)
 	}
 
 	if len(parts) > 1 {
 		retry.Interval, err = time.ParseDuration(parts[1])
 		if err != nil {
-			return RetryConfig{}, fmt.Errorf("invalid sleep duration format for --retry-for: %w", err)
+			return RetryConfig{}, fmt.Errorf("invalid sleep duration format for --retry: %w", err)
 		}
 	}
 
@@ -61,26 +62,26 @@ func parseRetryConfig(s string) (RetryConfig, error) {
 // Options defines the root-level flags
 type Options struct {
 	Theme   string `long:"theme" description:"path to theme toml file" env:"WIFITUI_THEME"`
+	Device  string `long:"device" description:"wireless interface to use"`
 	Version bool   `long:"version" description:"display version"`
 
-	Tui     TuiCommand     `command:"tui" description:"Run the TUI (default)"`
-	List    ListCommand    `command:"list" description:"List wifi networks"`
-	Show    ShowCommand    `command:"show" description:"Show a wifi network"`
-	Connect ConnectCommand `command:"connect" description:"Connect to a wifi network"`
-	Radio   RadioCommand   `command:"radio" description:"Control the wifi radio (on|off|toggle)"`
+	Tui        TuiCommand        `command:"tui" description:"Run the TUI (default)"`
+	List       ListCommand       `command:"list" description:"List wifi networks"`
+	Show       ShowCommand       `command:"show" description:"Show a wifi network"`
+	Connect    ConnectCommand    `command:"connect" description:"Connect to a wifi network"`
+	Devices    DevicesCommand    `command:"devices" description:"List wireless devices"`
+	Radio      RadioCommand      `command:"radio" description:"Control the wifi radio (on|off|toggle)"`
+	Completion CompletionCommand `command:"completion" description:"Generate shell completion script"`
 }
 
-// TuiCommand defines the handler for the "tui" subcommand
 type TuiCommand struct{}
 
-// ListCommand defines the flags and arguments for the "list" subcommand
 type ListCommand struct {
 	JSON bool `long:"json" description:"output in JSON format"`
 	All  bool `long:"all" description:"list all saved and visible networks"`
 	Scan bool `long:"scan" description:"scan for new visible networks"`
 }
 
-// ShowCommand defines the flags and arguments for the "show" subcommand
 type ShowCommand struct {
 	JSON bool `long:"json" description:"output in JSON format"`
 	Args struct {
@@ -88,31 +89,51 @@ type ShowCommand struct {
 	} `positional-args:"yes"`
 }
 
-// ConnectCommand defines the flags and arguments for the "connect" subcommand
 type ConnectCommand struct {
 	Passphrase string `long:"passphrase" description:"passphrase for the network"`
 	Security   string `long:"security" default:"wpa" description:"security type" choice:"open" choice:"wep" choice:"wpa"`
 	Hidden     bool   `long:"hidden" description:"network is hidden"`
-	RetryFor   string `long:"retry-for" description:"duration to retry connection (e.g. 60s or 2m:20s)" value-name:"DURATION[:INTERVAL]"`
+	Retry      string `long:"retry" description:"duration to retry connection (e.g. 60s or 2m:20s)" value-name:"DURATION[:INTERVAL]"`
+	RetryFor   string `long:"retry-for" hidden:"true" description:"deprecated alias for --retry"`
+	Wait       string `long:"wait" optional:"true" optional-value:"60s" value-name:"DURATION" description:"wait for SSID to appear (optional timeout, default 60s)"`
 	Args       struct {
 		SSID string `positional-arg-name:"ssid" required:"true"`
 	} `positional-args:"yes"`
 }
 
-// RadioCommand defines the argument for the "radio" subcommand
-// Action may be one of: on, off, toggle.
+type DevicesCommand struct {
+	JSON bool `long:"json" description:"output in JSON format with metadata"`
+}
+
+type CompletionCommand struct {
+	Args struct {
+		Shell string `positional-arg-name:"shell" required:"true" choice:"bash" choice:"zsh" choice:"fish"`
+	} `positional-args:"yes"`
+}
+
 type RadioCommand struct {
 	Args struct {
 		Action string `positional-arg-name:"action"`
 	} `positional-args:"yes"`
 }
 
-// We need a global backend to be accessible by the command handlers.
 var b wifi.Backend
 var opts Options
 
-// Execute is the handler for the "tui" subcommand
+func configureBackendDevice() error {
+	if opts.Device == "" {
+		return nil
+	}
+	if err := b.SetDevice(opts.Device); err != nil {
+		return fmt.Errorf("failed to select device %q: %w", opts.Device, err)
+	}
+	return nil
+}
+
 func (c *TuiCommand) Execute(args []string) error {
+	if err := configureBackendDevice(); err != nil {
+		return err
+	}
 	if opts.Theme != "" {
 		f, err := os.Open(opts.Theme)
 		if err != nil {
@@ -128,39 +149,74 @@ func (c *TuiCommand) Execute(args []string) error {
 	return runTUI(b)
 }
 
-// Execute is the handler for the "list" subcommand
 func (c *ListCommand) Execute(args []string) error {
+	if err := configureBackendDevice(); err != nil {
+		return err
+	}
 	return runList(os.Stdout, c.JSON, c.All, c.Scan, b)
 }
 
-// Execute is the handler for the "show" subcommand
 func (c *ShowCommand) Execute(args []string) error {
+	if err := configureBackendDevice(); err != nil {
+		return err
+	}
 	return runShow(os.Stdout, c.JSON, c.Args.SSID, b)
 }
 
-// Execute is the handler for the "connect" subcommand
 func (c *ConnectCommand) Execute(args []string) error {
+	if err := configureBackendDevice(); err != nil {
+		return err
+	}
 	security, err := parseSecurityType(c.Security)
 	if err != nil {
 		return err
 	}
 
-	retry, err := parseRetryConfig(c.RetryFor)
+	retryArg := c.Retry
+	if retryArg == "" {
+		retryArg = c.RetryFor
+	}
+	retry, err := parseRetryConfig(retryArg)
 	if err != nil {
 		return err
+	}
+
+	if c.Wait != "" {
+		retry.RequireVisible = true
+		waitDuration := defaultWaitDuration
+		if c.Wait != "60s" {
+			waitDuration, err = time.ParseDuration(c.Wait)
+			if err != nil {
+				return fmt.Errorf("invalid duration format for --wait: %w", err)
+			}
+		}
+		if retry.Total < waitDuration {
+			retry.Total = waitDuration
+		}
 	}
 
 	return runConnect(os.Stdout, c.Args.SSID, c.Passphrase, security, c.Hidden, retry, b)
 }
 
-// Execute is the handler for the "radio" subcommand
+func (c *DevicesCommand) Execute(args []string) error {
+	if err := configureBackendDevice(); err != nil {
+		return err
+	}
+	return runDevices(os.Stdout, c.JSON, b)
+}
+
+func (c *CompletionCommand) Execute(args []string) error {
+	return runCompletion(os.Stdout, c.Args.Shell)
+}
+
 func (c *RadioCommand) Execute(args []string) error {
+	if err := configureBackendDevice(); err != nil {
+		return err
+	}
 	return runRadio(os.Stdout, c.Args.Action, b)
 }
 
-// run is the main entry point that returns an error instead of calling os.Exit directly.
 func run() error {
-	// Manually check for --version flag before parsing to avoid unnecessary backend init.
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" {
 			fmt.Println(Version)
@@ -168,7 +224,6 @@ func run() error {
 		}
 	}
 
-	// Initialize the backend before parsing, so it's available to Execute methods.
 	var err error
 	b, err = GetBackend()
 	if err != nil {
@@ -179,29 +234,23 @@ func run() error {
 	parser.ShortDescription = "A simple TUI for managing wifi connections."
 	parser.LongDescription = "wifitui is a TUI and CLI for managing wifi connections."
 
-	// Parse arguments.
 	_, err = parser.Parse()
 	if err != nil {
 		if flagsErr, ok := err.(*flags.Error); ok {
 			if flagsErr.Type == flags.ErrHelp {
-				// Help was requested, so print the help message.
 				parser.WriteHelp(os.Stdout)
 				return nil
 			}
 			if flagsErr.Type == flags.ErrCommandRequired {
-				// No command was specified, so run the TUI by default.
 				return opts.Tui.Execute(nil)
 			}
 		}
-
-		// For any other error, return it.
 		return err
 	}
 
 	return nil
 }
 
-// main is the entry point of the application
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
