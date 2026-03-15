@@ -160,4 +160,3 @@ func TestFocusManager_Recursive(t *testing.T) {
 		t.Fatalf("Expected item2 to be focused in fm2, got %v", fm2.Focused())
 	}
 }
-
