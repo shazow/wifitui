@@ -85,8 +85,22 @@ type UpdateOptions struct {
 	AutoConnect *bool
 }
 
+// Device describes a wireless interface exposed by a backend.
+type Device struct {
+	Name    string         `json:"name"`
+	Type    string         `json:"type,omitempty"`
+	State   string         `json:"state,omitempty"`
+	Backend string         `json:"backend,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
 // Backend defines the interface for managing network connections.
 type Backend interface {
+	// ListDevices returns wireless-capable interfaces available to the backend.
+	ListDevices() ([]Device, error)
+	// SetDevice selects which device the backend should target.
+	SetDevice(name string) error
+
 	// BuildNetworkList scans (if shouldScan is true) and returns all networks.
 	BuildNetworkList(shouldScan bool) ([]Connection, error)
 	// ActivateConnection activates a known network.

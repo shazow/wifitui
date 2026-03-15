@@ -67,6 +67,52 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 	return nil, fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 }
 
+func (b *Backend) ListDevices() ([]wifi.Device, error) {
+	devices, err := b.NM.GetDevices()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]wifi.Device, 0)
+	for _, device := range devices {
+		dev, ok := device.(gonetworkmanager.DeviceWireless)
+		if !ok {
+			continue
+		}
+		iface, _ := dev.GetPropertyInterface()
+		state := "available"
+		if b.Device != nil && dev.GetPath() == b.Device.GetPath() {
+			state = "selected"
+		}
+		out = append(out, wifi.Device{Name: iface, Type: "wifi", State: state, Backend: "networkmanager"})
+	}
+
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no wireless devices found: %w", wifi.ErrNotFound)
+	}
+
+	return out, nil
+}
+
+func (b *Backend) SetDevice(name string) error {
+	devices, err := b.NM.GetDevices()
+	if err != nil {
+		return err
+	}
+	for _, device := range devices {
+		dev, ok := device.(gonetworkmanager.DeviceWireless)
+		if !ok {
+			continue
+		}
+		iface, _ := dev.GetPropertyInterface()
+		if iface == name {
+			b.Device = dev
+			return nil
+		}
+	}
+	return fmt.Errorf("device not found: %s: %w", name, wifi.ErrNotFound)
+}
+
 func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
