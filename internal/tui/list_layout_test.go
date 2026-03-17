@@ -48,11 +48,6 @@ func TestListModel_ContentAwareLayout(t *testing.T) {
 		// Load connections
 		m.Update(connectionsLoadedMsg(conns))
 
-		// Manually calculate and set width (simulating tui.go logic)
-		item := connectionItem{Connection: conns[0]}
-		w := lipgloss.Width(getIcon(item) + item.Title()) + 2
-		m.SetColumnWidth(w)
-
 		// Trigger resize to update layout
 		m.Update(tea.WindowSizeMsg{Width: windowWidth, Height: 20})
 
@@ -86,7 +81,9 @@ func TestListModel_ContentAwareLayout(t *testing.T) {
 	contentWidth := lipgloss.Width(icon + longSSID)
 	// contentWidth should be around 38 if icon is 3.
 	expected := contentWidth + 2
-	if expected < 30 { expected = 30 } // Should not happen for 35 chars
+	if expected < 30 {
+		expected = 30
+	} // Should not happen for 35 chars
 
 	checkContentLayout(longSSID, 100, expected)
 
