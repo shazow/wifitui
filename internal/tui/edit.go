@@ -357,7 +357,7 @@ func (m *EditModel) View() string {
 			lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder()).
 				Padding(1, 2).
-				Width(m.availableContentWidth()).
+				Width(m.availableContentWidth() + 1).
 				Render(details.String()),
 		)
 		s.WriteString("\n\n")
