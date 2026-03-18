@@ -32,6 +32,7 @@ type EditModel struct {
 	hasError            bool
 	selectedItem        connectionItem
 	width               int
+	window              *WindowState
 }
 
 const (
@@ -41,6 +42,10 @@ const (
 )
 
 func NewEditModel(item *connectionItem) *EditModel {
+	return NewEditModelWithWindow(item, nil)
+}
+
+func NewEditModelWithWindow(item *connectionItem, window *WindowState) *EditModel {
 	if item == nil {
 		item = &connectionItem{}
 	}
@@ -61,7 +66,7 @@ func NewEditModel(item *connectionItem) *EditModel {
 	passwordInput.Width = 45
 	passwordInput.EchoMode = textinput.EchoPassword
 
-	m := EditModel{selectedItem: *item, width: defaultEditContentWidth + editHorizontalMargin*2}
+	m := EditModel{selectedItem: *item, window: window}
 
 	m.ssidAdapter = &TextInput{
 		Model: ssidInput,
@@ -85,6 +90,12 @@ func NewEditModel(item *connectionItem) *EditModel {
 		label:   "Passphrase:",
 		OnFocus: onPasswordFocus,
 		OnBlur:  onPasswordBlur,
+	}
+
+	if m.window != nil && m.window.Width > 0 {
+		m.applyWindowWidth(m.window.Width)
+	} else {
+		m.applyWindowWidth(defaultEditContentWidth + editHorizontalMargin*2)
 	}
 
 	if isNew {
@@ -217,6 +228,9 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if m.window != nil {
+			m.window.Update(msg)
+		}
 		m.applyWindowWidth(msg.Width)
 		return m, nil
 	case secretsLoadedMsg:
@@ -272,6 +286,13 @@ func (m *EditModel) IsConsumingInput() bool {
 
 func (m *EditModel) availableContentWidth() int {
 	if m.width <= 0 {
+		if m.window != nil && m.window.Width > 0 {
+			contentWidth := m.window.Width - (editHorizontalMargin * 2)
+			if contentWidth < 20 {
+				return 20
+			}
+			return contentWidth
+		}
 		return defaultEditContentWidth
 	}
 	contentWidth := m.width - (editHorizontalMargin * 2)

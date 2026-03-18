@@ -30,7 +30,8 @@ func NewModel(b wifi.Backend) (*model, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
-	listModel := NewListModel()
+	window := &WindowState{}
+	listModel := NewListModelWithWindow(window)
 
 	m := model{
 		stack:     NewComponentStack(listModel),

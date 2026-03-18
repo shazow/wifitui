@@ -106,6 +106,7 @@ type ListModel struct {
 	numScans           int // Number of scans with results since enter
 	width              int
 	height             int
+	window             *WindowState
 	ssidColumnWidth    int
 	desiredColumnWidth int
 }
@@ -136,10 +137,15 @@ func (m *ListModel) OnEnter() tea.Cmd {
 }
 
 func NewListModel() *ListModel {
+	return NewListModelWithWindow(nil)
+}
+
+func NewListModelWithWindow(window *WindowState) *ListModel {
 	// m needs to be a pointer to be assigned to listModel
 	m := &ListModel{
 		ssidColumnWidth:    defaultSSIDColumnWidth,
 		desiredColumnWidth: defaultSSIDColumnWidth + 2,
+		window:             window,
 	}
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	delegate := itemDelegate{
@@ -190,6 +196,9 @@ func (m *ListModel) availableWidth() int {
 	bh, _ := listBorderStyle.GetFrameSize()
 
 	availableWidth := m.width - h - bh
+	if m.window != nil && m.window.Width > 0 {
+		availableWidth = m.window.Width - h - bh
+	}
 	if availableWidth < 1 {
 		return 1
 	}
@@ -275,6 +284,15 @@ func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
 }
 
+func (m *ListModel) newEditModel(item *connectionItem) *EditModel {
+	if m.window != nil {
+		return NewEditModelWithWindow(item, m.window)
+	}
+	editModel := NewEditModel(item)
+	editModel.applyWindowWidth(m.width)
+	return editModel
+}
+
 func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -297,6 +315,9 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		if m.window != nil {
+			m.window.Update(msg)
+		}
 		if msg.Width < minWindowWidth {
 			m.width = minWindowWidth
 		} else {
@@ -344,8 +365,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "n":
-			editModel := NewEditModel(nil)
-			editModel.applyWindowWidth(m.width)
+			editModel := m.newEditModel(nil)
 			return editModel, nil
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
@@ -375,8 +395,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 					if selected.IsKnown {
 						return m, func() tea.Msg { return connectMsg{item: selected} }
 					} else {
-						editModel := NewEditModel(&selected)
-						editModel.applyWindowWidth(m.width)
+						editModel := m.newEditModel(&selected)
 						return editModel, nil
 					}
 				}
@@ -387,8 +406,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				if !ok {
 					break
 				}
-				editModel := NewEditModel(&selected)
-				editModel.applyWindowWidth(m.width)
+				editModel := m.newEditModel(&selected)
 				return editModel, nil
 			}
 		}
