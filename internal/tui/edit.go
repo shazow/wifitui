@@ -217,13 +217,7 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		inputWidth := m.availableContentWidth() - editInputFrameWidth
-		if inputWidth < 10 {
-			inputWidth = 10
-		}
-		m.ssidAdapter.Model.Width = inputWidth
-		m.passwordAdapter.Model.Width = inputWidth
+		m.applyWindowWidth(msg.Width)
 		return m, nil
 	case secretsLoadedMsg:
 		m.secretsLoaded = true
@@ -285,6 +279,16 @@ func (m *EditModel) availableContentWidth() int {
 		return 20
 	}
 	return contentWidth
+}
+
+func (m *EditModel) applyWindowWidth(width int) {
+	m.width = width
+	inputWidth := m.availableContentWidth() - editInputFrameWidth
+	if inputWidth < 10 {
+		inputWidth = 10
+	}
+	m.ssidAdapter.Model.Width = inputWidth
+	m.passwordAdapter.Model.Width = inputWidth
 }
 
 func (m *EditModel) View() string {

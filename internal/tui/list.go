@@ -345,6 +345,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			}
 		case "n":
 			editModel := NewEditModel(nil)
+			editModel.applyWindowWidth(m.width)
 			return editModel, nil
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
@@ -375,6 +376,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 						return m, func() tea.Msg { return connectMsg{item: selected} }
 					} else {
 						editModel := NewEditModel(&selected)
+						editModel.applyWindowWidth(m.width)
 						return editModel, nil
 					}
 				}
@@ -386,6 +388,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 					break
 				}
 				editModel := NewEditModel(&selected)
+				editModel.applyWindowWidth(m.width)
 				return editModel, nil
 			}
 		}
