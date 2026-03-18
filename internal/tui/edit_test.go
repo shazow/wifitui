@@ -68,6 +68,24 @@ func TestEditModel_CancelButton(t *testing.T) {
 	}
 }
 
+func TestEditModel_WindowResizeUsesTerminalWidth(t *testing.T) {
+	m := NewEditModel(nil)
+
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+
+	if got, want := m.availableContentWidth(), 96; got != want {
+		t.Fatalf("expected content width %d, got %d", want, got)
+	}
+
+	if got, want := m.ssidAdapter.Model.Width, 92; got != want {
+		t.Fatalf("expected SSID input width %d, got %d", want, got)
+	}
+
+	if got, want := m.passwordAdapter.Model.Width, 92; got != want {
+		t.Fatalf("expected password input width %d, got %d", want, got)
+	}
+}
+
 func TestEditModel_ForgetFlow(t *testing.T) {
 	item := &connectionItem{
 		Connection: wifi.Connection{SSID: "TestNetwork", IsKnown: true},

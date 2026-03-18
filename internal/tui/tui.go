@@ -30,7 +30,8 @@ func NewModel(b wifi.Backend) (*model, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
-	listModel := NewListModel()
+	window := &WindowState{}
+	listModel := NewListModelWithWindow(window)
 
 	m := model{
 		stack:     NewComponentStack(listModel),
@@ -218,17 +219,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case connectionsLoadedMsg:
-		// Calculate longest SSID
-		w := m.calculateListWidth(msg)
-		m.listModel.SetColumnWidth(w)
-
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case scanFinishedMsg:
-		// Calculate longest SSID
-		w := m.calculateListWidth(msg)
-		m.listModel.SetColumnWidth(w)
-
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case connectionSavedMsg:
@@ -274,22 +267,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, spinnerCmd)
 
 	return m, tea.Batch(cmds...)
-}
-
-// View renders the UI based on the current model state
-func (m *model) calculateListWidth(conns []wifi.Connection) int {
-	maxW := 0
-	for _, c := range conns {
-		// Use helper from list.go/component.go?
-		// We are in the same package.
-		item := connectionItem{Connection: c}
-		w := lipgloss.Width(getIcon(item) + item.Title())
-		if w > maxW {
-			maxW = w
-		}
-	}
-	// Add 2 padding
-	return maxW + 2
 }
 
 // View renders the UI based on the current model state
