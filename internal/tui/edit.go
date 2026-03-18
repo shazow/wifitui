@@ -31,7 +31,14 @@ type EditModel struct {
 	secretsLoaded       bool
 	hasError            bool
 	selectedItem        connectionItem
+	width               int
 }
+
+const (
+	defaultEditContentWidth = 50
+	editHorizontalMargin    = 2
+	editInputFrameWidth     = 4 // text input border + horizontal padding
+)
 
 func NewEditModel(item *connectionItem) *EditModel {
 	if item == nil {
@@ -54,7 +61,7 @@ func NewEditModel(item *connectionItem) *EditModel {
 	passwordInput.Width = 45
 	passwordInput.EchoMode = textinput.EchoPassword
 
-	m := EditModel{selectedItem: *item}
+	m := EditModel{selectedItem: *item, width: defaultEditContentWidth + editHorizontalMargin*2}
 
 	m.ssidAdapter = &TextInput{
 		Model: ssidInput,
@@ -210,12 +217,13 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		newWidth := int(float64(msg.Width) * 0.8)
-		if newWidth > 80 {
-			newWidth = 80
+		m.width = msg.Width
+		inputWidth := m.availableContentWidth() - editInputFrameWidth
+		if inputWidth < 10 {
+			inputWidth = 10
 		}
-		m.ssidAdapter.Model.Width = newWidth
-		m.passwordAdapter.Model.Width = newWidth
+		m.ssidAdapter.Model.Width = inputWidth
+		m.passwordAdapter.Model.Width = inputWidth
 		return m, nil
 	case secretsLoadedMsg:
 		m.secretsLoaded = true
@@ -266,6 +274,17 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 func (m *EditModel) IsConsumingInput() bool {
 	return m.ssidAdapter.Model.Focused() || m.passwordAdapter.Model.Focused()
+}
+
+func (m *EditModel) availableContentWidth() int {
+	if m.width <= 0 {
+		return defaultEditContentWidth
+	}
+	contentWidth := m.width - (editHorizontalMargin * 2)
+	if contentWidth < 20 {
+		return 20
+	}
+	return contentWidth
 }
 
 func (m *EditModel) View() string {
@@ -323,7 +342,13 @@ func (m *EditModel) View() string {
 			details.WriteString(fmt.Sprintf("\n  %s (%s)", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
 
-		s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(details.String()))
+		s.WriteString(
+			lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				Padding(1, 2).
+				Width(m.availableContentWidth()).
+				Render(details.String()),
+		)
 		s.WriteString("\n\n")
 	}
 
