@@ -285,21 +285,7 @@ func (m *EditModel) IsConsumingInput() bool {
 }
 
 func (m *EditModel) availableContentWidth() int {
-	if m.width <= 0 {
-		if m.window != nil && m.window.Width > 0 {
-			contentWidth := m.window.Width - (editHorizontalMargin * 2)
-			if contentWidth < 20 {
-				return 20
-			}
-			return contentWidth
-		}
-		return defaultEditContentWidth
-	}
-	contentWidth := m.width - (editHorizontalMargin * 2)
-	if contentWidth < 20 {
-		return 20
-	}
-	return contentWidth
+	return m.window.ContentWidth(editHorizontalMargin*2, m.width, 20)
 }
 
 func (m *EditModel) applyWindowWidth(width int) {

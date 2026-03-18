@@ -195,14 +195,7 @@ func (m *ListModel) availableWidth() int {
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
 	bh, _ := listBorderStyle.GetFrameSize()
 
-	availableWidth := m.width - h - bh
-	if m.window != nil && m.window.Width > 0 {
-		availableWidth = m.window.Width - h - bh
-	}
-	if availableWidth < 1 {
-		return 1
-	}
-	return availableWidth
+	return m.window.ContentWidth(h+bh, m.width, 1)
 }
 
 // refreshColumns recalculates the desired SSID column width from the latest connection snapshot.
@@ -277,7 +270,8 @@ func (m *ListModel) updateListSize() {
 	// extraVerticalSpace covers margins + border + status bar (2 lines)
 	extraVerticalSpace := v + bv + 2
 
-	m.list.SetSize(availableWidth, m.height-extraVerticalSpace-helpHeight)
+	windowHeight := m.window.BaseHeight(m.height)
+	m.list.SetSize(availableWidth, windowHeight-extraVerticalSpace-helpHeight)
 }
 
 func (m *ListModel) SetItems(items []list.Item) {
