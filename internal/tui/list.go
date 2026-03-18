@@ -196,7 +196,11 @@ func (m *ListModel) availableWidth() int {
 	return availableWidth
 }
 
-func (m *ListModel) recalculateDesiredColumnWidth(conns []wifi.Connection) {
+// refreshColumns recalculates the desired SSID column width from the latest connection snapshot.
+//
+// Call this whenever the connection list changes (e.g. after scans or reloads)
+// before updateListSize so the rendered columns can adapt to content.
+func (m *ListModel) refreshColumns(conns []wifi.Connection) {
 	maxW := 0
 	for _, c := range conns {
 		item := connectionItem{Connection: c}
@@ -302,7 +306,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.updateListSize()
 		return m, nil
 	case connectionsLoadedMsg:
-		m.recalculateDesiredColumnWidth(msg)
+		m.refreshColumns(msg)
 		items := make([]list.Item, len(msg))
 		for i, c := range msg {
 			items[i] = connectionItem{Connection: c}
@@ -311,7 +315,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.updateListSize()
 		return m, nil
 	case scanFinishedMsg:
-		m.recalculateDesiredColumnWidth(msg)
+		m.refreshColumns(msg)
 		items := make([]list.Item, len(msg))
 		for i, c := range msg {
 			items[i] = connectionItem{Connection: c}
