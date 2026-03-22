@@ -210,12 +210,8 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		newWidth := int(float64(msg.Width) * 0.8)
-		if newWidth > 80 {
-			newWidth = 80
-		}
-		m.ssidAdapter.Model.Width = newWidth
-		m.passwordAdapter.Model.Width = newWidth
+		w := min(80, InnerWidth(int(float64(msg.Width)*0.8), 0, 30))
+		m.ssidAdapter.Model.Width, m.passwordAdapter.Model.Width = w, w
 		return m, nil
 	case secretsLoadedMsg:
 		m.secretsLoaded = true

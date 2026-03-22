@@ -100,14 +100,16 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type ListModel struct {
-	list            list.Model
-	isForgetting    bool
-	scanner         *ScanSchedule
+	list             list.Model
+	isForgetting     bool
+	scanner          *ScanSchedule
 	numScans         int // Number of scans with results since enter
-	width           int
-	height          int
-	ssidColumnWidth int
-	contentWidth    int
+	width            int
+	height           int
+	ssidColumnWidth  int
+	contentWidth     int
+	styleOuterMargin lipgloss.Style
+	styleListBorder  lipgloss.Style
 }
 
 // IsConsumingInput returns whether the model is focused on a text input.
@@ -131,8 +133,10 @@ func (m *ListModel) OnEnter() tea.Cmd {
 func NewListModel() *ListModel {
 	// m needs to be a pointer to be assigned to listModel
 	m := &ListModel{
-		ssidColumnWidth: 30,
-		contentWidth:    32, // Default 30 + 2 padding
+		ssidColumnWidth:  30,
+		contentWidth:     32, // Default 30 + 2 padding
+		styleOuterMargin: lipgloss.NewStyle().Margin(1, 2),
+		styleListBorder:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border),
 	}
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	delegate := itemDelegate{
@@ -177,12 +181,17 @@ func (m *ListModel) SetSize(w, h int) {
 	m.list.SetSize(w, h)
 }
 
-func (m *ListModel) updateListSize() {
-	h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	bh, bv := listBorderStyle.GetFrameSize()
+func (m *ListModel) availableWidth() int {
+	h, _ := m.styleOuterMargin.GetFrameSize()
+	bh, _ := m.styleListBorder.GetFrameSize()
+	return BoxContentWidth(m.width, h, bh, 0)
+}
 
-	availableWidth := m.width - h - bh
+func (m *ListModel) updateListSize() {
+	_, v := m.styleOuterMargin.GetFrameSize()
+	_, bv := m.styleListBorder.GetFrameSize()
+
+	availableWidth := m.availableWidth()
 
 	// Calculate ssidColumnWidth
 	// Reserve space for: "  " (2) + " " (1) + Description (~30)
@@ -190,15 +199,8 @@ func (m *ListModel) updateListSize() {
 	const listContentOverhead = 33
 	availableForSSID := availableWidth - listContentOverhead
 
-	// Target is content width (which includes padding)
-	targetSSIDWidth := m.contentWidth
-
-	// Clamp between 30 and 60
-	if targetSSIDWidth < 30 {
-		targetSSIDWidth = 30
-	} else if targetSSIDWidth > 60 {
-		targetSSIDWidth = 60
-	}
+	// Target is content width (which includes padding), clamped between 30 and 60.
+	targetSSIDWidth := min(60, max(30, m.contentWidth))
 
 	// Ensure we don't exceed available space, but respect the absolute minimum of 30
 	if targetSSIDWidth > availableForSSID {
@@ -228,7 +230,7 @@ func (m *ListModel) updateListSize() {
 	// extraVerticalSpace covers margins + border + status bar (2 lines)
 	extraVerticalSpace := v + bv + 2
 
-	m.list.SetSize(availableWidth, m.height-extraVerticalSpace-helpHeight)
+	m.list.SetSize(availableWidth, InnerHeight(m.height, extraVerticalSpace+helpHeight, 0))
 }
 
 func (m *ListModel) SetItems(items []list.Item) {
@@ -376,11 +378,8 @@ func (m *ListModel) OnLeave() tea.Cmd {
 
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
-	h, _ := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	bh, _ := listBorderStyle.GetFrameSize()
-	availableWidth := m.width - h - bh
-	listBorderStyle = listBorderStyle.Width(availableWidth)
+	availableWidth := m.availableWidth()
+	listBorderStyle := m.styleListBorder.Width(availableWidth)
 
 	help := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
@@ -392,7 +391,7 @@ func (m *ListModel) View() string {
 	}
 	viewBuilder.WriteString("\n")
 	viewBuilder.WriteString(statusText)
-	return lipgloss.NewStyle().Margin(1, 2).Render(viewBuilder.String())
+	return m.styleOuterMargin.Render(viewBuilder.String())
 }
 
 func (m *ListModel) FullHelp() [][]key.Binding {
