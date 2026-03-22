@@ -20,6 +20,8 @@ type model struct {
 	backend       wifi.Backend
 	loading       bool
 	statusMessage string
+
+	listModel *ListModel
 }
 
 // NewModel creates the starting state of our application
@@ -28,12 +30,14 @@ func NewModel(b wifi.Backend) (*model, error) {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(CurrentTheme.Primary)
 
-	listModel := NewListModel()
+	window := &WindowState{}
+	listModel := NewListModelWithWindow(window)
 
 	m := model{
-		stack:   NewComponentStack(listModel),
-		spinner: s,
-		backend: b,
+		stack:     NewComponentStack(listModel),
+		spinner:   s,
+		backend:   b,
+		listModel: listModel,
 	}
 	return &m, nil
 }
@@ -211,7 +215,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				},
 			)
 		}
-	case connectionsLoadedMsg, secretsLoadedMsg, scanFinishedMsg:
+	case secretsLoadedMsg:
+		// Clear loading status
+		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
+	case connectionsLoadedMsg:
+		// Clear loading status
+		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
+	case scanFinishedMsg:
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case connectionSavedMsg:

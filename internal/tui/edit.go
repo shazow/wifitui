@@ -31,9 +31,21 @@ type EditModel struct {
 	secretsLoaded       bool
 	hasError            bool
 	selectedItem        connectionItem
+	width               int
+	window              *WindowState
 }
 
+const (
+	defaultEditContentWidth = 50
+	editHorizontalMargin    = 2
+	editInputFrameWidth     = 4 // text input border + horizontal padding
+)
+
 func NewEditModel(item *connectionItem) *EditModel {
+	return NewEditModelWithWindow(item, nil)
+}
+
+func NewEditModelWithWindow(item *connectionItem, window *WindowState) *EditModel {
 	if item == nil {
 		item = &connectionItem{}
 	}
@@ -54,7 +66,7 @@ func NewEditModel(item *connectionItem) *EditModel {
 	passwordInput.Width = 45
 	passwordInput.EchoMode = textinput.EchoPassword
 
-	m := EditModel{selectedItem: *item}
+	m := EditModel{selectedItem: *item, window: window}
 
 	m.ssidAdapter = &TextInput{
 		Model: ssidInput,
@@ -78,6 +90,12 @@ func NewEditModel(item *connectionItem) *EditModel {
 		label:   "Passphrase:",
 		OnFocus: onPasswordFocus,
 		OnBlur:  onPasswordBlur,
+	}
+
+	if m.window != nil && m.window.Width > 0 {
+		m.applyWindowWidth(m.window.Width)
+	} else {
+		m.applyWindowWidth(defaultEditContentWidth + editHorizontalMargin*2)
 	}
 
 	if isNew {
@@ -210,12 +228,10 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		newWidth := int(float64(msg.Width) * 0.8)
-		if newWidth > 80 {
-			newWidth = 80
+		if m.window != nil {
+			m.window.Update(msg)
 		}
-		m.ssidAdapter.Model.Width = newWidth
-		m.passwordAdapter.Model.Width = newWidth
+		m.applyWindowWidth(msg.Width)
 		return m, nil
 	case secretsLoadedMsg:
 		m.secretsLoaded = true
@@ -266,6 +282,20 @@ func (m *EditModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 func (m *EditModel) IsConsumingInput() bool {
 	return m.ssidAdapter.Model.Focused() || m.passwordAdapter.Model.Focused()
+}
+
+func (m *EditModel) availableContentWidth() int {
+	return m.window.ContentWidth(editHorizontalMargin*2, m.width, 20)
+}
+
+func (m *EditModel) applyWindowWidth(width int) {
+	m.width = width
+	inputWidth := m.availableContentWidth() - editInputFrameWidth
+	if inputWidth < 10 {
+		inputWidth = 10
+	}
+	m.ssidAdapter.Model.Width = inputWidth
+	m.passwordAdapter.Model.Width = inputWidth
 }
 
 func (m *EditModel) View() string {
@@ -323,7 +353,13 @@ func (m *EditModel) View() string {
 			details.WriteString(fmt.Sprintf("\n  %s (%s)", m.selectedItem.LastConnected.Format(time.DateTime), helpers.FormatDuration(*m.selectedItem.LastConnected)))
 		}
 
-		s.WriteString(lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(1, 2).Width(50).Render(details.String()))
+		s.WriteString(
+			lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				Padding(1, 2).
+				Width(m.availableContentWidth() + 1).
+				Render(details.String()),
+		)
 		s.WriteString("\n\n")
 	}
 

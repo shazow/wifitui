@@ -109,4 +109,3 @@ func TestTuiModel_EnableRadioSwitchesView(t *testing.T) {
 		t.Errorf("View does not contain network list title after enabling radio in\n%s", view)
 	}
 }
-

@@ -10,11 +10,22 @@ import (
 
 func TestListModel_NewKey(t *testing.T) {
 	m := NewListModel()
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	nKeyMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}
 	newComp, _ := m.Update(nKeyMsg)
 
-	if _, ok := newComp.(*EditModel); !ok {
+	editModel, ok := newComp.(*EditModel)
+	if !ok {
 		t.Errorf("expected a new EditModel but got %T", newComp)
+		return
+	}
+
+	if got, want := editModel.availableContentWidth(), 96; got != want {
+		t.Fatalf("expected edit model content width %d, got %d", want, got)
+	}
+
+	if got, want := editModel.ssidAdapter.Model.Width, 92; got != want {
+		t.Fatalf("expected SSID input width %d, got %d", want, got)
 	}
 }
 
