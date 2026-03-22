@@ -30,24 +30,11 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	title := i.Title()
 
 	// Add icons for security
-	var icon string
-	if i.IsVisible {
-		switch i.Security {
-		case wifi.SecurityOpen:
-			icon = CurrentTheme.NetworkOpenIcon
-		case wifi.SecurityUnknown:
-			icon = CurrentTheme.NetworkUnknownIcon
-		default:
-			icon = CurrentTheme.NetworkSecureIcon
-		}
-	}
-	if i.IsKnown {
-		icon = CurrentTheme.NetworkSavedIcon
-	}
+	icon := getIcon(i)
 	title = icon + title
 
 	// Define column width for SSID
-	ssidColumnWidth := 30
+	ssidColumnWidth := d.listModel.ssidColumnWidth
 	titleWidth := lipgloss.Width(title)
 
 	// Truncate title if it's too long
@@ -113,13 +100,23 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 }
 
 type ListModel struct {
-	list         list.Model
-	isForgetting bool
-	scanner      *ScanSchedule
-	numScans     int // Number of scans with results since enter
-	width        int
-	height       int
+	list               list.Model
+	isForgetting       bool
+	scanner            *ScanSchedule
+	numScans           int // Number of scans with results since enter
+	width              int
+	height             int
+	window             *WindowState
+	ssidColumnWidth    int
+	desiredColumnWidth int
 }
+
+const (
+	defaultSSIDColumnWidth = 30
+	maxSSIDColumnWidth     = 60
+	listContentOverhead    = 33
+	minWindowWidth         = 70
+)
 
 // IsConsumingInput returns whether the model is focused on a text input.
 func (m *ListModel) IsConsumingInput() bool {
@@ -140,8 +137,16 @@ func (m *ListModel) OnEnter() tea.Cmd {
 }
 
 func NewListModel() *ListModel {
+	return NewListModelWithWindow(nil)
+}
+
+func NewListModelWithWindow(window *WindowState) *ListModel {
 	// m needs to be a pointer to be assigned to listModel
-	m := &ListModel{}
+	m := &ListModel{
+		ssidColumnWidth:    defaultSSIDColumnWidth,
+		desiredColumnWidth: defaultSSIDColumnWidth + 2,
+		window:             window,
+	}
 	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
 	delegate := itemDelegate{
 		listModel: m,
@@ -185,12 +190,77 @@ func (m *ListModel) SetSize(w, h int) {
 	m.list.SetSize(w, h)
 }
 
-func (m *ListModel) updateListSize() {
-	h, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+func (m *ListModel) availableWidth() int {
+	h, _ := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
 	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	bh, bv := listBorderStyle.GetFrameSize()
+	bh, _ := listBorderStyle.GetFrameSize()
 
-	availableWidth := m.width - h - bh
+	return m.window.ContentWidth(h+bh, m.width, 1)
+}
+
+// refreshColumns recalculates the desired SSID column width from the latest connection snapshot.
+//
+// Call this whenever the connection list changes (e.g. after scans or reloads)
+// before updateListSize so the rendered columns can adapt to content.
+func (m *ListModel) refreshColumns(conns []wifi.Connection) {
+	maxW := 0
+	for _, c := range conns {
+		item := connectionItem{Connection: c}
+		w := lipgloss.Width(getIcon(item) + item.Title())
+		if w > maxW {
+			maxW = w
+		}
+	}
+
+	if maxW == 0 {
+		m.desiredColumnWidth = defaultSSIDColumnWidth + 2
+		return
+	}
+
+	m.desiredColumnWidth = maxW + 2
+}
+
+func (m *ListModel) updateListSize() {
+	_, v := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
+	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
+	_, bv := listBorderStyle.GetFrameSize()
+
+	availableWidth := m.availableWidth()
+
+	// Calculate ssidColumnWidth
+	// Reserve space for: "  " (2) + " " (1) + Description (~30)
+	// We want roughly 33 chars reserved for the non-SSID parts of the line.
+	availableForSSID := availableWidth - listContentOverhead
+
+	// Target is content width (which includes padding)
+	targetSSIDWidth := m.desiredColumnWidth
+
+	// Clamp between 30 and 60
+	if targetSSIDWidth < defaultSSIDColumnWidth {
+		targetSSIDWidth = defaultSSIDColumnWidth
+	} else if targetSSIDWidth > maxSSIDColumnWidth {
+		targetSSIDWidth = maxSSIDColumnWidth
+	}
+
+	// Ensure we don't exceed available space, but respect the absolute minimum of 30
+	if targetSSIDWidth > availableForSSID {
+		targetSSIDWidth = availableForSSID
+	}
+	// Hard floor of 30, even if it causes overflow (preserves usability of column)
+	if targetSSIDWidth < defaultSSIDColumnWidth {
+		targetSSIDWidth = defaultSSIDColumnWidth
+	}
+
+	m.ssidColumnWidth = targetSSIDWidth
+
+	// Update list title to match the new column width
+	titlePrefix := CurrentTheme.TitleIcon + "WiFi Network"
+	gap := m.ssidColumnWidth - lipgloss.Width(titlePrefix)
+	if gap < 0 {
+		gap = 0
+	}
+	m.list.Title = fmt.Sprintf("%s%s %s", titlePrefix, strings.Repeat(" ", gap), "Signal")
+
 	// Subtract 2 for the padding spaces in the help string format: " %s "
 	m.list.Help.Width = availableWidth - 2
 
@@ -200,11 +270,21 @@ func (m *ListModel) updateListSize() {
 	// extraVerticalSpace covers margins + border + status bar (2 lines)
 	extraVerticalSpace := v + bv + 2
 
-	m.list.SetSize(availableWidth, m.height-extraVerticalSpace-helpHeight)
+	windowHeight := m.window.BaseHeight(m.height)
+	m.list.SetSize(availableWidth, windowHeight-extraVerticalSpace-helpHeight)
 }
 
 func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
+}
+
+func (m *ListModel) newEditModel(item *connectionItem) *EditModel {
+	if m.window != nil {
+		return NewEditModelWithWindow(item, m.window)
+	}
+	editModel := NewEditModel(item)
+	editModel.applyWindowWidth(m.width)
+	return editModel
 }
 
 func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
@@ -229,23 +309,34 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
+		if m.window != nil {
+			m.window.Update(msg)
+		}
+		if msg.Width < minWindowWidth {
+			m.width = minWindowWidth
+		} else {
+			m.width = msg.Width
+		}
 		m.height = msg.Height
 		m.updateListSize()
 		return m, nil
 	case connectionsLoadedMsg:
+		m.refreshColumns(msg)
 		items := make([]list.Item, len(msg))
 		for i, c := range msg {
 			items[i] = connectionItem{Connection: c}
 		}
 		m.list.SetItems(items)
+		m.updateListSize()
 		return m, nil
 	case scanFinishedMsg:
+		m.refreshColumns(msg)
 		items := make([]list.Item, len(msg))
 		for i, c := range msg {
 			items[i] = connectionItem{Connection: c}
 		}
 		m.list.SetItems(items)
+		m.updateListSize()
 		if len(items) > 0 {
 			m.numScans++
 		}
@@ -268,7 +359,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				return m, tea.Quit
 			}
 		case "n":
-			editModel := NewEditModel(nil)
+			editModel := m.newEditModel(nil)
 			return editModel, nil
 		case "s":
 			return m, func() tea.Msg { return scanMsg{} }
@@ -298,7 +389,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 					if selected.IsKnown {
 						return m, func() tea.Msg { return connectMsg{item: selected} }
 					} else {
-						editModel := NewEditModel(&selected)
+						editModel := m.newEditModel(&selected)
 						return editModel, nil
 					}
 				}
@@ -309,7 +400,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				if !ok {
 					break
 				}
-				editModel := NewEditModel(&selected)
+				editModel := m.newEditModel(&selected)
 				return editModel, nil
 			}
 		}
@@ -335,11 +426,7 @@ func (m *ListModel) OnLeave() tea.Cmd {
 
 func (m *ListModel) View() string {
 	var viewBuilder strings.Builder
-	h, _ := lipgloss.NewStyle().Margin(1, 2).GetFrameSize()
-	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border)
-	bh, _ := listBorderStyle.GetFrameSize()
-	availableWidth := m.width - h - bh
-	listBorderStyle = listBorderStyle.Width(availableWidth)
+	listBorderStyle := lipgloss.NewStyle().Border(lipgloss.RoundedBorder(), true).BorderForeground(CurrentTheme.Border).Width(m.availableWidth())
 
 	help := fmt.Sprintf("\n\n %s ", m.list.Help.View(m))
 	viewBuilder.WriteString(listBorderStyle.Render(m.list.View() + help))
@@ -383,4 +470,22 @@ func truncateString(s string, maxW int) string {
 	}
 	sb.WriteString("…")
 	return sb.String()
+}
+
+func getIcon(i connectionItem) string {
+	var icon string
+	if i.IsVisible {
+		switch i.Security {
+		case wifi.SecurityOpen:
+			icon = CurrentTheme.NetworkOpenIcon
+		case wifi.SecurityUnknown:
+			icon = CurrentTheme.NetworkUnknownIcon
+		default:
+			icon = CurrentTheme.NetworkSecureIcon
+		}
+	}
+	if i.IsKnown {
+		icon = CurrentTheme.NetworkSavedIcon
+	}
+	return icon
 }
