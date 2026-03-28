@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -77,5 +79,60 @@ func TestListModel_ForgetFlow(t *testing.T) {
 		if forgetMsg.item.SSID != "TestNetwork1" {
 			t.Errorf("expected forgetNetworkMsg for 'TestNetwork1' but got for '%s'", forgetMsg.item.SSID)
 		}
+	}
+}
+
+func TestItemDelegate_RenderAPCountAnnotation(t *testing.T) {
+	originalTheme := CurrentTheme
+	CurrentTheme = NewDefaultTheme()
+	CurrentTheme.AccessPointIcon = "📶"
+	t.Cleanup(func() {
+		CurrentTheme = originalTheme
+	})
+
+	d := itemDelegate{listModel: &ListModel{ssidColumnWidth: 30}}
+	m := list.New([]list.Item{}, d, 80, 5)
+
+	item := connectionItem{Connection: wifi.Connection{
+		SSID:      "Cafe Wifi",
+		IsVisible: true,
+		AccessPoints: []wifi.AccessPoint{
+			{BSSID: "00:00:00:00:00:01"},
+			{BSSID: "00:00:00:00:00:02"},
+			{BSSID: "00:00:00:00:00:03"},
+		},
+	}}
+
+	var buf bytes.Buffer
+	d.Render(&buf, m, 0, item)
+	out := buf.String()
+
+	if !strings.Contains(out, "📶×3") {
+		t.Fatalf("expected rendered output to contain AP count annotation, got: %q", out)
+	}
+}
+
+func TestItemDelegate_RenderNoAnnotationForSingleAP(t *testing.T) {
+	originalTheme := CurrentTheme
+	CurrentTheme = NewDefaultTheme()
+	t.Cleanup(func() {
+		CurrentTheme = originalTheme
+	})
+
+	d := itemDelegate{listModel: &ListModel{ssidColumnWidth: 30}}
+	m := list.New([]list.Item{}, d, 80, 5)
+
+	item := connectionItem{Connection: wifi.Connection{
+		SSID:         "Home Wifi",
+		IsVisible:    true,
+		AccessPoints: []wifi.AccessPoint{{BSSID: "00:00:00:00:00:01"}},
+	}}
+
+	var buf bytes.Buffer
+	d.Render(&buf, m, 0, item)
+	out := buf.String()
+
+	if strings.Contains(out, "×1") {
+		t.Fatalf("expected no AP count annotation for a single AP, got: %q", out)
 	}
 }

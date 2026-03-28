@@ -18,6 +18,8 @@ func TestLoadTheme(t *testing.T) {
 		Border = "#800080"
 		SignalHigh = "#008000"
 		SignalLow = "#FFA500"
+
+		AccessPointIcon = "🛰"
 	`
 
 	reader := strings.NewReader(tomlData)
@@ -42,6 +44,10 @@ func TestLoadTheme(t *testing.T) {
 	}
 	if adaptiveColor.Dark != "#00EE00" {
 		t.Errorf("Expected Subtle dark color to be #00EE00, but got %s", adaptiveColor.Dark)
+	}
+
+	if loadedTheme.AccessPointIcon != "🛰" {
+		t.Errorf("Expected AccessPointIcon to be 🛰, but got %q", loadedTheme.AccessPointIcon)
 	}
 }
 
