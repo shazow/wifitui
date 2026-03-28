@@ -61,25 +61,27 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	strengthPart := i.Description()
 	connectedPart := ""
 	if i.IsActive {
-		connectedPart = " (Connected)"
+		connectedPart = "  (Connected)"
 	}
 
-	countPart := ""
+	apCount := ""
 	if len(i.AccessPoints) > 1 {
-		countPart = fmt.Sprintf(" %s×%d", CurrentTheme.AccessPointIcon, len(i.AccessPoints))
+		apCount = "  " + lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(
+			fmt.Sprintf("%s×%d", CurrentTheme.AccessPointIcon, len(i.AccessPoints)),
+		)
 	}
 
 	var desc string
 	var sb strings.Builder
 	if i.Strength() > 0 {
 		sb.WriteString(CurrentTheme.FormatSignalStrength(i.Strength()))
-		sb.WriteString(countPart)
+		sb.WriteString(apCount)
 		sb.WriteString(connectedPart)
 		desc = sb.String()
 	} else {
 		// Networks that are not visible have Strength=0, show their time ago instead
 		sb.WriteString(strengthPart)
-		sb.WriteString(countPart)
+		sb.WriteString(apCount)
 		sb.WriteString(connectedPart)
 		desc = lipgloss.NewStyle().Foreground(CurrentTheme.Subtle).Render(sb.String())
 	}
