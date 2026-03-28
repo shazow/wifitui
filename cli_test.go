@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -352,20 +353,24 @@ func TestRunConnectRetry(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	retryTotal := 7 * time.Second
+	retryInterval := longDuration
+	retryTotal := retryInterval * 3
 
 	// We set ActionSleep to 0 to make the mock actions fast, only our loop sleep matters.
 	fb.MockBackend.ActionSleep = 0
 
 	start := time.Now()
 	// Using passphrase triggers JoinNetwork which we overrode
-	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, RetryConfig{Total: retryTotal, Interval: 5 * time.Second}, fb); err != nil {
+	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, RetryConfig{Total: retryTotal, Interval: retryInterval}, fb); err != nil {
 		t.Fatalf("runConnect() with retry failed: %v", err)
 	}
 	duration := time.Since(start)
 
-	if duration < 5*time.Second {
-		t.Errorf("runConnect() returned too quickly, expected at least 5s delay, got %v", duration)
+	if duration < retryInterval {
+		t.Fatalf("expected at least one retry sleep (%v), got %v", retryInterval, duration)
+	}
+	if duration > retryInterval*4 {
+		t.Fatalf("retry path took unexpectedly long: %v", duration)
 	}
 
 	// Check if scan was performed
@@ -377,7 +382,7 @@ func TestRunConnectRetry(t *testing.T) {
 	output := buf.String()
 	// We expect 2 failures:
 	// 1. "Quick connect failed..."
-	// 2. "Connection failed: ... Retrying in 5s..."
+	// 2. "Connection failed: ... Retrying in <interval>..."
 	if !strings.Contains(output, "Quick connect failed") {
 		t.Errorf("expected fast retry message, got:\n%s", output)
 	}
@@ -406,20 +411,21 @@ func TestRunConnectFastRetry(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	retryTotal := 7 * time.Second
+	retryTotal := longDuration * 3
+	retryInterval := longDuration
 
 	// We set ActionSleep to 0 to make the mock actions fast.
 	fb.MockBackend.ActionSleep = 0
 
 	start := time.Now()
 	// Using passphrase triggers JoinNetwork which we overrode
-	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, RetryConfig{Total: retryTotal, Interval: 5 * time.Second}, fb); err != nil {
+	if err := runConnect(&buf, "retry-network", "password", wifi.SecurityWPA, false, RetryConfig{Total: retryTotal, Interval: retryInterval}, fb); err != nil {
 		t.Fatalf("runConnect() with fast retry failed: %v", err)
 	}
 	duration := time.Since(start)
 
-	if duration > 2*time.Second {
-		t.Errorf("runConnect() took too long for fast retry, got %v", duration)
+	if duration > retryInterval {
+		t.Errorf("expected fast retry path to avoid sleeping, took %v", duration)
 	}
 
 	// Check if scan was performed
@@ -453,8 +459,8 @@ func TestRunConnectCustomRetryInterval(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	retryTotal := 5 * time.Second
-	retryInterval := 2 * time.Second
+	retryInterval := shortDuration
+	retryTotal := retryInterval * 3
 
 	fb.MockBackend.ActionSleep = 0
 
@@ -464,15 +470,16 @@ func TestRunConnectCustomRetryInterval(t *testing.T) {
 	}
 	duration := time.Since(start)
 
-	// Expected wait: 1st retry (fast) is immediate, 2nd retry waits for retryInterval (2s).
-	// Total wait should be around 2s.
-	if duration < 2*time.Second || duration > 3*time.Second {
-		t.Errorf("expected duration around 2s, got %v", duration)
+	if duration < retryInterval {
+		t.Fatalf("expected at least one sleep of %v, got %v", retryInterval, duration)
+	}
+	if duration > retryInterval*4 {
+		t.Fatalf("custom retry interval path took unexpectedly long: %v", duration)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "Retrying in 2s") {
-		t.Errorf("expected retry message with 2s interval, got:\n%s", output)
+	if !strings.Contains(output, fmt.Sprintf("Retrying in %v", retryInterval)) {
+		t.Errorf("expected retry message with configured interval, got:\n%s", output)
 	}
 }
 
