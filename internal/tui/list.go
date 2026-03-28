@@ -66,7 +66,7 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 
 	countPart := ""
 	if len(i.AccessPoints) > 1 {
-		countPart = fmt.Sprintf(" (%d APs)", len(i.AccessPoints))
+		countPart = fmt.Sprintf(" %s×%d", CurrentTheme.AccessPointIcon, len(i.AccessPoints))
 	}
 
 	var desc string

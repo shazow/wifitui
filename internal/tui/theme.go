@@ -62,6 +62,7 @@ type Theme struct {
 	NetworkOpenIcon    string
 	NetworkUnknownIcon string
 	NetworkSavedIcon   string
+	AccessPointIcon    string
 }
 
 // CurrentTheme is the active theme for the application.
@@ -86,6 +87,7 @@ func NewDefaultTheme() Theme {
 		NetworkOpenIcon:    "🔓 ",
 		NetworkUnknownIcon: "❓ ",
 		NetworkSavedIcon:   "💾 ",
+		AccessPointIcon:    "📡",
 	}
 }
 
