@@ -20,6 +20,8 @@ type mockConnection struct {
 type MockBackend struct {
 	VisibleConnections     []wifi.Connection
 	KnownConnections       []mockConnection
+	Devices                []wifi.Device
+	SelectedDevice         string
 	ActiveConnectionIndex  int
 	ActivateError          error
 	ForgetError            error
@@ -104,10 +106,35 @@ func New() (wifi.Backend, error) {
 	return &MockBackend{
 		VisibleConnections:    initialConnections,
 		KnownConnections:      knownConnections,
+		Devices:               []wifi.Device{{Name: "wlan0", Type: "wifi", State: "connected", Backend: "mock"}, {Name: "wlan1", Type: "wifi", State: "disconnected", Backend: "mock"}},
+		SelectedDevice:        "wlan0",
 		ActiveConnectionIndex: -1, // No connection active initially
 		ActionSleep:           DefaultActionSleep,
 		WirelessEnabled:       true,
 	}, nil
+}
+
+func (m *MockBackend) ListDevices() ([]wifi.Device, error) {
+	time.Sleep(m.ActionSleep)
+	out := make([]wifi.Device, 0, len(m.Devices))
+	for _, d := range m.Devices {
+		if d.Name == m.SelectedDevice {
+			d.State = "selected"
+		}
+		out = append(out, d)
+	}
+	return out, nil
+}
+
+func (m *MockBackend) SetDevice(name string) error {
+	time.Sleep(m.ActionSleep)
+	for _, d := range m.Devices {
+		if d.Name == name {
+			m.SelectedDevice = name
+			return nil
+		}
+	}
+	return fmt.Errorf("device not found: %s: %w", name, wifi.ErrNotFound)
 }
 
 // setActiveConnection sets the active connection and ensures all other connections are inactive.

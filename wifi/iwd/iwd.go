@@ -29,6 +29,7 @@ const (
 type Backend struct {
 	// connectionDetails stores D-Bus specific info needed for operations.
 	// We won't use this for iwd for now.
+	devicePath dbus.ObjectPath
 }
 
 // New creates a new iwd.Backend.
@@ -124,13 +125,13 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				visibleNetworks[ssid] = existing
 			} else {
 				visibleNetworks[ssid] = wifi.Connection{
-					SSID:        ssid,
-					IsActive:    isActive,
-					IsSecure:    security != wifi.SecurityOpen,
-					Security:    security,
-					IsVisible:   true,
+					SSID:         ssid,
+					IsActive:     isActive,
+					IsSecure:     security != wifi.SecurityOpen,
+					Security:     security,
+					IsVisible:    true,
 					AccessPoints: []wifi.AccessPoint{ap},
-					AutoConnect: false, // Cannot autoconnect to unknown network
+					AutoConnect:  false, // Cannot autoconnect to unknown network
 				}
 			}
 		}
@@ -178,6 +179,66 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	}
 
 	return connections, nil
+}
+
+func (b *Backend) ListDevices() ([]wifi.Device, error) {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return nil, err
+	}
+	devices, err := b.getDevices(conn)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]wifi.Device, 0, len(devices))
+	for _, path := range devices {
+		obj := conn.Object(iwdDest, path)
+		typeVar, err := obj.GetProperty(iwdDeviceIface + ".Type")
+		if err != nil {
+			continue
+		}
+		if typeStr, ok := typeVar.Value().(string); !ok || typeStr != "station" {
+			continue
+		}
+		nameVar, err := obj.GetProperty(iwdDeviceIface + ".Name")
+		if err != nil {
+			continue
+		}
+		name, _ := nameVar.Value().(string)
+		state := "available"
+		if b.devicePath != "" && b.devicePath == path {
+			state = "selected"
+		}
+		out = append(out, wifi.Device{Name: name, Type: "wifi", State: state, Backend: "iwd", Details: map[string]any{"path": string(path)}})
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no station device found: %w", wifi.ErrNotFound)
+	}
+	return out, nil
+}
+
+func (b *Backend) SetDevice(name string) error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+	devices, err := b.getDevices(conn)
+	if err != nil {
+		return err
+	}
+	for _, path := range devices {
+		obj := conn.Object(iwdDest, path)
+		nameVar, err := obj.GetProperty(iwdDeviceIface + ".Name")
+		if err != nil {
+			continue
+		}
+		devName, _ := nameVar.Value().(string)
+		if devName == name {
+			b.devicePath = path
+			return nil
+		}
+	}
+	return fmt.Errorf("device not found: %s: %w", name, wifi.ErrNotFound)
 }
 
 func (b *Backend) ActivateConnection(ssid string) error {
@@ -397,6 +458,9 @@ func (b *Backend) getDevices(conn *dbus.Conn) ([]dbus.ObjectPath, error) {
 }
 
 func (b *Backend) getStationDevice(conn *dbus.Conn) (dbus.ObjectPath, error) {
+	if b.devicePath != "" {
+		return b.devicePath, nil
+	}
 	devices, err := b.getDevices(conn)
 	if err != nil {
 		return "", err

@@ -366,3 +366,31 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 func init() {
 	DefaultActionSleep = 0
 }
+
+func TestListDevicesAndSetDevice(t *testing.T) {
+	b, err := New()
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	mockBackend := b.(*MockBackend)
+	mockBackend.ActionSleep = 0
+
+	devices, err := b.ListDevices()
+	if err != nil {
+		t.Fatalf("ListDevices() failed: %v", err)
+	}
+	if len(devices) < 2 {
+		t.Fatalf("expected at least two devices, got %d", len(devices))
+	}
+
+	if err := b.SetDevice("wlan1"); err != nil {
+		t.Fatalf("SetDevice() failed: %v", err)
+	}
+	if mockBackend.SelectedDevice != "wlan1" {
+		t.Fatalf("expected selected device wlan1, got %s", mockBackend.SelectedDevice)
+	}
+
+	if err := b.SetDevice("missing0"); err == nil {
+		t.Fatal("expected missing device to fail")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	flags "github.com/jessevdk/go-flags"
 	"strings"
 	"testing"
 	"time"
@@ -592,4 +593,150 @@ func TestFindConnectionBySSID(t *testing.T) {
 	if found {
 		t.Error("findConnectionBySSID() returned true for empty slice")
 	}
+}
+
+type recordingBackend struct {
+	*mock.MockBackend
+	setDeviceCalls []string
+}
+
+func (r *recordingBackend) SetDevice(name string) error {
+	r.setDeviceCalls = append(r.setDeviceCalls, name)
+	return r.MockBackend.SetDevice(name)
+}
+
+func TestRunDevices(t *testing.T) {
+	baseBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	mb := baseBackend.(*mock.MockBackend)
+	mb.ActionSleep = 0
+
+	var buf bytes.Buffer
+	if err := runDevices(&buf, false, mb); err != nil {
+		t.Fatalf("runDevices() failed: %v", err)
+	}
+	output := strings.TrimSpace(buf.String())
+	if !strings.Contains(output, "wlan0") {
+		t.Fatalf("expected devices output to contain wlan0, got %q", output)
+	}
+
+	buf.Reset()
+	if err := runDevices(&buf, true, mb); err != nil {
+		t.Fatalf("runDevices() json failed: %v", err)
+	}
+	var devices []wifi.Device
+	if err := json.Unmarshal(buf.Bytes(), &devices); err != nil {
+		t.Fatalf("invalid devices json: %v", err)
+	}
+	if len(devices) == 0 {
+		t.Fatal("expected at least one device")
+	}
+}
+
+func TestConfigureBackendDeviceCalled(t *testing.T) {
+	baseBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	rec := &recordingBackend{MockBackend: baseBackend.(*mock.MockBackend)}
+	rec.ActionSleep = 0
+
+	originalBackend := b
+	originalOpts := opts
+	defer func() {
+		b = originalBackend
+		opts = originalOpts
+	}()
+
+	b = rec
+	opts.Device = "wlan1"
+
+	cmd := ListCommand{}
+	var args []string
+	if err := cmd.Execute(args); err != nil {
+		t.Fatalf("ListCommand.Execute() failed: %v", err)
+	}
+	if len(rec.setDeviceCalls) != 1 || rec.setDeviceCalls[0] != "wlan1" {
+		t.Fatalf("expected SetDevice to be called with wlan1, got %#v", rec.setDeviceCalls)
+	}
+}
+
+func TestParseCLIWithDeviceAndWait(t *testing.T) {
+	baseBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	mb := baseBackend.(*mock.MockBackend)
+	mb.ActionSleep = 0
+	originalBackend := b
+	defer func() { b = originalBackend }()
+	b = mb
+
+	var localOpts Options
+	parser := flags.NewParser(&localOpts, flags.HelpFlag)
+	_, err = parser.ParseArgs([]string{"--device", "wlan1", "devices", "--json"})
+	if err != nil {
+		t.Fatalf("parse args failed: %v", err)
+	}
+	if localOpts.Device != "wlan1" {
+		t.Fatalf("expected --device parsed, got %q", localOpts.Device)
+	}
+	if !localOpts.Devices.JSON {
+		t.Fatalf("expected devices --json to be parsed")
+	}
+}
+
+func TestRunConnectWaitsForVisibleSSID(t *testing.T) {
+	baseBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	mb := baseBackend.(*mock.MockBackend)
+	mb.ActionSleep = 0
+	mb.VisibleConnections = nil
+
+	attempts := 0
+	mb.JoinError = nil
+
+	origBuild := mb.VisibleConnections
+	_ = origBuild
+
+	backend := &waitVisibleBackend{MockBackend: mb, appearAfter: 2, ssid: "appears-later"}
+	var buf bytes.Buffer
+	err = runConnect(&buf, "appears-later", "pw", wifi.SecurityWPA, false, RetryConfig{Total: 3 * time.Second, Interval: 10 * time.Millisecond, RequireVisible: true}, backend)
+	if err != nil {
+		t.Fatalf("runConnect should eventually succeed, got %v", err)
+	}
+	if backend.calls < 2 {
+		t.Fatalf("expected multiple scan attempts, got %d", backend.calls)
+	}
+	if !strings.Contains(buf.String(), "not visible yet") {
+		t.Fatalf("expected visibility retry message, got %q", buf.String())
+	}
+	_ = attempts
+}
+
+type waitVisibleBackend struct {
+	*mock.MockBackend
+	calls       int
+	appearAfter int
+	ssid        string
+}
+
+func (w *waitVisibleBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+	w.calls++
+	if shouldScan && w.calls >= w.appearAfter {
+		found := false
+		for _, c := range w.MockBackend.VisibleConnections {
+			if c.SSID == w.ssid {
+				found = true
+			}
+		}
+		if !found {
+			w.MockBackend.VisibleConnections = append(w.MockBackend.VisibleConnections, wifi.Connection{SSID: w.ssid, IsVisible: true, Security: wifi.SecurityWPA})
+		}
+	}
+	return w.MockBackend.BuildNetworkList(shouldScan)
 }

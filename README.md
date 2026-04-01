@@ -94,6 +94,56 @@ $ ./wifitui show --json "GET off my LAN"
 }
 ```
 
+
+## CLI usage
+
+Use `--device` on any command to target a specific interface:
+
+```console
+$ wifitui --device wlan1 list --scan
+$ wifitui --device en0 show "OfficeWiFi"
+```
+
+List devices in stable, line-separated format (for scripts/completion):
+
+```console
+$ wifitui devices
+wlan0
+wlan1
+```
+
+Get richer device metadata as JSON:
+
+```console
+$ wifitui devices --json
+[
+  {
+    "name": "wlan0",
+    "type": "wifi",
+    "state": "selected",
+    "backend": "networkmanager"
+  }
+]
+```
+
+Retry/wait for an SSID to appear and connect when it becomes visible:
+
+```console
+$ wifitui --device wlan0 connect "CafeWiFi" --passphrase secret --wait 90s --retry 90s:10s
+```
+
+Generate shell completions:
+
+```console
+$ wifitui completion bash > ~/.local/share/bash-completion/completions/wifitui
+$ wifitui completion zsh > ~/.zfunc/_wifitui
+$ wifitui completion fish > ~/.config/fish/completions/wifitui.fish
+```
+
+The completion scripts use dynamic values from:
+- `wifitui devices` for `--device`
+- `wifitui list --all --scan` for `connect <ssid>` suggestions
+
 ##  Why not `nmtui` or `impala`?
 
 Each has features the other lacks: `nmtui` can reveal passphrases but can't trigger a rescan, `impala` can rescan but can't manage saved networks (partly due to being iwd-exclusive), etc. I used both for a while, but I just wanted one tool that does everything, plus sort by recency, fuzzy filtering, QR code for sharing the network, support multiple backends (nm and iwd), and more.
