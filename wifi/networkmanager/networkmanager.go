@@ -5,6 +5,7 @@ package networkmanager
 import (
 	"fmt"
 	"os/user"
+	"strings"
 	"time"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
@@ -34,6 +35,16 @@ func New() (wifi.Backend, error) {
 		return nil, fmt.Errorf("failed to create network manager client: %w", wifi.ErrNotAvailable)
 	}
 
+	// gonetworkmanager's constructor only builds a DBus proxy and can succeed even when
+	// NetworkManager is not actually running. Force a lightweight property fetch so we can
+	// fall back to the iwd backend on iwd-only systems.
+	if _, err := nm.GetPropertyVersion(); err != nil {
+		if isUnavailableDBusError(err) {
+			return nil, fmt.Errorf("networkmanager dbus service unavailable: %w: %w", wifi.ErrNotAvailable, err)
+		}
+		return nil, fmt.Errorf("failed to query network manager version: %w: %w", wifi.ErrOperationFailed, err)
+	}
+
 	settings, err := gonetworkmanager.NewSettings()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get settings: %w", wifi.ErrOperationFailed)
@@ -45,6 +56,16 @@ func New() (wifi.Backend, error) {
 		Connections:  make(map[string]gonetworkmanager.Connection),
 		AccessPoints: make(map[string]gonetworkmanager.AccessPoint),
 	}, nil
+}
+
+func isUnavailableDBusError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "org.freedesktop.DBus.Error.ServiceUnknown") ||
+		strings.Contains(msg, "org.freedesktop.DBus.Error.NameHasNoOwner") ||
+		strings.Contains(msg, "The name is not activatable")
 }
 
 func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {

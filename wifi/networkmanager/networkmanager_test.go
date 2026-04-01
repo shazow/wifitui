@@ -61,3 +61,44 @@ func TestGetWirelessDevice_Caching(t *testing.T) {
 		t.Errorf("expected 1 call, got %d", callCount)
 	}
 }
+
+func TestIsUnavailableDBusError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "service unknown",
+			err:  testError("org.freedesktop.DBus.Error.ServiceUnknown: The name is not activatable"),
+			want: true,
+		},
+		{
+			name: "name has no owner",
+			err:  testError("org.freedesktop.DBus.Error.NameHasNoOwner: Could not get owner"),
+			want: true,
+		},
+		{
+			name: "other error",
+			err:  testError("some other error"),
+			want: false,
+		},
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isUnavailableDBusError(tt.err); got != tt.want {
+				t.Fatalf("isUnavailableDBusError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+type testError string
+
+func (e testError) Error() string { return string(e) }
