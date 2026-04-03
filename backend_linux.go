@@ -8,11 +8,19 @@ import (
 	"github.com/shazow/wifitui/wifi/networkmanager"
 )
 
+var backends = []func() (wifi.Backend, error){
+	networkmanager.New,
+	iwd.New,
+}
+
 func GetBackend() (wifi.Backend, error) {
-	b, err := networkmanager.New()
-	if err == nil {
-		return b, nil
+	var lastErr error
+	for _, newBackend := range backends {
+		b, err := newBackend()
+		if err == nil {
+			return b, nil
+		}
+		lastErr = err
 	}
-	// If networkmanager dbus backend failed to initialize, try the iwd backend
-	return iwd.New()
+	return nil, lastErr
 }
