@@ -21,7 +21,36 @@ const (
 	iwdNetworkIface      = "net.connman.iwd.Network"
 	iwdStationIface      = "net.connman.iwd.Station"
 	iwdKnownNetworkIface = "net.connman.iwd.KnownNetwork"
+	iwdAgentManagerIface = "net.connman.iwd.AgentManager"
+	iwdAgentIface        = "net.connman.iwd.Agent"
+	agentPath            = "/wifitui/agent"
 )
+
+// agent implements the net.connman.iwd.Agent D-Bus interface.
+// iwd calls RequestPassphrase on this object when it needs credentials.
+type agent struct {
+	passphrase string
+}
+
+func (a *agent) Release() *dbus.Error {
+	return nil
+}
+
+func (a *agent) RequestPassphrase(_ dbus.ObjectPath) (string, *dbus.Error) {
+	return a.passphrase, nil
+}
+
+func (a *agent) RequestPrivateKeyPassphrase(_ dbus.ObjectPath) (string, *dbus.Error) {
+	return a.passphrase, nil
+}
+
+func (a *agent) RequestUserNameAndPassword(_ dbus.ObjectPath) (string, string, *dbus.Error) {
+	return "", a.passphrase, nil
+}
+
+func (a *agent) Cancel(_ dbus.ObjectPath) *dbus.Error {
+	return nil
+}
 
 // Backend implements the backend.Backend interface using iwd.
 type Backend struct{}
@@ -329,10 +358,41 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Object(iwdDest, path).Call(iwdKnownNetworkIface+".Forget", 0).Err
 }
 
+// registerAgent exports a temporary Agent on the D-Bus connection and registers
+// it with iwd's AgentManager. The returned cleanup function unregisters the agent.
+func registerAgent(conn *dbus.Conn, password string) (cleanup func(), err error) {
+	a := &agent{passphrase: password}
+	err = conn.Export(a, agentPath, iwdAgentIface)
+	if err != nil {
+		return nil, fmt.Errorf("failed to export agent: %w", err)
+	}
+
+	agentManagerPath := dbus.ObjectPath("/net/connman/iwd")
+	err = conn.Object(iwdDest, agentManagerPath).Call(iwdAgentManagerIface+".RegisterAgent", 0, dbus.ObjectPath(agentPath)).Err
+	if err != nil {
+		conn.Export(nil, agentPath, iwdAgentIface)
+		return nil, fmt.Errorf("failed to register agent: %w", err)
+	}
+
+	return func() {
+		_ = conn.Object(iwdDest, agentManagerPath).Call(iwdAgentManagerIface+".UnregisterAgent", 0, dbus.ObjectPath(agentPath)).Err
+		conn.Export(nil, agentPath, iwdAgentIface)
+	}, nil
+}
+
 func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
+	}
+
+	// Register a temporary agent so iwd can request the passphrase.
+	if password != "" {
+		cleanup, err := registerAgent(conn, password)
+		if err != nil {
+			return fmt.Errorf("failed to set up credentials agent: %w", err)
+		}
+		defer cleanup()
 	}
 
 	if isHidden {
@@ -340,13 +400,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		if err != nil {
 			return err
 		}
-		// ConnectHiddenNetwork takes just the network name.
-		// iwd uses its agent interface to request credentials.
 		return conn.Object(iwdDest, station).Call(iwdStationIface+".ConnectHiddenNetwork", 0, ssid).Err
 	}
 
-	// For visible networks, call Connect on the Network object.
-	// iwd uses its agent interface to request credentials if needed.
 	networkPath, err := findNetworkPath(conn, ssid)
 	if err != nil {
 		return err
