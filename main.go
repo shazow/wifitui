@@ -113,6 +113,10 @@ var opts Options
 
 // Execute is the handler for the "tui" subcommand
 func (c *TuiCommand) Execute(args []string) error {
+	if os.Getenv("NO_COLOR") != "" {
+		// Set empty theme to disable emoji icons when NO_COLOR is requested.
+		tui.CurrentTheme = tui.EmptyTheme
+	}
 	if opts.Theme != "" {
 		f, err := os.Open(opts.Theme)
 		if err != nil {

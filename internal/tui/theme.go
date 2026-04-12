@@ -11,6 +11,11 @@ import (
 
 // Color is a wrapper around lipgloss.TerminalColor that can be unmarshaled
 // from a TOML file as either a single color string or a pair of strings for light/dark themes.
+//
+// FIXME: Is there a way to do the Color struct so that we can safely support
+// an empty Color{}? If so, we can simplify EmptyTheme below. Perhaps by using
+// a concrete type rather than the TerminalColor interface, but not sure of the
+// compatibility implications of that. Need more research.
 type Color struct {
 	lipgloss.TerminalColor
 }
@@ -67,6 +72,21 @@ type Theme struct {
 
 // CurrentTheme is the active theme for the application.
 var CurrentTheme = NewDefaultTheme()
+
+// EmptyTheme is a render-safe minimal theme with no icons.
+// Color is an interface wrapper so we can't just use Theme{} safely, unfortunately.
+var EmptyTheme = Theme{
+	Primary:    Color{lipgloss.NoColor{}},
+	Subtle:     Color{lipgloss.NoColor{}},
+	Success:    Color{lipgloss.NoColor{}},
+	Error:      Color{lipgloss.NoColor{}},
+	Normal:     Color{lipgloss.NoColor{}},
+	Disabled:   Color{lipgloss.NoColor{}},
+	Border:     Color{lipgloss.NoColor{}},
+	SignalHigh: Color{lipgloss.NoColor{}},
+	SignalLow:  Color{lipgloss.NoColor{}},
+	Saved:      Color{lipgloss.NoColor{}},
+}
 
 // NewDefaultTheme creates a new default theme.
 func NewDefaultTheme() Theme {
