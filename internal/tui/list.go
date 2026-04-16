@@ -176,6 +176,7 @@ func NewListModelWithWindow(window *WindowState) *ListModel {
 		return append([]key.Binding{
 			key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new network")),
 			key.NewBinding(key.WithKeys("S"), key.WithHelp("S", "active scan")),
+			key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "disable radio")),
 		}, l.AdditionalShortHelpKeys()...)
 	}
 
