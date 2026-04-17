@@ -16,7 +16,7 @@ import (
 
 const (
 	connectionTimeout = 10 * time.Second
-	scanTimeout       = 30 * time.Second
+	scanTimeout       = 60 * time.Second
 )
 
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
