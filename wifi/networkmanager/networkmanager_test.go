@@ -19,6 +19,7 @@ type mockNM struct {
 	getDevicesFunc                   func() ([]gonetworkmanager.Device, error)
 	getPropertyWirelessEnabledFunc   func() (bool, error)
 	getPropertyActiveConnectionsFunc func() ([]gonetworkmanager.ActiveConnection, error)
+	activateConnectionFunc           func(gonetworkmanager.Connection, gonetworkmanager.Device, *dbus.Object) (gonetworkmanager.ActiveConnection, error)
 }
 
 func (m *mockNM) GetDevices() ([]gonetworkmanager.Device, error) {
@@ -42,9 +43,17 @@ func (m *mockNM) GetPropertyActiveConnections() ([]gonetworkmanager.ActiveConnec
 	return nil, nil
 }
 
+func (m *mockNM) ActivateConnection(conn gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject *dbus.Object) (gonetworkmanager.ActiveConnection, error) {
+	if m.activateConnectionFunc != nil {
+		return m.activateConnectionFunc(conn, device, specificObject)
+	}
+	return nil, nil
+}
+
 type mockDeviceWireless struct {
 	gonetworkmanager.DeviceWireless
 	path                     dbus.ObjectPath
+	iface                    string
 	accessPoints             []gonetworkmanager.AccessPoint
 	allAccessPoints          []gonetworkmanager.AccessPoint
 	getAccessPointsCalled    bool
@@ -56,6 +65,13 @@ func (m *mockDeviceWireless) GetPath() dbus.ObjectPath {
 		return dbus.ObjectPath("/org/freedesktop/NetworkManager/Devices/1")
 	}
 	return m.path
+}
+
+func (m *mockDeviceWireless) GetPropertyInterface() (string, error) {
+	if m.iface == "" {
+		return "wlan0", nil
+	}
+	return m.iface, nil
 }
 
 func (m *mockDeviceWireless) GetAccessPoints() ([]gonetworkmanager.AccessPoint, error) {
@@ -73,11 +89,51 @@ func (m *mockDeviceWireless) GetAllAccessPoints() ([]gonetworkmanager.AccessPoin
 
 type mockSettings struct {
 	gonetworkmanager.Settings
-	connections []gonetworkmanager.Connection
+	connections              []gonetworkmanager.Connection
+	addConnectionUnsavedFunc func(gonetworkmanager.ConnectionSettings) (gonetworkmanager.Connection, error)
 }
 
 func (m *mockSettings) ListConnections() ([]gonetworkmanager.Connection, error) {
 	return m.connections, nil
+}
+
+func (m *mockSettings) AddConnectionUnsaved(settings gonetworkmanager.ConnectionSettings) (gonetworkmanager.Connection, error) {
+	if m.addConnectionUnsavedFunc != nil {
+		return m.addConnectionUnsavedFunc(settings)
+	}
+	return &mockConnection{}, nil
+}
+
+type mockConnection struct {
+	gonetworkmanager.Connection
+	saveCalled   bool
+	deleteCalled bool
+}
+
+func (m *mockConnection) Save() error {
+	m.saveCalled = true
+	return nil
+}
+
+func (m *mockConnection) Delete() error {
+	m.deleteCalled = true
+	return nil
+}
+
+type mockActiveConnection struct {
+	gonetworkmanager.ActiveConnection
+	state gonetworkmanager.NmActiveConnectionState
+}
+
+func (m *mockActiveConnection) SubscribeState(receiver chan gonetworkmanager.StateChange, exit chan struct{}) error {
+	return nil
+}
+
+func (m *mockActiveConnection) GetPropertyState() (gonetworkmanager.NmActiveConnectionState, error) {
+	if m.state == 0 {
+		return gonetworkmanager.NmActiveConnectionStateActivated, nil
+	}
+	return m.state, nil
 }
 
 type mockAccessPoint struct {
@@ -177,7 +233,7 @@ func TestListNetworks_ReturnsCachedListWhenScanFails(t *testing.T) {
 		},
 	}
 	b := newTestBackend(device, nil)
-	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		return errors.New("scan not allowed")
 	}
 
@@ -207,7 +263,7 @@ func TestListNetworks_MarksCachedWhenScanFails(t *testing.T) {
 		},
 	}
 	b := newTestBackend(device, nil)
-	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		return errors.New("scan not allowed")
 	}
 
@@ -228,7 +284,7 @@ func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
 	}
 	b := newTestBackend(device, nil)
 	b.scanCached = true
-	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		return nil
 	}
 
@@ -251,7 +307,7 @@ func TestListNetworks_SkipsScanWhenLastScanFresh(t *testing.T) {
 	b.lastScan = time.Now().Add(-10 * time.Second)
 	b.scanInterval = 30 * time.Second
 	scanCalled := false
-	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		scanCalled = true
 		return nil
 	}
@@ -279,7 +335,7 @@ func TestListNetworks_ForceScanWhenLastScanFresh(t *testing.T) {
 	b.lastScan = time.Now().Add(-10 * time.Second)
 	b.scanInterval = 30 * time.Second
 	scanCalled := false
-	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		scanCalled = true
 		return nil
 	}
@@ -304,7 +360,7 @@ func TestListNetworks_RequestsScanWhenLastScanUnset(t *testing.T) {
 	}
 	b := newTestBackend(device, nil)
 	scanCalled := false
-	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		scanCalled = true
 		return nil
 	}
@@ -328,7 +384,7 @@ func TestScanIfStale_CoalescesConcurrentScans(t *testing.T) {
 	var scanCalls atomic.Int32
 	enteredScan := make(chan struct{}, 2)
 	releaseScan := make(chan struct{})
-	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		scanCalls.Add(1)
 		enteredScan <- struct{}{}
 		<-releaseScan
@@ -369,7 +425,7 @@ func TestListNetworks_DefersRetryAfterScanFailure(t *testing.T) {
 	b.scanInterval = 30 * time.Second
 
 	var scanCalls atomic.Int32
-	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		scanCalls.Add(1)
 		return errors.New("scan not allowed")
 	}
@@ -454,6 +510,101 @@ func TestListNetworks_PreservesWeakerDuplicateAccessPoint(t *testing.T) {
 	}
 	if ap := b.AccessPoints["Mesh"]; ap != device.accessPoints[0] {
 		t.Fatalf("strongest access point was not retained for activation")
+	}
+}
+
+func TestHiddenSSIDScanOptions(t *testing.T) {
+	options := hiddenSSIDScanOptions("HiddenNet")
+
+	variant, ok := options["ssids"]
+	if !ok {
+		t.Fatal("hiddenSSIDScanOptions did not set ssids")
+	}
+	ssids, ok := variant.Value().([][]byte)
+	if !ok {
+		t.Fatalf("ssids option has type %T, want [][]byte", variant.Value())
+	}
+	if len(ssids) != 1 || string(ssids[0]) != "HiddenNet" {
+		t.Fatalf("ssids option = %#v, want HiddenNet", ssids)
+	}
+}
+
+func TestJoinNetwork_HiddenRequestsTargetedScan(t *testing.T) {
+	device := &mockDeviceWireless{}
+	connection := &mockConnection{}
+	var events []string
+	var scanOptions map[string]dbus.Variant
+
+	b := newTestBackend(device, nil)
+	b.Settings = &mockSettings{
+		addConnectionUnsavedFunc: func(settings gonetworkmanager.ConnectionSettings) (gonetworkmanager.Connection, error) {
+			events = append(events, "add")
+			return connection, nil
+		},
+	}
+	b.NM = &mockNM{
+		getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
+			return []gonetworkmanager.Device{device}, nil
+		},
+		activateConnectionFunc: func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject *dbus.Object) (gonetworkmanager.ActiveConnection, error) {
+			events = append(events, "activate")
+			return &mockActiveConnection{}, nil
+		},
+	}
+	b.scanFunc = func(device gonetworkmanager.DeviceWireless, options map[string]dbus.Variant) error {
+		events = append(events, "scan")
+		scanOptions = options
+		return nil
+	}
+
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
+	if err != nil {
+		t.Fatalf("JoinNetwork(hidden) returned error: %v", err)
+	}
+	if len(events) < 3 || events[0] != "scan" || events[1] != "add" || events[2] != "activate" {
+		t.Fatalf("events = %#v, want scan before add and activate", events)
+	}
+	variant, ok := scanOptions["ssids"]
+	if !ok {
+		t.Fatal("hidden join did not request ssids scan option")
+	}
+	ssids, ok := variant.Value().([][]byte)
+	if !ok || len(ssids) != 1 || string(ssids[0]) != "HiddenNet" {
+		t.Fatalf("hidden join ssids option = %#v, want HiddenNet", variant.Value())
+	}
+	if !connection.saveCalled {
+		t.Fatal("hidden join did not save activated connection")
+	}
+	if connection.deleteCalled {
+		t.Fatal("hidden join deleted connection after successful activation")
+	}
+}
+
+func TestJoinNetwork_HiddenScanFailureDoesNotAbortActivation(t *testing.T) {
+	device := &mockDeviceWireless{}
+	var activated bool
+
+	b := newTestBackend(device, nil)
+	b.Settings = &mockSettings{}
+	b.NM = &mockNM{
+		getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
+			return []gonetworkmanager.Device{device}, nil
+		},
+		activateConnectionFunc: func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject *dbus.Object) (gonetworkmanager.ActiveConnection, error) {
+			activated = true
+			return &mockActiveConnection{}, nil
+		},
+	}
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		return errors.New("scan not allowed")
+	}
+
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
+	if err != nil {
+		t.Fatalf("JoinNetwork(hidden) returned error after targeted scan failure: %v", err)
+	}
+	if !activated {
+		t.Fatal("hidden join did not continue to activation after targeted scan failure")
 	}
 }
 

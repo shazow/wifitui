@@ -36,7 +36,7 @@ type Backend struct {
 	AccessPoints map[string]gonetworkmanager.AccessPoint
 	Device       gonetworkmanager.DeviceWireless
 
-	scanFunc     func(gonetworkmanager.DeviceWireless) error
+	scanFunc     func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error
 	scanInterval time.Duration
 	lastScan     time.Time
 	scanCached   bool
@@ -105,6 +105,14 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 }
 
 func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
+	return b.scanAndWaitWithOptions(device, nil)
+}
+
+func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless, options map[string]dbus.Variant) error {
+	if b.scanFunc != nil {
+		return b.scanFunc(device, options)
+	}
+
 	var baseline time.Duration
 	if value, err := device.GetPropertyLastScan(); err == nil && value > 0 {
 		baseline = time.Duration(value) * time.Millisecond
@@ -133,7 +141,7 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	// FIXME: Would be nice if we could detect whether a scan was already in progress (or if the device is ready to scan again),
 	// otherwise it seems scan requests get dropped if they're requested too frequently.
 	// Alternatively we can try to autodetect intervals that are too frequent by seeing how often scanTimeout is getting triggered, but this is not ideal.
-	err = device.RequestScan()
+	err = b.requestScan(device, options)
 	if err != nil {
 		return err
 	}
@@ -179,6 +187,32 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 			return fmt.Errorf("scan timed out")
 		}
 	}
+}
+
+func (b *Backend) requestScan(device gonetworkmanager.DeviceWireless, options map[string]dbus.Variant) error {
+	if len(options) == 0 {
+		return device.RequestScan()
+	}
+
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return fmt.Errorf("failed to connect to dbus: %w", err)
+	}
+	obj := conn.Object(gonetworkmanager.NetworkManagerInterface, device.GetPath())
+	return obj.Call(gonetworkmanager.DeviceWirelessRequestScan, 0, options).Store()
+}
+
+func hiddenSSIDScanOptions(ssid string) map[string]dbus.Variant {
+	return map[string]dbus.Variant{
+		"ssids": dbus.MakeVariant([][]byte{[]byte(ssid)}),
+	}
+}
+
+func (b *Backend) scanHiddenSSID(device gonetworkmanager.DeviceWireless, ssid string) {
+	if ssid == "" {
+		return
+	}
+	_ = b.scanAndWaitWithOptions(device, hiddenSSIDScanOptions(ssid))
 }
 
 // WatchNetworkChanges returns a channel that receives a value when NetworkManager
@@ -317,11 +351,7 @@ func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) bool 
 	b.scanMu.Unlock()
 
 	if runScan {
-		scan := b.scanAndWait
-		if b.scanFunc != nil {
-			scan = b.scanFunc
-		}
-		err := scan(device)
+		err := b.scanAndWait(device)
 		b.scanMu.Lock()
 		b.lastScan = time.Now()
 		b.scanCached = err != nil
@@ -738,6 +768,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 	deviceInterface, _ := wirelessDevice.GetPropertyInterface()
+	if isHidden {
+		b.scanHiddenSSID(wirelessDevice, ssid)
+	}
 
 	connection := map[string]map[string]interface{}{
 		"connection": {
