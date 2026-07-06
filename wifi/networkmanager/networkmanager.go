@@ -120,6 +120,11 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 
 	for _, device := range devices {
 		if dev, ok := device.(gonetworkmanager.DeviceWireless); ok {
+			// In hwsim and other multi-radio setups, NetworkManager can report AP-side
+			// radios that are intentionally unmanaged or not yet usable for client
+			// scans. Prefer a managed station radio instead of caching the first
+			// wireless device and failing later with "Scanning not allowed while
+			// unavailable".
 			managed, err := dev.GetPropertyManaged()
 			if err == nil && !managed {
 				continue
@@ -892,6 +897,11 @@ func (b *Backend) ActivateNetwork(ssid string) error {
 		return nil
 	}
 
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(connectionTimeout)
+	defer timeout.Stop()
+
 	for {
 		select {
 		case change := <-stateChanges:
@@ -907,7 +917,12 @@ func (b *Backend) ActivateNetwork(ssid string) error {
 					return fmt.Errorf("connection failed: %s", change.Reason)
 				}
 			}
-		case <-time.After(connectionTimeout):
+		case <-ticker.C:
+			state, err := activeConn.GetPropertyState()
+			if err == nil && state == gonetworkmanager.NmActiveConnectionStateActivated {
+				return nil
+			}
+		case <-timeout.C:
 			return fmt.Errorf("connection timed out")
 		}
 	}
@@ -1050,16 +1065,25 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return nil
 	}
 
+	saveConnection := func() error {
+		err = conn.Save()
+		if err != nil {
+			return fmt.Errorf("failed to save connection: %w", err)
+		}
+		shouldDelete = false
+		return nil
+	}
+
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(connectionTimeout)
+	defer timeout.Stop()
+
 	for {
 		select {
 		case change := <-stateChanges:
 			if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
-				err = conn.Save()
-				if err != nil {
-					return fmt.Errorf("failed to save connection: %w", err)
-				}
-				shouldDelete = false
-				return nil
+				return saveConnection()
 			}
 			if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
 				switch change.Reason {
@@ -1070,7 +1094,12 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 					return fmt.Errorf("connection failed: %s", change.Reason)
 				}
 			}
-		case <-time.After(connectionTimeout):
+		case <-ticker.C:
+			state, err := activeConn.GetPropertyState()
+			if err == nil && state == gonetworkmanager.NmActiveConnectionStateActivated {
+				return saveConnection()
+			}
+		case <-timeout.C:
 			return fmt.Errorf("connection timed out")
 		}
 	}
