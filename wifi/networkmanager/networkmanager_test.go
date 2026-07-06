@@ -4,6 +4,8 @@ package networkmanager
 
 import (
 	"errors"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -201,7 +203,7 @@ func TestBuildNetworkList_SkipsScanWhenLastScanFresh(t *testing.T) {
 	}
 	b := newTestBackend(device, nil)
 	b.lastScan = time.Now().Add(-10 * time.Second)
-	b.scanFreshness = 30 * time.Second
+	b.scanInterval = 30 * time.Second
 	scanCalled := false
 	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
 		scanCalled = true
@@ -242,6 +244,71 @@ func TestBuildNetworkList_RequestsScanWhenLastScanUnset(t *testing.T) {
 	}
 	if b.lastScan.IsZero() {
 		t.Fatal("BuildNetworkList(true) did not record lastScan after requesting a scan")
+	}
+}
+
+func TestScanIfStale_CoalescesConcurrentScans(t *testing.T) {
+	device := &mockDeviceWireless{}
+	b := newTestBackend(device, nil)
+
+	var scanCalls atomic.Int32
+	enteredScan := make(chan struct{}, 2)
+	releaseScan := make(chan struct{})
+	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+		scanCalls.Add(1)
+		enteredScan <- struct{}{}
+		<-releaseScan
+		return nil
+	}
+
+	var wg sync.WaitGroup
+	scan := func() {
+		defer wg.Done()
+		b.scanIfStale(device)
+	}
+
+	wg.Add(1)
+	go scan()
+	<-enteredScan
+
+	wg.Add(1)
+	go scan()
+
+	select {
+	case <-enteredScan:
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(releaseScan)
+	wg.Wait()
+	if got := scanCalls.Load(); got != 1 {
+		t.Fatalf("scanIfStale made %d scan attempts, want 1", got)
+	}
+}
+
+func TestBuildNetworkList_DefersRetryAfterScanFailure(t *testing.T) {
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Deferred", "00:00:00:00:00:05", 64),
+		},
+	}
+	b := newTestBackend(device, nil)
+	b.scanInterval = 30 * time.Second
+
+	var scanCalls atomic.Int32
+	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+		scanCalls.Add(1)
+		return errors.New("scan not allowed")
+	}
+
+	for range 2 {
+		_, err := b.BuildNetworkList(true)
+		if err != nil {
+			t.Fatalf("BuildNetworkList(true) returned error: %v", err)
+		}
+	}
+
+	if got := scanCalls.Load(); got != 1 {
+		t.Fatalf("BuildNetworkList(true) made %d scan attempts, want 1", got)
 	}
 }
 

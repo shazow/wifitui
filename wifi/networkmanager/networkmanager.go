@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/user"
 	"strings"
+	"sync"
 	"time"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
@@ -17,7 +18,7 @@ import (
 const (
 	connectionTimeout = 10 * time.Second
 	scanTimeout       = 30 * time.Second
-	scanFreshness     = 30 * time.Second
+	scanInterval      = 30 * time.Second
 )
 
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
@@ -28,9 +29,11 @@ type Backend struct {
 	AccessPoints map[string]gonetworkmanager.AccessPoint
 	Device       gonetworkmanager.DeviceWireless
 
-	scanFunc      func(gonetworkmanager.DeviceWireless) error
-	scanFreshness time.Duration
-	lastScan      time.Time
+	scanFunc     func(gonetworkmanager.DeviceWireless) error
+	scanInterval time.Duration
+	lastScan     time.Time
+	scanMu       sync.Mutex
+	scanDone     chan struct{}
 }
 
 // New creates a new dbus.Backend.
@@ -170,6 +173,43 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	}
 }
 
+func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) {
+	interval := scanInterval
+	if b.scanInterval > 0 {
+		interval = b.scanInterval
+	}
+
+	var done chan struct{}
+	runScan := false
+
+	b.scanMu.Lock()
+	if b.lastScan.IsZero() || time.Since(b.lastScan) >= interval {
+		if b.scanDone != nil {
+			done = b.scanDone
+		} else {
+			done = make(chan struct{})
+			b.scanDone = done
+			runScan = true
+		}
+	}
+	b.scanMu.Unlock()
+
+	if runScan {
+		scan := b.scanAndWait
+		if b.scanFunc != nil {
+			scan = b.scanFunc
+		}
+		_ = scan(device)
+		b.scanMu.Lock()
+		b.lastScan = time.Now()
+		close(done)
+		b.scanDone = nil
+		b.scanMu.Unlock()
+	} else if done != nil {
+		<-done
+	}
+}
+
 // BuildNetworkList scans (if shouldScan is true) and returns all networks.
 func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	enabled, err := b.IsWirelessEnabled()
@@ -187,17 +227,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		return nil, err
 	}
 
-	freshness := scanFreshness
-	if b.scanFreshness > 0 {
-		freshness = b.scanFreshness
-	}
-	if shouldScan && (b.lastScan.IsZero() || time.Since(b.lastScan) >= freshness) {
-		scan := b.scanAndWait
-		if b.scanFunc != nil {
-			scan = b.scanFunc
-		}
-		_ = scan(wirelessDevice)
-		b.lastScan = time.Now()
+	if shouldScan {
+		b.scanIfStale(wirelessDevice)
 	}
 
 	knownConnections, err := b.Settings.ListConnections()
