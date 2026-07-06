@@ -18,6 +18,7 @@ import (
 
 const (
 	connectionTimeout = 10 * time.Second
+	pollingInterval   = time.Second
 	scanTimeout       = 30 * time.Second
 	scanInterval      = 30 * time.Second
 )
@@ -891,25 +892,41 @@ func (b *Backend) ActivateNetwork(ssid string) error {
 		return err
 	}
 
-	// Now, block until the connection is fully activated.
+	return waitForActiveConnection(activeConn)
+}
+
+// waitForActiveConnection monitors NetworkManager's activation state until the
+// connection activates, fails, or times out. It keeps the state-change
+// subscription path from the previous inline loop, with a slow poll as a safety
+// net for fast hwsim state transitions whose Activated signal can be missed.
+func waitForActiveConnection(activeConn gonetworkmanager.ActiveConnection) error {
 	stateChanges := make(chan gonetworkmanager.StateChange, 1)
 	done := make(chan struct{})
 	defer close(done)
-	err = activeConn.SubscribeState(stateChanges, done)
+	err := activeConn.SubscribeState(stateChanges, done)
 	if err != nil {
+		state, stateErr := activeConn.GetPropertyState()
+		if stateErr == nil && state == gonetworkmanager.NmActiveConnectionStateDeactivated {
+			return fmt.Errorf("connection failed before state subscription: %w", err)
+		}
+		if stateErr == nil && state == gonetworkmanager.NmActiveConnectionStateActivated {
+			return nil
+		}
 		return err
 	}
 
-	// Check the initial state first
 	initialState, err := activeConn.GetPropertyState()
 	if err != nil {
 		return err
 	}
-	if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
+	switch initialState {
+	case gonetworkmanager.NmActiveConnectionStateActivated:
 		return nil
+	case gonetworkmanager.NmActiveConnectionStateDeactivated:
+		return fmt.Errorf("connection failed before activation wait")
 	}
 
-	ticker := time.NewTicker(250 * time.Millisecond)
+	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
 	timeout := time.NewTimer(connectionTimeout)
 	defer timeout.Stop()
@@ -931,8 +948,14 @@ func (b *Backend) ActivateNetwork(ssid string) error {
 			}
 		case <-ticker.C:
 			state, err := activeConn.GetPropertyState()
-			if err == nil && state == gonetworkmanager.NmActiveConnectionStateActivated {
+			if err != nil {
+				continue
+			}
+			switch state {
+			case gonetworkmanager.NmActiveConnectionStateActivated:
 				return nil
+			case gonetworkmanager.NmActiveConnectionStateDeactivated:
+				return fmt.Errorf("connection failed while polling activation state")
 			}
 		case <-timeout.C:
 			return fmt.Errorf("connection timed out")
@@ -1048,73 +1071,16 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 
-	// Now, block until the connection is fully activated.
-	stateChanges := make(chan gonetworkmanager.StateChange, 1)
-	done := make(chan struct{})
-	defer close(done)
-	err = activeConn.SubscribeState(stateChanges, done)
-	if err != nil {
-		// Lets check the state
-		state, stateErr := activeConn.GetPropertyState()
-		if stateErr == nil && state == gonetworkmanager.NmActiveConnectionStateDeactivated {
-			// It failed, but we can't get the reason.
-			return fmt.Errorf("connection failed")
-		}
-		return fmt.Errorf("failed to subscribe to state changes: %w", err)
-	}
-
-	// Check the initial state first
-	initialState, err := activeConn.GetPropertyState()
-	if err != nil {
+	if err := waitForActiveConnection(activeConn); err != nil {
 		return err
 	}
-	if initialState == gonetworkmanager.NmActiveConnectionStateActivated {
-		err = conn.Save()
-		if err != nil {
-			return fmt.Errorf("failed to save connection: %w", err)
-		}
-		shouldDelete = false
-		return nil
-	}
 
-	saveConnection := func() error {
-		err = conn.Save()
-		if err != nil {
-			return fmt.Errorf("failed to save connection: %w", err)
-		}
-		shouldDelete = false
-		return nil
+	err = conn.Save()
+	if err != nil {
+		return fmt.Errorf("failed to save connection: %w", err)
 	}
-
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	timeout := time.NewTimer(connectionTimeout)
-	defer timeout.Stop()
-
-	for {
-		select {
-		case change := <-stateChanges:
-			if change.State == gonetworkmanager.NmActiveConnectionStateActivated {
-				return saveConnection()
-			}
-			if change.State == gonetworkmanager.NmActiveConnectionStateDeactivated {
-				switch change.Reason {
-				case gonetworkmanager.NmActiveConnectionStateReasonNoSecrets,
-					gonetworkmanager.NmActiveConnectionStateReasonLoginFailed:
-					return wifi.ErrIncorrectPassphrase
-				default:
-					return fmt.Errorf("connection failed: %s", change.Reason)
-				}
-			}
-		case <-ticker.C:
-			state, err := activeConn.GetPropertyState()
-			if err == nil && state == gonetworkmanager.NmActiveConnectionStateActivated {
-				return saveConnection()
-			}
-		case <-timeout.C:
-			return fmt.Errorf("connection timed out")
-		}
-	}
+	shouldDelete = false
+	return nil
 }
 
 func (b *Backend) GetSecrets(ssid string) (string, error) {
