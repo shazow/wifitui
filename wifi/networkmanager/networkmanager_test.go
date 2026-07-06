@@ -20,6 +20,7 @@ type mockNM struct {
 	getPropertyWirelessEnabledFunc   func() (bool, error)
 	getPropertyActiveConnectionsFunc func() ([]gonetworkmanager.ActiveConnection, error)
 	activateConnectionFunc           func(gonetworkmanager.Connection, gonetworkmanager.Device, *dbus.Object) (gonetworkmanager.ActiveConnection, error)
+	activateWirelessConnectionFunc   func(gonetworkmanager.Connection, gonetworkmanager.Device, gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error)
 }
 
 func (m *mockNM) GetDevices() ([]gonetworkmanager.Device, error) {
@@ -46,6 +47,13 @@ func (m *mockNM) GetPropertyActiveConnections() ([]gonetworkmanager.ActiveConnec
 func (m *mockNM) ActivateConnection(conn gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject *dbus.Object) (gonetworkmanager.ActiveConnection, error) {
 	if m.activateConnectionFunc != nil {
 		return m.activateConnectionFunc(conn, device, specificObject)
+	}
+	return nil, nil
+}
+
+func (m *mockNM) ActivateWirelessConnection(conn gonetworkmanager.Connection, device gonetworkmanager.Device, ap gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error) {
+	if m.activateWirelessConnectionFunc != nil {
+		return m.activateWirelessConnectionFunc(conn, device, ap)
 	}
 	return nil, nil
 }
@@ -106,8 +114,49 @@ func (m *mockSettings) AddConnectionUnsaved(settings gonetworkmanager.Connection
 
 type mockConnection struct {
 	gonetworkmanager.Connection
+	path         dbus.ObjectPath
+	settings     gonetworkmanager.ConnectionSettings
 	saveCalled   bool
 	deleteCalled bool
+}
+
+func newMockConnection(path, id, ssid string, security wifi.SecurityType) *mockConnection {
+	settings := gonetworkmanager.ConnectionSettings{
+		"connection": {
+			"id":   id,
+			"type": "802-11-wireless",
+		},
+		"802-11-wireless": {
+			"ssid": []byte(ssid),
+		},
+	}
+	switch security {
+	case wifi.SecurityWEP:
+		settings["802-11-wireless"]["security"] = "802-11-wireless-security"
+		settings["802-11-wireless-security"] = map[string]interface{}{
+			"key-mgmt": "none",
+		}
+	case wifi.SecurityWPA:
+		settings["802-11-wireless"]["security"] = "802-11-wireless-security"
+		settings["802-11-wireless-security"] = map[string]interface{}{
+			"key-mgmt": "wpa-psk",
+		}
+	}
+	return &mockConnection{
+		path:     dbus.ObjectPath(path),
+		settings: settings,
+	}
+}
+
+func (m *mockConnection) GetPath() dbus.ObjectPath {
+	if m.path == "" {
+		return dbus.ObjectPath("/org/freedesktop/NetworkManager/Settings/1")
+	}
+	return m.path
+}
+
+func (m *mockConnection) GetSettings() (gonetworkmanager.ConnectionSettings, error) {
+	return m.settings, nil
 }
 
 func (m *mockConnection) Save() error {
@@ -143,6 +192,7 @@ type mockAccessPoint struct {
 	bssid     string
 	strength  uint8
 	frequency uint32
+	mode      gonetworkmanager.Nm80211Mode
 	flags     uint32
 	wpaFlags  uint32
 	rsnFlags  uint32
@@ -155,7 +205,8 @@ func newMockAccessPoint(ssid, bssid string, strength uint8) *mockAccessPoint {
 		bssid:     bssid,
 		strength:  strength,
 		frequency: 2412,
-		rsnFlags:  1,
+		mode:      gonetworkmanager.Nm80211ModeInfra,
+		rsnFlags:  uint32(gonetworkmanager.Nm80211APSecKeyMgmtPSK),
 	}
 }
 
@@ -167,6 +218,9 @@ func (m *mockAccessPoint) GetPropertyHWAddress() (string, error) {
 func (m *mockAccessPoint) GetPropertyStrength() (uint8, error) { return m.strength, nil }
 func (m *mockAccessPoint) GetPropertyFrequency() (uint32, error) {
 	return m.frequency, nil
+}
+func (m *mockAccessPoint) GetPropertyMode() (gonetworkmanager.Nm80211Mode, error) {
+	return m.mode, nil
 }
 func (m *mockAccessPoint) GetPropertyFlags() (uint32, error)    { return m.flags, nil }
 func (m *mockAccessPoint) GetPropertyWPAFlags() (uint32, error) { return m.wpaFlags, nil }
@@ -181,8 +235,8 @@ func newTestBackend(device *mockDeviceWireless, connections []gonetworkmanager.C
 			},
 		},
 		Settings:     &mockSettings{connections: connections},
-		Connections:  make(map[string]gonetworkmanager.Connection),
-		AccessPoints: make(map[string]gonetworkmanager.AccessPoint),
+		connections:  make(map[networkKey]gonetworkmanager.Connection),
+		accessPoints: make(map[networkKey]gonetworkmanager.AccessPoint),
 	}
 }
 
@@ -508,8 +562,231 @@ func TestListNetworks_PreservesWeakerDuplicateAccessPoint(t *testing.T) {
 	if got := len(connections[0].AccessPoints); got != 2 {
 		t.Fatalf("merged connection has %d access points, want 2: %#v", got, connections[0].AccessPoints)
 	}
-	if ap := b.AccessPoints["Mesh"]; ap != device.accessPoints[0] {
+	if ap, err := b.getAccessPoint("Mesh"); err != nil || ap != device.accessPoints[0] {
 		t.Fatalf("strongest access point was not retained for activation")
+	}
+}
+
+func TestListNetworks_DoesNotMarkOpenVariantKnownWhenWPAProfileExists(t *testing.T) {
+	openAP := newMockAccessPoint("Cafe", "00:00:00:00:00:08", 90)
+	openAP.rsnFlags = 0
+	wpaAP := newMockAccessPoint("Cafe", "00:00:00:00:00:09", 40)
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{openAP, wpaAP},
+	}
+	knownWPA := newMockConnection("/org/freedesktop/NetworkManager/Settings/2", "Cafe WPA", "Cafe", wifi.SecurityWPA)
+	b := newTestBackend(device, []gonetworkmanager.Connection{knownWPA})
+
+	result, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+
+	var openFound, wpaFound bool
+	for _, conn := range result.Connections {
+		if conn.SSID != "Cafe" {
+			continue
+		}
+		switch conn.Security {
+		case wifi.SecurityOpen:
+			openFound = true
+			if conn.IsKnown {
+				t.Fatal("open Cafe variant was marked known by a WPA saved profile")
+			}
+		case wifi.SecurityWPA:
+			wpaFound = true
+			if !conn.IsKnown {
+				t.Fatal("WPA Cafe variant was not marked known")
+			}
+		}
+	}
+	if !openFound || !wpaFound {
+		t.Fatalf("ListNetworks returned %#v, want separate open and WPA Cafe variants", result.Connections)
+	}
+}
+
+func TestListNetworks_KeepsSameSSIDWithDifferentWPAFlagsSeparate(t *testing.T) {
+	wpaAP := newMockAccessPoint("Corp", "00:00:00:00:00:10", 80)
+	wpaAP.wpaFlags = 1
+	wpaAP.rsnFlags = 0
+	rsnAP := newMockAccessPoint("Corp", "00:00:00:00:00:11", 70)
+	rsnAP.wpaFlags = 0
+	rsnAP.rsnFlags = 1
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{wpaAP, rsnAP},
+	}
+	b := newTestBackend(device, nil)
+
+	result, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+
+	var corpRows int
+	for _, conn := range result.Connections {
+		if conn.SSID == "Corp" {
+			corpRows++
+			if got := len(conn.AccessPoints); got != 1 {
+				t.Fatalf("Corp row merged %d APs, want each flag variant separate: %#v", got, conn)
+			}
+		}
+	}
+	if corpRows != 2 {
+		t.Fatalf("ListNetworks returned %d Corp rows, want 2 for different WPA/RSN flags: %#v", corpRows, result.Connections)
+	}
+}
+
+func TestListNetworks_DoesNotMark8021XVariantKnownWhenPSKProfileExists(t *testing.T) {
+	pskAP := newMockAccessPoint("Corp", "00:00:00:00:00:12", 40)
+	pskAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmtPSK)
+	eapAP := newMockAccessPoint("Corp", "00:00:00:00:00:13", 90)
+	eapAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmt8021X)
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{eapAP, pskAP},
+	}
+	knownPSK := newMockConnection("/org/freedesktop/NetworkManager/Settings/3", "Corp PSK", "Corp", wifi.SecurityWPA)
+	b := newTestBackend(device, []gonetworkmanager.Connection{knownPSK})
+
+	result, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+
+	var pskFound, eapFound bool
+	for _, conn := range result.Connections {
+		if conn.SSID != "Corp" || len(conn.AccessPoints) != 1 {
+			continue
+		}
+		switch conn.AccessPoints[0].BSSID {
+		case pskAP.bssid:
+			pskFound = true
+			if !conn.IsKnown {
+				t.Fatal("PSK Corp variant was not marked known by a PSK saved profile")
+			}
+		case eapAP.bssid:
+			eapFound = true
+			if conn.IsKnown {
+				t.Fatal("802.1x Corp variant was marked known by a PSK saved profile")
+			}
+		}
+	}
+	if !pskFound || !eapFound {
+		t.Fatalf("ListNetworks returned %#v, want separate PSK and 802.1x Corp variants", result.Connections)
+	}
+}
+
+func TestListNetworks_DoesNotMarkDifferentModeVariantKnown(t *testing.T) {
+	adhocAP := newMockAccessPoint("Direct", "00:00:00:00:00:14", 60)
+	adhocAP.mode = gonetworkmanager.Nm80211ModeAdhoc
+	adhocAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmtPSK)
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{adhocAP},
+	}
+	knownInfra := newMockConnection("/org/freedesktop/NetworkManager/Settings/4", "Direct Infra", "Direct", wifi.SecurityWPA)
+	knownInfra.settings["802-11-wireless"]["mode"] = "infrastructure"
+	b := newTestBackend(device, []gonetworkmanager.Connection{knownInfra})
+
+	result, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+
+	for _, conn := range result.Connections {
+		if len(conn.AccessPoints) == 1 && conn.AccessPoints[0].BSSID == adhocAP.bssid {
+			if conn.IsKnown {
+				t.Fatal("ad-hoc Direct variant was marked known by an infrastructure saved profile")
+			}
+			return
+		}
+	}
+	t.Fatalf("ListNetworks returned %#v, want visible ad-hoc Direct variant", result.Connections)
+}
+
+func TestActivateConnection_UsesAccessPointMatchingKnownSecurity(t *testing.T) {
+	openAP := newMockAccessPoint("Cafe", "00:00:00:00:00:12", 90)
+	openAP.rsnFlags = 0
+	wpaAP := newMockAccessPoint("Cafe", "00:00:00:00:00:13", 40)
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{openAP, wpaAP},
+	}
+	knownWPA := newMockConnection("/org/freedesktop/NetworkManager/Settings/3", "Cafe WPA", "Cafe", wifi.SecurityWPA)
+	b := newTestBackend(device, []gonetworkmanager.Connection{knownWPA})
+
+	mockManager := b.NM.(*mockNM)
+	var activatedAP gonetworkmanager.AccessPoint
+	mockManager.activateWirelessConnectionFunc = func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, ap gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error) {
+		activatedAP = ap
+		return &mockActiveConnection{}, nil
+	}
+
+	_, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+	if err := b.ActivateConnection("Cafe"); err != nil {
+		t.Fatalf("ActivateConnection(Cafe) returned error: %v", err)
+	}
+	if activatedAP != wpaAP {
+		t.Fatalf("ActivateConnection used AP %#v, want WPA AP %#v", activatedAP, wpaAP)
+	}
+}
+
+func TestActivateConnection_UsesAccessPointMatchingKnownKeyManagement(t *testing.T) {
+	eapAP := newMockAccessPoint("Corp", "00:00:00:00:00:15", 90)
+	eapAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmt8021X)
+	pskAP := newMockAccessPoint("Corp", "00:00:00:00:00:16", 40)
+	pskAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmtPSK)
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{eapAP, pskAP},
+	}
+	knownPSK := newMockConnection("/org/freedesktop/NetworkManager/Settings/5", "Corp PSK", "Corp", wifi.SecurityWPA)
+	b := newTestBackend(device, []gonetworkmanager.Connection{knownPSK})
+
+	mockManager := b.NM.(*mockNM)
+	var activatedAP gonetworkmanager.AccessPoint
+	mockManager.activateWirelessConnectionFunc = func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, ap gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error) {
+		activatedAP = ap
+		return &mockActiveConnection{}, nil
+	}
+
+	_, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+	if err := b.ActivateConnection("Corp"); err != nil {
+		t.Fatalf("ActivateConnection(Corp) returned error: %v", err)
+	}
+	if activatedAP != pskAP {
+		t.Fatalf("ActivateConnection used AP %#v, want PSK AP %#v", activatedAP, pskAP)
+	}
+}
+
+func TestActivateConnection_DoesNotPairSavedProfileWithIncompatibleAccessPoint(t *testing.T) {
+	eapAP := newMockAccessPoint("Corp", "00:00:00:00:00:17", 90)
+	eapAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmt8021X)
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{eapAP},
+	}
+	knownPSK := newMockConnection("/org/freedesktop/NetworkManager/Settings/6", "Corp PSK", "Corp", wifi.SecurityWPA)
+	b := newTestBackend(device, []gonetworkmanager.Connection{knownPSK})
+
+	mockManager := b.NM.(*mockNM)
+	var activatedAP gonetworkmanager.AccessPoint
+	mockManager.activateWirelessConnectionFunc = func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, ap gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error) {
+		activatedAP = ap
+		return &mockActiveConnection{}, nil
+	}
+
+	_, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+	err = b.ActivateConnection("Corp")
+	if !errors.Is(err, wifi.ErrNotFound) {
+		t.Fatalf("ActivateConnection(Corp) error = %v, want ErrNotFound", err)
+	}
+	if activatedAP != nil {
+		t.Fatalf("ActivateConnection used incompatible AP %#v", activatedAP)
 	}
 }
 
