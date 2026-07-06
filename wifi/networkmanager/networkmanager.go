@@ -17,6 +17,7 @@ import (
 const (
 	connectionTimeout = 10 * time.Second
 	scanTimeout       = 30 * time.Second
+	scanFreshness     = 30 * time.Second
 )
 
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
@@ -26,6 +27,10 @@ type Backend struct {
 	Connections  map[string]gonetworkmanager.Connection
 	AccessPoints map[string]gonetworkmanager.AccessPoint
 	Device       gonetworkmanager.DeviceWireless
+
+	scanFunc      func(gonetworkmanager.DeviceWireless) error
+	scanFreshness time.Duration
+	lastScan      time.Time
 }
 
 // New creates a new dbus.Backend.
@@ -89,6 +94,11 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 }
 
 func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
+	var baseline time.Duration
+	if value, err := device.GetPropertyLastScan(); err == nil && value > 0 {
+		baseline = time.Duration(value) * time.Millisecond
+	}
+
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return fmt.Errorf("failed to connect to dbus: %w", err)
@@ -139,7 +149,19 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 			if !ok {
 				continue
 			}
-			if _, ok := changed["LastScan"]; ok {
+			variant, ok := changed["LastScan"]
+			if !ok {
+				continue
+			}
+			value, ok := variant.Value().(int64)
+			if !ok {
+				return nil
+			}
+			var nextScan time.Duration
+			if value > 0 {
+				nextScan = time.Duration(value) * time.Millisecond
+			}
+			if baseline == 0 || nextScan > baseline {
 				return nil
 			}
 		case <-timer.C:
@@ -165,11 +187,17 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		return nil, err
 	}
 
-	if shouldScan {
-		err = b.scanAndWait(wirelessDevice)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan: %w: %w", wifi.ErrOperationFailed, err)
+	freshness := scanFreshness
+	if b.scanFreshness > 0 {
+		freshness = b.scanFreshness
+	}
+	if shouldScan && (b.lastScan.IsZero() || time.Since(b.lastScan) >= freshness) {
+		scan := b.scanAndWait
+		if b.scanFunc != nil {
+			scan = b.scanFunc
 		}
+		_ = scan(wirelessDevice)
+		b.lastScan = time.Now()
 	}
 
 	knownConnections, err := b.Settings.ListConnections()
@@ -177,7 +205,10 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		return nil, err
 	}
 
-	accessPoints, err := wirelessDevice.GetAccessPoints()
+	accessPoints, err := wirelessDevice.GetAllAccessPoints()
+	if err != nil {
+		accessPoints, err = wirelessDevice.GetAccessPoints()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -230,13 +261,14 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 		if existing, exists := newAccessPoints[ssid]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
-			if strength <= exStrength {
-				continue
+			if strength > exStrength {
+				newAccessPoints[ssid] = ap
 			}
+		} else {
+			newAccessPoints[ssid] = ap
 		}
 
 		processedSSIDs[ssid] = true
-		newAccessPoints[ssid] = ap
 
 		flags, _ := ap.GetPropertyFlags()
 		wpaFlags, _ := ap.GetPropertyWPAFlags()
@@ -255,20 +287,6 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 		// Check if we already have this Connection processed
 		if conn, exists := uniqueConns[key]; exists {
-			// We already have a base connection for this SSID/Security pair.
-			// Just add the AP. AddAccessPoint handles merging logic if needed,
-			// but since we keyed by what Compare checks, we can trust it matches.
-			_ = conn.AddAccessPoint(wifi.Connection{
-				SSID:         ssid,
-				Security:     security,
-				AccessPoints: []wifi.AccessPoint{wifiAP},
-				// Other fields like Active/Known are merged by AddAccessPoint
-				// We need to populate them if this specific AP instance has them "better" or "true"
-				// But IsKnown is per-SSID (mostly), IsActive is per-connection.
-				// Let's populate the temp struct with what we know from this AP context.
-			})
-
-			// Let's reconstruct the temp connection properly to pass to AddAccessPoint
 			tempConn := wifi.Connection{
 				SSID:         ssid,
 				Security:     security,
