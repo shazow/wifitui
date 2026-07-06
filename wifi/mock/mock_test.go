@@ -33,7 +33,7 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestBuildNetworkList(t *testing.T) {
+func TestListNetworks(t *testing.T) {
 	b, _ := New()
 	mock := b.(*MockBackend)
 	knownSSID := "Password is password"
@@ -44,10 +44,11 @@ func TestBuildNetworkList(t *testing.T) {
 		t.Fatalf("ActivateConnection failed: %v", err)
 	}
 
-	networks, err := b.BuildNetworkList(false)
+	result, err := b.ListNetworks(wifi.ScanNever)
 	if err != nil {
-		t.Fatalf("BuildNetworkList() failed: %v", err)
+		t.Fatalf("ListNetworks() failed: %v", err)
 	}
+	networks := result.Connections
 
 	conn := findConnection(networks, knownSSID)
 	if conn == nil {
@@ -223,10 +224,11 @@ func TestUpdateConnection(t *testing.T) {
 		t.Fatalf("failed to set autoconnect to false: %v", err)
 	}
 
-	conns, err := b.BuildNetworkList(false)
+	result, err := b.ListNetworks(wifi.ScanNever)
 	if err != nil {
 		t.Fatalf("failed to build network list: %v", err)
 	}
+	conns := result.Connections
 
 	conn := findConnection(conns, ssid)
 	if conn == nil {
@@ -244,10 +246,11 @@ func TestUpdateConnection(t *testing.T) {
 		t.Fatalf("failed to set autoconnect to true: %v", err)
 	}
 
-	conns, err = b.BuildNetworkList(false)
+	result, err = b.ListNetworks(wifi.ScanNever)
 	if err != nil {
 		t.Fatalf("failed to build network list: %v", err)
 	}
+	conns = result.Connections
 
 	conn = findConnection(conns, ssid)
 	if conn == nil {
@@ -274,14 +277,14 @@ func TestUpdateConnection(t *testing.T) {
 	}
 }
 
-func TestBuildNetworkList_WirelessDisabled(t *testing.T) {
+func TestListNetworks_WirelessDisabled(t *testing.T) {
 	b, _ := New()
 	mockBackend := b.(*MockBackend)
 	mockBackend.WirelessEnabled = false
 
-	_, err := b.BuildNetworkList(false)
+	_, err := b.ListNetworks(wifi.ScanNever)
 	if err == nil {
-		t.Fatal("BuildNetworkList() should have failed, but did not")
+		t.Fatal("ListNetworks() should have failed, but did not")
 	}
 	if err != wifi.ErrWirelessDisabled {
 		t.Errorf("expected error %v, but got %v", wifi.ErrWirelessDisabled, err)
@@ -308,11 +311,12 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 		t.Errorf("expected secret '%s', got '%s'", password, secret)
 	}
 
-	// 2a. Check BuildNetworkList output
-	networks, err := b.BuildNetworkList(false)
+	// 2a. Check ListNetworks output
+	result, err := b.ListNetworks(wifi.ScanNever)
 	if err != nil {
-		t.Fatalf("BuildNetworkList() failed: %v", err)
+		t.Fatalf("ListNetworks() failed: %v", err)
 	}
+	networks := result.Connections
 	conn := findConnection(networks, ssid)
 	if conn == nil {
 		t.Fatalf("did not find network %s in list after first join", ssid)
@@ -337,11 +341,12 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 		t.Errorf("expected secret to be updated to '%s', but got '%s'", newPassword, secret)
 	}
 
-	// 4a. Check BuildNetworkList output again
-	networks, err = b.BuildNetworkList(false)
+	// 4a. Check ListNetworks output again
+	result, err = b.ListNetworks(wifi.ScanNever)
 	if err != nil {
-		t.Fatalf("BuildNetworkList() failed after second join: %v", err)
+		t.Fatalf("ListNetworks() failed after second join: %v", err)
 	}
+	networks = result.Connections
 	conn = findConnection(networks, ssid)
 	if conn == nil {
 		t.Fatalf("did not find network %s in in list after second join", ssid)

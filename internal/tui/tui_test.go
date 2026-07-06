@@ -30,8 +30,8 @@ func TestTuiModel_ScanFinishedUpdatesList(t *testing.T) {
 	m = updatedModel.(*model)
 
 	// Simulate a scan finishing
-	scanMsg := scanFinishedMsg(connections)
-	updatedModel, _ = m.Update(scanMsg)
+	msg := scanFinishedMsg{connections: connections}
+	updatedModel, _ = m.Update(msg)
 	m = updatedModel.(*model)
 
 	// Check the view
@@ -42,6 +42,43 @@ func TestTuiModel_ScanFinishedUpdatesList(t *testing.T) {
 	}
 	if !strings.Contains(view, "TestNet2") {
 		t.Errorf("View does not contain 'TestNet2' in\n%s", view)
+	}
+}
+
+func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	mockBackend := backend.(*mock.MockBackend)
+	mockBackend.ActionSleep = 0
+
+	m, err := NewModel(cachedBackend{
+		Backend: backend,
+	})
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updatedModel.(*model)
+
+	updatedModel, cmd := m.Update(scanMsg{})
+	m = updatedModel.(*model)
+	if cmd == nil {
+		t.Fatal("scanMsg did not return a command")
+	}
+	m = runTUITestCommand(t, m, cmd)
+
+	view := m.View()
+	if !strings.Contains(view, "Unencrypted_Honeypot") {
+		t.Errorf("View does not contain cached network after scan warning in\n%s", view)
+	}
+	if !strings.Contains(view, "Warning: scan failed; showing cached results") {
+		t.Errorf("View does not contain scan warning in\n%s", view)
+	}
+	if strings.Contains(view, "Error:") {
+		t.Errorf("View should not show the fatal error screen for scan warning in\n%s", view)
 	}
 }
 
@@ -108,4 +145,38 @@ func TestTuiModel_EnableRadioSwitchesView(t *testing.T) {
 	if !strings.Contains(view, "WiFi Network") {
 		t.Errorf("View does not contain network list title after enabling radio in\n%s", view)
 	}
+}
+
+type cachedBackend struct {
+	wifi.Backend
+}
+
+func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	result, err := b.Backend.ListNetworks(scan)
+	result.IsCached = true
+	return result, err
+}
+
+func runTUITestCommand(t *testing.T, m *model, cmd tea.Cmd) *model {
+	t.Helper()
+	if cmd == nil {
+		return m
+	}
+	msg := cmd()
+	if msg == nil {
+		return m
+	}
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, batchCmd := range batch {
+			m = runTUITestCommand(t, m, batchCmd)
+		}
+		return m
+	}
+
+	updatedModel, nextCmd := m.Update(msg)
+	updated, ok := updatedModel.(*model)
+	if !ok {
+		t.Fatalf("Update(%T) returned %T, want *model", msg, updatedModel)
+	}
+	return runTUITestCommand(t, updated, nextCmd)
 }

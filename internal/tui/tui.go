@@ -99,17 +99,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Skip additional scans while we're still loading
 			return m, nil
 		}
-		return m, tea.Batch(
-			func() tea.Msg { return statusMsg{status: "Scanning for networks...", loading: true} },
-			func() tea.Msg {
-				connections, err := m.backend.BuildNetworkList(true)
-				if err != nil {
-					return errorMsg{err}
-				}
-				wifi.SortConnections(connections)
-				return scanFinishedMsg(connections)
-			},
-		)
+		m.statusMessage = "Scanning for networks..."
+		m.loading = true
+		return m, func() tea.Msg {
+			result, err := m.backend.ListNetworks(wifi.ScanAuto)
+			if err != nil {
+				return errorMsg{err}
+			}
+			connections := result.Connections
+			wifi.SortConnections(connections)
+			return scanFinishedMsg{
+				connections: connections,
+				isCached:    result.IsCached,
+			}
+		}
 	case connectMsg:
 		var batch []tea.Cmd = []tea.Cmd{
 			func() tea.Msg {
@@ -222,17 +225,21 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case scanFinishedMsg:
-		// Clear loading status
-		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
+		m.loading = false
+		m.statusMessage = ""
+		if msg.isCached {
+			m.statusMessage = "Warning: scan failed; showing cached results"
+		}
 	case connectionSavedMsg:
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: "Saved. Refreshing...", loading: true} },
 			func() tea.Msg { return popViewMsg{} },
 			func() tea.Msg {
-				connections, err := m.backend.BuildNetworkList(false)
+				result, err := m.backend.ListNetworks(wifi.ScanNever)
 				if err != nil {
 					return errorMsg{err}
 				}
+				connections := result.Connections
 				if msg.forgottenSSID != "" {
 					// Remove the forgotten network from the list.
 					// If visible, mark as not known; if not visible, remove entirely.

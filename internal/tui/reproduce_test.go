@@ -42,8 +42,8 @@ func TestMultipleAccessPointsDisplay(t *testing.T) {
 	model := NewListModel()
 
 	// Simulate loading connections
-	conns, _ := mb.BuildNetworkList(true)
-	msg := connectionsLoadedMsg(conns)
+	result, _ := mb.ListNetworks(wifi.ScanAuto)
+	msg := connectionsLoadedMsg(result.Connections)
 	model.Update(msg)
 
 	items := model.list.Items()

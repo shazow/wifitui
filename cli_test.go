@@ -55,6 +55,29 @@ func TestRunListDefault(t *testing.T) {
 	}
 }
 
+func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	backend := cachedBackend{
+		Backend: mockBackend,
+	}
+	if err := runList(&buf, false, false, true, backend); err != nil {
+		t.Fatalf("runList() failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Unencrypted_Honeypot") {
+		t.Errorf("runList() output missing cached network. got=%q", output)
+	}
+	if !strings.Contains(output, "Warning: scan failed; showing cached results") {
+		t.Errorf("runList() output missing scan warning. got=%q", output)
+	}
+}
+
 func TestRunShow(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {
@@ -101,6 +124,16 @@ func TestRunShow(t *testing.T) {
 			t.Errorf("runShow() with not found network gave wrong error. got=%q", err)
 		}
 	}
+}
+
+type cachedBackend struct {
+	wifi.Backend
+}
+
+func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	result, err := b.Backend.ListNetworks(scan)
+	result.IsCached = true
+	return result, err
 }
 
 func TestRunListJSON(t *testing.T) {
@@ -199,10 +232,11 @@ func TestRunConnect(t *testing.T) {
 	}
 
 	// Check if the network was added
-	networks, err := mockBackend.BuildNetworkList(false)
+	result, err := mockBackend.ListNetworks(wifi.ScanNever)
 	if err != nil {
 		t.Fatalf("failed to get network list: %v", err)
 	}
+	networks := result.Connections
 	found := false
 	for _, n := range networks {
 		if n.SSID == "new-network" {
@@ -221,10 +255,11 @@ func TestRunConnect(t *testing.T) {
 	}
 
 	// Check if the network is active
-	networks, err = mockBackend.BuildNetworkList(false)
+	result, err = mockBackend.ListNetworks(wifi.ScanNever)
 	if err != nil {
 		t.Fatalf("failed to get network list: %v", err)
 	}
+	networks = result.Connections
 	found = false
 	for _, n := range networks {
 		if n.SSID == "Password is password" {
@@ -317,11 +352,11 @@ type flakyBackend struct {
 	scannedSSIDs []string // SSIDs that were scanned
 }
 
-func (f *flakyBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
-	if shouldScan {
+func (f *flakyBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	if scan != wifi.ScanNever {
 		f.scannedSSIDs = append(f.scannedSSIDs, "any")
 	}
-	return f.MockBackend.BuildNetworkList(shouldScan)
+	return f.MockBackend.ListNetworks(scan)
 }
 
 func (f *flakyBackend) JoinNetwork(ssid, passphrase string, security wifi.SecurityType, isHidden bool) error {

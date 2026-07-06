@@ -60,8 +60,11 @@ func (i connectionItem) FilterValue() string { return i.Title() }
 type (
 	// From backend
 	connectionsLoadedMsg []wifi.Connection // Sent when connections are fetched
-	scanFinishedMsg      []wifi.Connection // Sent when a scan is finished
-	secretsLoadedMsg     struct {
+	scanFinishedMsg      struct {
+		connections []wifi.Connection
+		isCached    bool
+	}
+	secretsLoadedMsg struct {
 		item   connectionItem
 		secret string
 	}

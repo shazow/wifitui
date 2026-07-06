@@ -11,6 +11,7 @@ import (
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
 	"github.com/godbus/dbus/v5"
+	"github.com/shazow/wifitui/wifi"
 )
 
 type mockNM struct {
@@ -169,7 +170,7 @@ func TestGetWirelessDevice_Caching(t *testing.T) {
 	}
 }
 
-func TestBuildNetworkList_ReturnsCachedListWhenScanFails(t *testing.T) {
+func TestListNetworks_ReturnsCachedListWhenScanFails(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
@@ -180,22 +181,67 @@ func TestBuildNetworkList_ReturnsCachedListWhenScanFails(t *testing.T) {
 		return errors.New("scan not allowed")
 	}
 
-	connections, err := b.BuildNetworkList(true)
+	result, err := b.ListNetworks(wifi.ScanAuto)
 	if err != nil {
-		t.Fatalf("BuildNetworkList(true) returned fatal scan error: %v", err)
+		t.Fatalf("ListNetworks(ScanAuto) returned fatal scan error: %v", err)
 	}
+	connections := result.Connections
 	if len(connections) != 1 {
-		t.Fatalf("BuildNetworkList(true) returned %d connections, want 1", len(connections))
+		t.Fatalf("ListNetworks(ScanAuto) returned %d connections, want 1", len(connections))
 	}
 	if connections[0].SSID != "Cafe" {
-		t.Fatalf("BuildNetworkList(true) returned SSID %q, want Cafe", connections[0].SSID)
+		t.Fatalf("ListNetworks(ScanAuto) returned SSID %q, want Cafe", connections[0].SSID)
+	}
+	if !result.IsCached {
+		t.Fatal("ListNetworks(ScanAuto) did not mark cached results after scan failure")
 	}
 	if b.lastScan.IsZero() {
-		t.Fatal("BuildNetworkList(true) did not record lastScan after a scan failure")
+		t.Fatal("ListNetworks(ScanAuto) did not record lastScan after a scan failure")
 	}
 }
 
-func TestBuildNetworkList_SkipsScanWhenLastScanFresh(t *testing.T) {
+func TestListNetworks_MarksCachedWhenScanFails(t *testing.T) {
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
+		},
+	}
+	b := newTestBackend(device, nil)
+	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+		return errors.New("scan not allowed")
+	}
+
+	result, err := b.ListNetworks(wifi.ScanAuto)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanAuto) returned fatal scan error: %v", err)
+	}
+	if !result.IsCached {
+		t.Fatal("ListNetworks(ScanAuto) did not mark cached results after scan failure")
+	}
+}
+
+func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
+		},
+	}
+	b := newTestBackend(device, nil)
+	b.scanCached = true
+	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+		return nil
+	}
+
+	result, err := b.ListNetworks(wifi.ScanAuto)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanAuto) returned error: %v", err)
+	}
+	if result.IsCached {
+		t.Fatal("ListNetworks(ScanAuto) marked cached results after successful scan")
+	}
+}
+
+func TestListNetworks_SkipsScanWhenLastScanFresh(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Fresh", "00:00:00:00:00:02", 75),
@@ -210,19 +256,47 @@ func TestBuildNetworkList_SkipsScanWhenLastScanFresh(t *testing.T) {
 		return nil
 	}
 
-	connections, err := b.BuildNetworkList(true)
+	result, err := b.ListNetworks(wifi.ScanAuto)
 	if err != nil {
-		t.Fatalf("BuildNetworkList(true) returned error: %v", err)
+		t.Fatalf("ListNetworks(ScanAuto) returned error: %v", err)
 	}
+	connections := result.Connections
 	if scanCalled {
-		t.Fatal("BuildNetworkList(true) requested a scan even though LastScan was fresh")
+		t.Fatal("ListNetworks(ScanAuto) requested a scan even though LastScan was fresh")
 	}
 	if len(connections) != 1 || connections[0].SSID != "Fresh" {
-		t.Fatalf("BuildNetworkList(true) returned %#v, want Fresh network", connections)
+		t.Fatalf("ListNetworks(ScanAuto) returned %#v, want Fresh network", connections)
 	}
 }
 
-func TestBuildNetworkList_RequestsScanWhenLastScanUnset(t *testing.T) {
+func TestListNetworks_ForceScanWhenLastScanFresh(t *testing.T) {
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Forced", "00:00:00:00:00:02", 75),
+		},
+	}
+	b := newTestBackend(device, nil)
+	b.lastScan = time.Now().Add(-10 * time.Second)
+	b.scanInterval = 30 * time.Second
+	scanCalled := false
+	b.scanFunc = func(gonetworkmanager.DeviceWireless) error {
+		scanCalled = true
+		return nil
+	}
+
+	result, err := b.ListNetworks(wifi.ScanForce)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanForce) returned error: %v", err)
+	}
+	if !scanCalled {
+		t.Fatal("ListNetworks(ScanForce) skipped scan even though force was requested")
+	}
+	if len(result.Connections) != 1 || result.Connections[0].SSID != "Forced" {
+		t.Fatalf("ListNetworks(ScanForce) returned %#v, want Forced network", result.Connections)
+	}
+}
+
+func TestListNetworks_RequestsScanWhenLastScanUnset(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Unset", "00:00:00:00:00:03", 75),
@@ -235,15 +309,15 @@ func TestBuildNetworkList_RequestsScanWhenLastScanUnset(t *testing.T) {
 		return nil
 	}
 
-	_, err := b.BuildNetworkList(true)
+	_, err := b.ListNetworks(wifi.ScanAuto)
 	if err != nil {
-		t.Fatalf("BuildNetworkList(true) returned error: %v", err)
+		t.Fatalf("ListNetworks(ScanAuto) returned error: %v", err)
 	}
 	if !scanCalled {
-		t.Fatal("BuildNetworkList(true) skipped scan even though LastScan was unset")
+		t.Fatal("ListNetworks(ScanAuto) skipped scan even though LastScan was unset")
 	}
 	if b.lastScan.IsZero() {
-		t.Fatal("BuildNetworkList(true) did not record lastScan after requesting a scan")
+		t.Fatal("ListNetworks(ScanAuto) did not record lastScan after requesting a scan")
 	}
 }
 
@@ -285,7 +359,7 @@ func TestScanIfStale_CoalescesConcurrentScans(t *testing.T) {
 	}
 }
 
-func TestBuildNetworkList_DefersRetryAfterScanFailure(t *testing.T) {
+func TestListNetworks_DefersRetryAfterScanFailure(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Deferred", "00:00:00:00:00:05", 64),
@@ -301,18 +375,18 @@ func TestBuildNetworkList_DefersRetryAfterScanFailure(t *testing.T) {
 	}
 
 	for range 2 {
-		_, err := b.BuildNetworkList(true)
+		_, err := b.ListNetworks(wifi.ScanAuto)
 		if err != nil {
-			t.Fatalf("BuildNetworkList(true) returned error: %v", err)
+			t.Fatalf("ListNetworks(ScanAuto) returned error: %v", err)
 		}
 	}
 
 	if got := scanCalls.Load(); got != 1 {
-		t.Fatalf("BuildNetworkList(true) made %d scan attempts, want 1", got)
+		t.Fatalf("ListNetworks(ScanAuto) made %d scan attempts, want 1", got)
 	}
 }
 
-func TestBuildNetworkList_UsesAllAccessPoints(t *testing.T) {
+func TestListNetworks_UsesAllAccessPoints(t *testing.T) {
 	device := &mockDeviceWireless{
 		allAccessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("AllAP", "00:00:00:00:00:03", 54),
@@ -320,19 +394,20 @@ func TestBuildNetworkList_UsesAllAccessPoints(t *testing.T) {
 	}
 	b := newTestBackend(device, nil)
 
-	connections, err := b.BuildNetworkList(false)
+	result, err := b.ListNetworks(wifi.ScanNever)
 	if err != nil {
-		t.Fatalf("BuildNetworkList(false) returned error: %v", err)
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
+	connections := result.Connections
 	if !device.getAllAccessPointsCalled {
-		t.Fatal("BuildNetworkList(false) did not call GetAllAccessPoints")
+		t.Fatal("ListNetworks(ScanNever) did not call GetAllAccessPoints")
 	}
 	if len(connections) != 1 || connections[0].SSID != "AllAP" {
-		t.Fatalf("BuildNetworkList(false) returned %#v, want AllAP network", connections)
+		t.Fatalf("ListNetworks(ScanNever) returned %#v, want AllAP network", connections)
 	}
 }
 
-func TestBuildNetworkList_MergesDuplicateAccessPointsOnce(t *testing.T) {
+func TestListNetworks_MergesDuplicateAccessPointsOnce(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Mesh", "00:00:00:00:00:04", 35),
@@ -341,12 +416,13 @@ func TestBuildNetworkList_MergesDuplicateAccessPointsOnce(t *testing.T) {
 	}
 	b := newTestBackend(device, nil)
 
-	connections, err := b.BuildNetworkList(false)
+	result, err := b.ListNetworks(wifi.ScanNever)
 	if err != nil {
-		t.Fatalf("BuildNetworkList(false) returned error: %v", err)
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
+	connections := result.Connections
 	if len(connections) != 1 {
-		t.Fatalf("BuildNetworkList(false) returned %d connections, want 1", len(connections))
+		t.Fatalf("ListNetworks(ScanNever) returned %d connections, want 1", len(connections))
 	}
 	if got := len(connections[0].AccessPoints); got != 2 {
 		t.Fatalf("merged connection has %d access points, want 2: %#v", got, connections[0].AccessPoints)
@@ -356,7 +432,7 @@ func TestBuildNetworkList_MergesDuplicateAccessPointsOnce(t *testing.T) {
 	}
 }
 
-func TestBuildNetworkList_PreservesWeakerDuplicateAccessPoint(t *testing.T) {
+func TestListNetworks_PreservesWeakerDuplicateAccessPoint(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Mesh", "00:00:00:00:00:06", 90),
@@ -365,12 +441,13 @@ func TestBuildNetworkList_PreservesWeakerDuplicateAccessPoint(t *testing.T) {
 	}
 	b := newTestBackend(device, nil)
 
-	connections, err := b.BuildNetworkList(false)
+	result, err := b.ListNetworks(wifi.ScanNever)
 	if err != nil {
-		t.Fatalf("BuildNetworkList(false) returned error: %v", err)
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
+	connections := result.Connections
 	if len(connections) != 1 {
-		t.Fatalf("BuildNetworkList(false) returned %d connections, want 1", len(connections))
+		t.Fatalf("ListNetworks(ScanNever) returned %d connections, want 1", len(connections))
 	}
 	if got := len(connections[0].AccessPoints); got != 2 {
 		t.Fatalf("merged connection has %d access points, want 2: %#v", got, connections[0].AccessPoints)

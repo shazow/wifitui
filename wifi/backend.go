@@ -85,10 +85,29 @@ type UpdateOptions struct {
 	AutoConnect *bool
 }
 
+// ScanMode controls whether listing networks should request a scan first.
+type ScanMode int
+
+const (
+	// ScanNever returns the backend's current network list without requesting a scan.
+	ScanNever ScanMode = iota
+	// ScanAuto requests a scan when the backend decides its current list is stale.
+	ScanAuto
+	// ScanForce requests a scan even if the backend's current list is fresh.
+	ScanForce
+)
+
+// NetworksResult contains the networks returned by a list operation and
+// whether they came from a cached fallback after a requested scan failed.
+type NetworksResult struct {
+	Connections []Connection
+	IsCached    bool
+}
+
 // Backend defines the interface for managing network connections.
 type Backend interface {
-	// BuildNetworkList scans (if shouldScan is true) and returns all networks.
-	BuildNetworkList(shouldScan bool) ([]Connection, error)
+	// ListNetworks returns all networks and optionally requests a scan first.
+	ListNetworks(scan ScanMode) (NetworksResult, error)
 	// ActivateConnection activates a known network.
 	ActivateConnection(ssid string) error
 	// ForgetNetwork removes a known network configuration.

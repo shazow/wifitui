@@ -170,27 +170,27 @@ type orderedNetwork struct {
 	Strength int16
 }
 
-// BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+// ListNetworks returns all networks and optionally requests a scan first.
+func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	enabled, err := b.IsWirelessEnabled()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 	if !enabled {
-		return nil, wifi.ErrWirelessDisabled
+		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
 	}
 
 	conn, err := dbus.SystemBus()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
 	station, err := getStationDevice(conn)
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
-	if shouldScan {
+	if scan != wifi.ScanNever {
 		// Best effort scan
 		_ = conn.Object(iwdDest, station).Call(iwdStationIface+".Scan", 0)
 	}
@@ -199,7 +199,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	var ordered []orderedNetwork
 	err = conn.Object(iwdDest, station).Call(iwdStationIface+".GetOrderedNetworks", 0).Store(&ordered)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get ordered networks: %w", err)
+		return wifi.NetworksResult{}, fmt.Errorf("failed to get ordered networks: %w", err)
 	}
 
 	var connections []wifi.Connection
@@ -323,7 +323,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		connections = append(connections, c)
 	}
 
-	return connections, nil
+	return wifi.NetworksResult{Connections: connections}, nil
 }
 
 func (b *Backend) ActivateConnection(ssid string) error {

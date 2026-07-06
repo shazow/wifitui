@@ -32,6 +32,7 @@ type Backend struct {
 	scanFunc     func(gonetworkmanager.DeviceWireless) error
 	scanInterval time.Duration
 	lastScan     time.Time
+	scanCached   bool
 	scanMu       sync.Mutex
 	scanDone     chan struct{}
 }
@@ -173,7 +174,15 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	}
 }
 
-func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) {
+func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) bool {
+	return b.scan(device, false)
+}
+
+func (b *Backend) scanNow(device gonetworkmanager.DeviceWireless) bool {
+	return b.scan(device, true)
+}
+
+func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) bool {
 	interval := scanInterval
 	if b.scanInterval > 0 {
 		interval = b.scanInterval
@@ -183,7 +192,7 @@ func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) {
 	runScan := false
 
 	b.scanMu.Lock()
-	if b.lastScan.IsZero() || time.Since(b.lastScan) >= interval {
+	if force || b.lastScan.IsZero() || time.Since(b.lastScan) >= interval {
 		if b.scanDone != nil {
 			done = b.scanDone
 		} else {
@@ -191,6 +200,10 @@ func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) {
 			b.scanDone = done
 			runScan = true
 		}
+	} else {
+		cached := b.scanCached
+		b.scanMu.Unlock()
+		return cached
 	}
 	b.scanMu.Unlock()
 
@@ -199,41 +212,52 @@ func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) {
 		if b.scanFunc != nil {
 			scan = b.scanFunc
 		}
-		_ = scan(device)
+		err := scan(device)
 		b.scanMu.Lock()
 		b.lastScan = time.Now()
+		b.scanCached = err != nil
 		close(done)
 		b.scanDone = nil
+		cached := b.scanCached
 		b.scanMu.Unlock()
+		return cached
 	} else if done != nil {
 		<-done
 	}
+
+	b.scanMu.Lock()
+	defer b.scanMu.Unlock()
+	return b.scanCached
 }
 
-// BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+// ListNetworks scans according to scan mode and returns all networks.
+func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	enabled, err := b.IsWirelessEnabled()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 	if !enabled {
-		return nil, wifi.ErrWirelessDisabled
+		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
 	}
 	newConnections := make(map[string]gonetworkmanager.Connection)
 	newAccessPoints := make(map[string]gonetworkmanager.AccessPoint)
 
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
-	if shouldScan {
-		b.scanIfStale(wirelessDevice)
+	isCached := false
+	switch scan {
+	case wifi.ScanAuto:
+		isCached = b.scanIfStale(wirelessDevice)
+	case wifi.ScanForce:
+		isCached = b.scanNow(wirelessDevice)
 	}
 
 	knownConnections, err := b.Settings.ListConnections()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
 	accessPoints, err := wirelessDevice.GetAllAccessPoints()
@@ -241,7 +265,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		accessPoints, err = wirelessDevice.GetAccessPoints()
 	}
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
 	// We use a map with a composite key {ssid, security} to store unique connections.
@@ -254,7 +278,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 
 	activeConnections, err := b.NM.GetPropertyActiveConnections()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
 	var activeConnectionID string
@@ -479,7 +503,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	b.AccessPoints = newAccessPoints
 
 	wifi.SortConnections(conns)
-	return conns, nil
+	return wifi.NetworksResult{Connections: conns, IsCached: isCached}, nil
 }
 
 func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
@@ -493,7 +517,7 @@ func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error
 	}
 
 	if len(b.Connections) == 0 {
-		_, err := b.BuildNetworkList(false)
+		_, err := b.ListNetworks(wifi.ScanNever)
 		if err != nil {
 			return nil, err
 		}

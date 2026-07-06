@@ -333,9 +333,9 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.updateListSize()
 		return m, nil
 	case scanFinishedMsg:
-		m.refreshColumns(msg)
-		items := make([]list.Item, len(msg))
-		for i, c := range msg {
+		m.refreshColumns(msg.connections)
+		items := make([]list.Item, len(msg.connections))
+		for i, c := range msg.connections {
 			items[i] = connectionItem{Connection: c}
 		}
 		m.list.SetItems(items)

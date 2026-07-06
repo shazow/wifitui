@@ -56,14 +56,14 @@ func New() (wifi.Backend, error) {
 	return &Backend{WifiInterface: device}, nil
 }
 
-// BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+// ListNetworks returns all networks.
+func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	enabled, err := b.IsWirelessEnabled()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 	if !enabled {
-		return nil, wifi.ErrWirelessDisabled
+		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
 	}
 
 	// Get current network
@@ -82,7 +82,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	cmd = exec.Command("networksetup", "-listpreferredwirelessnetworks", b.WifiInterface)
 	out, err = runWithOutput(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list preferred networks: %w: %s", wifi.ErrOperationFailed, err)
+		return wifi.NetworksResult{}, fmt.Errorf("failed to list preferred networks: %w: %s", wifi.ErrOperationFailed, err)
 	}
 	knownSSIDs := make(map[string]bool)
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
@@ -97,7 +97,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	cmd = exec.Command("system_profiler", "SPAirPortDataType")
 	out, err = runWithOutput(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to scan for networks: %w", wifi.ErrOperationFailed)
+		return wifi.NetworksResult{}, fmt.Errorf("failed to scan for networks: %w", wifi.ErrOperationFailed)
 	}
 
 	scannedNetworks := parseSystemProfilerOutput(string(out))
@@ -120,14 +120,14 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			aggregatedConns[net.ssid] = conn
 		} else {
 			aggregatedConns[net.ssid] = wifi.Connection{
-				SSID:        net.ssid,
-				IsActive:    isActive,
-				IsKnown:     isKnown,
-				IsVisible:   true,
+				SSID:         net.ssid,
+				IsActive:     isActive,
+				IsKnown:      isKnown,
+				IsVisible:    true,
 				AccessPoints: []wifi.AccessPoint{ap},
-				IsSecure:    net.security != wifi.SecurityOpen,
-				Security:    net.security,
-				AutoConnect: isKnown,
+				IsSecure:     net.security != wifi.SecurityOpen,
+				Security:     net.security,
+				AutoConnect:  isKnown,
 			}
 		}
 	}
@@ -148,7 +148,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		}
 	}
 
-	return conns, nil
+	return wifi.NetworksResult{Connections: conns}, nil
 }
 
 // ActivateConnection activates a known network.

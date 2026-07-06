@@ -94,10 +94,15 @@ func writeConnectionDetails(w io.Writer, c wifi.Connection, secret string) error
 }
 
 func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) error {
-	connections, err := b.BuildNetworkList(scan)
+	scanMode := wifi.ScanNever
+	if scan {
+		scanMode = wifi.ScanAuto
+	}
+	result, err := b.ListNetworks(scanMode)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
+	connections := result.Connections
 
 	if !all {
 		connections = filterVisibleConnections(connections)
@@ -110,15 +115,19 @@ func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) err
 	for _, c := range connections {
 		fmt.Fprintf(w, "%s\t%s\n", c.SSID, formatConnection(c))
 	}
+	if scan && result.IsCached {
+		fmt.Fprintln(w, "Warning: scan failed; showing cached results")
+	}
 
 	return nil
 }
 
 func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
-	connections, err := b.BuildNetworkList(true)
+	result, err := b.ListNetworks(wifi.ScanAuto)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
+	connections := result.Connections
 
 	c, found := findConnectionBySSID(connections, ssid)
 	if !found {
@@ -151,7 +160,11 @@ func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, 
 	// Populate the backend's internal state (e.g. NetworkManager's Connections
 	// and AccessPoints maps).
 	// ActivateConnection and JoinNetwork rely on this state being present.
-	if _, err := b.BuildNetworkList(shouldScan); err != nil {
+	scan := wifi.ScanNever
+	if shouldScan {
+		scan = wifi.ScanAuto
+	}
+	if _, err := b.ListNetworks(scan); err != nil {
 		return fmt.Errorf("failed to load networks: %w", err)
 	}
 

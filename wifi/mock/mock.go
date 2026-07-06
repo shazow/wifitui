@@ -127,14 +127,14 @@ func (m *MockBackend) setActiveConnection(ssid string) {
 	}
 }
 
-func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+func (m *MockBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	time.Sleep(m.ActionSleep)
 
 	if !m.WirelessEnabled {
-		return nil, wifi.ErrWirelessDisabled
+		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
 	}
 	// For mock, we can re-randomize strengths on each scan
-	if shouldScan && !m.DisableRandomization {
+	if scan != wifi.ScanNever && !m.DisableRandomization {
 		s := rand.NewSource(time.Now().Unix())
 		r := rand.New(s)
 		for i := range m.VisibleConnections {
@@ -196,7 +196,7 @@ func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, erro
 		result = append(result, c)
 	}
 
-	return result, nil
+	return wifi.NetworksResult{Connections: result}, nil
 }
 
 func (m *MockBackend) ActivateConnection(ssid string) error {
