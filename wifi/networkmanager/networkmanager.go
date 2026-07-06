@@ -926,6 +926,9 @@ func waitForActiveConnection(activeConn gonetworkmanager.ActiveConnection) error
 		return fmt.Errorf("connection failed before activation wait")
 	}
 
+	// NetworkManager can occasionally miss or coalesce the Activated signal for
+	// fast hwsim connections. Poll slowly as a safety net while primarily relying
+	// on the state-change subscription for prompt completion and failure reasons.
 	ticker := time.NewTicker(pollingInterval)
 	defer ticker.Stop()
 	timeout := time.NewTimer(connectionTimeout)
