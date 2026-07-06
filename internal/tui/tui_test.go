@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/shazow/wifitui/wifi"
@@ -82,6 +84,118 @@ func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
 	}
 }
 
+func TestStartNetworkChangeWatcher(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	changes := make(chan struct{})
+	watch := &watchBackend{
+		Backend: backend,
+		changes: changes,
+	}
+
+	cmd := startNetworkChangeWatcher(watch)
+	if cmd == nil {
+		t.Fatal("startNetworkChangeWatcher returned nil command for watcher backend")
+	}
+
+	msg := cmd()
+	started, ok := msg.(networkWatchStartedMsg)
+	if !ok {
+		t.Fatalf("watch command returned %T, want networkWatchStartedMsg", msg)
+	}
+	if !watch.watchCalled {
+		t.Fatal("watch command did not call WatchNetworkChanges")
+	}
+	if started.changes != (<-chan struct{})(changes) {
+		t.Fatal("watch command returned a different changes channel")
+	}
+	if started.cancel == nil {
+		t.Fatal("watch command returned a nil cancel function")
+	}
+
+	started.cancel()
+	select {
+	case <-watch.ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("watch cancel function did not cancel watcher context")
+	}
+}
+
+func TestTuiModel_NetworkChangeDebouncesRefresh(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	changes := make(chan struct{})
+	watch := &watchBackend{
+		Backend: backend,
+		changes: changes,
+		networks: []wifi.Connection{
+			{SSID: "UpdatedNet", IsVisible: true},
+		},
+	}
+
+	m, err := NewModel(watch)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updatedModel.(*model)
+
+	updatedModel, firstCmd := m.Update(networkChangedMsg{changes: changes})
+	m = updatedModel.(*model)
+	if firstCmd == nil {
+		t.Fatal("first networkChangedMsg did not schedule a debounce command")
+	}
+	firstMsg := firstCmd()
+	firstBatch, ok := firstMsg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("first networkChangedMsg returned %T, want tea.BatchMsg", firstMsg)
+	}
+	if len(firstBatch) != 2 {
+		t.Fatalf("first networkChangedMsg returned %d commands, want watcher wait and debounce", len(firstBatch))
+	}
+	if !m.networkRefreshPending {
+		t.Fatal("first networkChangedMsg did not mark a refresh as pending")
+	}
+
+	updatedModel, secondCmd := m.Update(networkChangedMsg{changes: changes})
+	m = updatedModel.(*model)
+	if secondCmd == nil {
+		t.Fatal("second networkChangedMsg did not keep waiting for watcher changes")
+	}
+	if !m.networkRefreshPending {
+		t.Fatal("second networkChangedMsg cleared the pending debounce")
+	}
+
+	updatedModel, refreshCmd := m.Update(networkDebouncedMsg{})
+	m = updatedModel.(*model)
+	if refreshCmd == nil {
+		t.Fatal("networkDebouncedMsg did not return a refresh command")
+	}
+	if m.networkRefreshPending {
+		t.Fatal("networkDebouncedMsg did not clear the pending debounce")
+	}
+
+	msg := refreshCmd()
+	loaded, ok := msg.(connectionsLoadedMsg)
+	if !ok {
+		t.Fatalf("refresh command returned %T, want connectionsLoadedMsg", msg)
+	}
+	if len(watch.listScans) != 1 || watch.listScans[0] != wifi.ScanNever {
+		t.Fatalf("refresh command used scans %#v, want only ScanNever", watch.listScans)
+	}
+
+	updatedModel, _ = m.Update(loaded)
+	m = updatedModel.(*model)
+	view := m.View()
+	if !strings.Contains(view, "UpdatedNet") {
+		t.Errorf("View does not contain debounced network refresh result in\n%s", view)
+	}
+}
+
 func TestTuiModel_EnableRadioSwitchesView(t *testing.T) {
 	backend, err := mock.New()
 	if err != nil {
@@ -155,6 +269,29 @@ func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, er
 	result, err := b.Backend.ListNetworks(scan)
 	result.IsCached = true
 	return result, err
+}
+
+type watchBackend struct {
+	wifi.Backend
+	changes     chan struct{}
+	watchCalled bool
+	ctx         context.Context
+	listScans   []wifi.ScanMode
+	networks    []wifi.Connection
+}
+
+func (b *watchBackend) WatchNetworkChanges(ctx context.Context) (<-chan struct{}, error) {
+	b.watchCalled = true
+	b.ctx = ctx
+	return b.changes, nil
+}
+
+func (b *watchBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	b.listScans = append(b.listScans, scan)
+	if b.networks != nil {
+		return wifi.NetworksResult{Connections: b.networks}, nil
+	}
+	return b.Backend.ListNetworks(scan)
 }
 
 func runTUITestCommand(t *testing.T, m *model, cmd tea.Cmd) *model {

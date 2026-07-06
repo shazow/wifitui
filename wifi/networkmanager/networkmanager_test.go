@@ -457,6 +457,81 @@ func TestListNetworks_PreservesWeakerDuplicateAccessPoint(t *testing.T) {
 	}
 }
 
+func TestIsNetworkChangeSignal(t *testing.T) {
+	devicePath := dbus.ObjectPath("/org/freedesktop/NetworkManager/Devices/1")
+	tests := []struct {
+		name string
+		sig  *dbus.Signal
+		want bool
+	}{
+		{
+			name: "wireless device properties",
+			sig: &dbus.Signal{
+				Path: devicePath,
+				Name: "org.freedesktop.DBus.Properties.PropertiesChanged",
+				Body: []interface{}{"org.freedesktop.NetworkManager.Device.Wireless"},
+			},
+			want: true,
+		},
+		{
+			name: "access point added",
+			sig: &dbus.Signal{
+				Path: devicePath,
+				Name: "org.freedesktop.NetworkManager.Device.Wireless.AccessPointAdded",
+			},
+			want: true,
+		},
+		{
+			name: "access point removed",
+			sig: &dbus.Signal{
+				Path: devicePath,
+				Name: "org.freedesktop.NetworkManager.Device.Wireless.AccessPointRemoved",
+			},
+			want: true,
+		},
+		{
+			name: "access point properties",
+			sig: &dbus.Signal{
+				Path: dbus.ObjectPath("/org/freedesktop/NetworkManager/AccessPoint/1"),
+				Name: "org.freedesktop.DBus.Properties.PropertiesChanged",
+				Body: []interface{}{"org.freedesktop.NetworkManager.AccessPoint"},
+			},
+			want: true,
+		},
+		{
+			name: "other device properties",
+			sig: &dbus.Signal{
+				Path: dbus.ObjectPath("/org/freedesktop/NetworkManager/Devices/2"),
+				Name: "org.freedesktop.DBus.Properties.PropertiesChanged",
+				Body: []interface{}{"org.freedesktop.NetworkManager.Device.Wireless"},
+			},
+			want: false,
+		},
+		{
+			name: "other interface",
+			sig: &dbus.Signal{
+				Path: devicePath,
+				Name: "org.freedesktop.DBus.Properties.PropertiesChanged",
+				Body: []interface{}{"org.freedesktop.NetworkManager.Device.Wired"},
+			},
+			want: false,
+		},
+		{
+			name: "nil signal",
+			sig:  nil,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isNetworkChangeSignal(tt.sig, devicePath); got != tt.want {
+				t.Fatalf("isNetworkChangeSignal() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsUnavailableDBusError(t *testing.T) {
 	tests := []struct {
 		name string

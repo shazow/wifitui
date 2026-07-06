@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,6 +24,20 @@ type model struct {
 	statusMessage string
 
 	listModel *ListModel
+
+	networkChangeCancel   context.CancelFunc
+	networkRefreshPending bool
+}
+
+// NetworkManager can send several AP/device signals for one scan update.
+// Debounce them so AP property churn triggers one cached refresh instead of
+// repeated D-Bus list reads and redraws.
+const networkChangeDebounce = 150 * time.Millisecond
+
+// TODO: Consider adding a general change-watching interface to wifi.Backend so
+// every backend can expose network-change hints through one TUI code path.
+type networkChangeWatcher interface {
+	WatchNetworkChanges(context.Context) (<-chan struct{}, error)
 }
 
 // NewModel creates the starting state of our application
@@ -43,6 +59,14 @@ func NewModel(b wifi.Backend) (*model, error) {
 }
 
 type radioEnabledMsg struct{}
+type networkWatchStartedMsg struct {
+	changes <-chan struct{}
+	cancel  context.CancelFunc
+}
+type networkChangedMsg struct {
+	changes <-chan struct{}
+}
+type networkDebouncedMsg struct{}
 type updateConnectionMsg struct {
 	item connectionItem
 	wifi.UpdateOptions
@@ -56,6 +80,7 @@ func (m *model) Init() tea.Cmd {
 		cmds = append(cmds, enterable.OnEnter())
 	}
 
+	cmds = append(cmds, startNetworkChangeWatcher(m.backend))
 	cmds = append(cmds, m.spinner.Tick)
 	return tea.Batch(cmds...)
 }
@@ -76,6 +101,35 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case radioEnabledMsg:
 		cmd := m.stack.Pop() // Pop the disabled view
 		return m, cmd
+	case networkWatchStartedMsg:
+		m.networkChangeCancel = msg.cancel
+		return m, waitForNetworkChange(msg.changes)
+	case networkChangedMsg:
+		cmds = append(cmds, waitForNetworkChange(msg.changes))
+		if !m.networkRefreshPending {
+			m.networkRefreshPending = true
+			cmds = append(cmds, tea.Tick(networkChangeDebounce, func(time.Time) tea.Msg {
+				return networkDebouncedMsg{}
+			}))
+		}
+		return m, tea.Batch(cmds...)
+	case networkDebouncedMsg:
+		m.networkRefreshPending = false
+		if m.loading {
+			m.networkRefreshPending = true
+			return m, tea.Tick(networkChangeDebounce, func(time.Time) tea.Msg {
+				return networkDebouncedMsg{}
+			})
+		}
+		return m, func() tea.Msg {
+			result, err := m.backend.ListNetworks(wifi.ScanNever)
+			if err != nil {
+				return errorMsg{err}
+			}
+			connections := result.Connections
+			wifi.SortConnections(connections)
+			return connectionsLoadedMsg(connections)
+		}
 	case errorMsg:
 		m.loading = false
 		m.statusMessage = ""
@@ -184,6 +238,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		)
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
+			if m.networkChangeCancel != nil {
+				m.networkChangeCancel()
+			}
 			return m, tea.Quit
 		}
 
@@ -274,6 +331,39 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, spinnerCmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+func startNetworkChangeWatcher(b wifi.Backend) tea.Cmd {
+	watcher, ok := b.(networkChangeWatcher)
+	if !ok {
+		return nil
+	}
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithCancel(context.Background())
+		changes, err := watcher.WatchNetworkChanges(ctx)
+		if err != nil {
+			cancel()
+			return nil
+		}
+		return networkWatchStartedMsg{
+			changes: changes,
+			cancel:  cancel,
+		}
+	}
+}
+
+func waitForNetworkChange(changes <-chan struct{}) tea.Cmd {
+	if changes == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		_, ok := <-changes
+		if !ok {
+			return nil
+		}
+		return networkChangedMsg{changes: changes}
+	}
 }
 
 // View renders the UI based on the current model state

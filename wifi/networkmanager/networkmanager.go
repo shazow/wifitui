@@ -3,6 +3,7 @@
 package networkmanager
 
 import (
+	"context"
 	"fmt"
 	"os/user"
 	"strings"
@@ -19,6 +20,12 @@ const (
 	connectionTimeout = 10 * time.Second
 	scanTimeout       = 30 * time.Second
 	scanInterval      = 30 * time.Second
+)
+
+const (
+	dbusPropertiesInterface        = "org.freedesktop.DBus.Properties"
+	nmWirelessDeviceInterface      = "org.freedesktop.NetworkManager.Device.Wireless"
+	nmWirelessAccessPointInterface = "org.freedesktop.NetworkManager.AccessPoint"
 )
 
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
@@ -109,7 +116,7 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	}
 
 	path := device.GetPath()
-	rule := fmt.Sprintf("type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='%s'", path)
+	rule := fmt.Sprintf("type='signal',interface='%s',member='PropertiesChanged',path='%s'", dbusPropertiesInterface, path)
 
 	// We need to add the match rule to receiving signals matching this rule.
 	call := conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, rule)
@@ -146,7 +153,7 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 				continue
 			}
 			iface, ok := sig.Body[0].(string)
-			if !ok || iface != "org.freedesktop.NetworkManager.Device.Wireless" {
+			if !ok || iface != nmWirelessDeviceInterface {
 				continue
 			}
 			changed, ok := sig.Body[1].(map[string]dbus.Variant)
@@ -171,6 +178,108 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 		case <-timer.C:
 			return fmt.Errorf("scan timed out")
 		}
+	}
+}
+
+// WatchNetworkChanges returns a channel that receives a value when NetworkManager
+// reports wireless device or access point changes.
+func (b *Backend) WatchNetworkChanges(ctx context.Context) (<-chan struct{}, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	device, err := b.getWirelessDevice()
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to dbus: %w", err)
+	}
+
+	devicePath := device.GetPath()
+	rules := networkChangeMatchRules(devicePath)
+	addedRules := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		call := conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, rule)
+		if call.Err != nil {
+			for _, added := range addedRules {
+				conn.BusObject().Call("org.freedesktop.DBus.RemoveMatch", 0, added)
+			}
+			return nil, fmt.Errorf("failed to add match rule: %w", call.Err)
+		}
+		addedRules = append(addedRules, rule)
+	}
+
+	signals := make(chan *dbus.Signal, 16)
+	changes := make(chan struct{}, 1)
+	conn.Signal(signals)
+
+	go func() {
+		defer close(changes)
+		defer conn.RemoveSignal(signals)
+		defer func() {
+			for _, rule := range addedRules {
+				conn.BusObject().Call("org.freedesktop.DBus.RemoveMatch", 0, rule)
+			}
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case sig, ok := <-signals:
+				if !ok {
+					return
+				}
+				if !isNetworkChangeSignal(sig, devicePath) {
+					continue
+				}
+				select {
+				case changes <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+
+	return changes, nil
+}
+
+func networkChangeMatchRules(devicePath dbus.ObjectPath) []string {
+	path := string(devicePath)
+	return []string{
+		fmt.Sprintf("type='signal',interface='%s',member='PropertiesChanged',path='%s',arg0='%s'", dbusPropertiesInterface, path, nmWirelessDeviceInterface),
+		fmt.Sprintf("type='signal',interface='%s',member='AccessPointAdded',path='%s'", nmWirelessDeviceInterface, path),
+		fmt.Sprintf("type='signal',interface='%s',member='AccessPointRemoved',path='%s'", nmWirelessDeviceInterface, path),
+		fmt.Sprintf("type='signal',interface='%s',member='PropertiesChanged',arg0='%s'", dbusPropertiesInterface, nmWirelessAccessPointInterface),
+	}
+}
+
+func isNetworkChangeSignal(sig *dbus.Signal, devicePath dbus.ObjectPath) bool {
+	if sig == nil {
+		return false
+	}
+
+	switch sig.Name {
+	case "org.freedesktop.DBus.Properties.PropertiesChanged":
+		if len(sig.Body) == 0 {
+			return false
+		}
+		iface, ok := sig.Body[0].(string)
+		if !ok {
+			return false
+		}
+		if iface == nmWirelessDeviceInterface {
+			return sig.Path == devicePath
+		}
+		return iface == nmWirelessAccessPointInterface
+	case "org.freedesktop.NetworkManager.Device.Wireless.AccessPointAdded",
+		"org.freedesktop.NetworkManager.Device.Wireless.AccessPointRemoved":
+		return sig.Path == devicePath
+	default:
+		return false
 	}
 }
 
