@@ -23,9 +23,6 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
 
         environment.systemPackages = [
           self.packages.${system}.default
-          pkgs.jq
-          pkgs.iw
-          pkgs.iproute2
           pkgs.networkmanager
         ];
 
