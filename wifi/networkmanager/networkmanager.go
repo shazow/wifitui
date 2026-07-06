@@ -120,6 +120,16 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 
 	for _, device := range devices {
 		if dev, ok := device.(gonetworkmanager.DeviceWireless); ok {
+			managed, err := dev.GetPropertyManaged()
+			if err == nil && !managed {
+				continue
+			}
+
+			state, err := dev.GetPropertyState()
+			if err == nil && (state == gonetworkmanager.NmDeviceStateUnmanaged || state == gonetworkmanager.NmDeviceStateUnavailable) {
+				continue
+			}
+
 			b.Device = dev
 			return dev, nil
 		}
