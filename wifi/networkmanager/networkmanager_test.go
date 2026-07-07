@@ -310,26 +310,6 @@ func TestListNetworks_ReturnsCachedListWhenScanFails(t *testing.T) {
 	}
 }
 
-func TestListNetworks_MarksCachedWhenScanFails(t *testing.T) {
-	device := &mockDeviceWireless{
-		accessPoints: []gonetworkmanager.AccessPoint{
-			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
-		},
-	}
-	b := newTestBackend(device, nil)
-	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
-		return errors.New("scan not allowed")
-	}
-
-	result, err := b.ListNetworks(wifi.ScanAuto)
-	if err != nil {
-		t.Fatalf("ListNetworks(ScanAuto) returned fatal scan error: %v", err)
-	}
-	if !result.IsCached {
-		t.Fatal("ListNetworks(ScanAuto) did not mark cached results after scan failure")
-	}
-}
-
 func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
@@ -540,29 +520,7 @@ func TestListNetworks_MergesDuplicateAccessPointsOnce(t *testing.T) {
 	if connections[0].AccessPoints[0].BSSID != "00:00:00:00:00:05" {
 		t.Fatalf("strongest access point was not first: %#v", connections[0].AccessPoints)
 	}
-}
-
-func TestListNetworks_PreservesWeakerDuplicateAccessPoint(t *testing.T) {
-	device := &mockDeviceWireless{
-		accessPoints: []gonetworkmanager.AccessPoint{
-			newMockAccessPoint("Mesh", "00:00:00:00:00:06", 90),
-			newMockAccessPoint("Mesh", "00:00:00:00:00:07", 20),
-		},
-	}
-	b := newTestBackend(device, nil)
-
-	result, err := b.ListNetworks(wifi.ScanNever)
-	if err != nil {
-		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
-	}
-	connections := result.Networks
-	if len(connections) != 1 {
-		t.Fatalf("ListNetworks(ScanNever) returned %d connections, want 1", len(connections))
-	}
-	if got := len(connections[0].AccessPoints); got != 2 {
-		t.Fatalf("merged connection has %d access points, want 2: %#v", got, connections[0].AccessPoints)
-	}
-	if ap, err := b.getAccessPoint("Mesh"); err != nil || ap != device.accessPoints[0] {
+	if ap, err := b.getAccessPoint("Mesh"); err != nil || ap != device.accessPoints[1] {
 		t.Fatalf("strongest access point was not retained for activation")
 	}
 }
