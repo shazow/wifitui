@@ -7,7 +7,7 @@ on:
     branches:
       - main
 jobs:
-  networkmanager-hwsim:
+  hwsim-vm:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,5 +27,5 @@ jobs:
           use-flakehub: disabled
       - name: Evaluate flake outputs
         run: nix flake check --show-trace --all-systems --no-build
-      - name: Run NetworkManager hwsim VM test
-        run: nix build .#checks.x86_64-linux.networkmanager-hwsim --show-trace -L
+      - name: Run hwsim VM tests
+        run: nix build .#checks.x86_64-linux.networkmanager-hwsim .#checks.x86_64-linux.iwd-hwsim --show-trace -L
