@@ -78,6 +78,24 @@ func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 	}
 }
 
+func TestRunListScanForcesRefresh(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	backend := scanRecordingBackend{
+		Backend: mockBackend,
+	}
+
+	var buf bytes.Buffer
+	if err := runList(&buf, false, false, true, &backend); err != nil {
+		t.Fatalf("runList() failed: %v", err)
+	}
+	if len(backend.listScans) != 1 || backend.listScans[0] != wifi.ScanForce {
+		t.Fatalf("runList(scan=true) used scans %#v, want only ScanForce", backend.listScans)
+	}
+}
+
 func TestRunShow(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {

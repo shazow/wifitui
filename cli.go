@@ -96,7 +96,7 @@ func writeNetworkDetails(w io.Writer, c wifi.Network, secret string) error {
 func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) error {
 	scanMode := wifi.ScanNever
 	if scan {
-		scanMode = wifi.ScanAuto
+		scanMode = wifi.ScanForce
 	}
 	result, err := b.ListNetworks(scanMode)
 	if err != nil {
