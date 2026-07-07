@@ -66,6 +66,8 @@ type mockDeviceWireless struct {
 	allAccessPoints          []gonetworkmanager.AccessPoint
 	getAccessPointsCalled    bool
 	getAllAccessPointsCalled bool
+	managed                  bool
+	state                    gonetworkmanager.NmDeviceState
 }
 
 func (m *mockDeviceWireless) GetPath() dbus.ObjectPath {
@@ -80,6 +82,20 @@ func (m *mockDeviceWireless) GetPropertyInterface() (string, error) {
 		return "wlan0", nil
 	}
 	return m.iface, nil
+}
+
+func (m *mockDeviceWireless) GetPropertyManaged() (bool, error) {
+	if !m.managed && m.state == 0 {
+		return true, nil
+	}
+	return m.managed, nil
+}
+
+func (m *mockDeviceWireless) GetPropertyState() (gonetworkmanager.NmDeviceState, error) {
+	if m.state == 0 {
+		return gonetworkmanager.NmDeviceStateDisconnected, nil
+	}
+	return m.state, nil
 }
 
 func (m *mockDeviceWireless) GetAccessPoints() ([]gonetworkmanager.AccessPoint, error) {
@@ -242,7 +258,7 @@ func newTestBackend(device *mockDeviceWireless, connections []gonetworkmanager.C
 
 func TestGetWirelessDevice_Caching(t *testing.T) {
 	callCount := 0
-	mockDev := &mockDeviceWireless{}
+	mockDev := &mockDeviceWireless{managed: true, state: gonetworkmanager.NmDeviceStateDisconnected}
 
 	nm := &mockNM{
 		getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
@@ -985,6 +1001,27 @@ func TestIsNetworkChangeSignal(t *testing.T) {
 				t.Fatalf("isNetworkChangeSignal() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestGetWirelessDevice_SkipsUnavailableDevices(t *testing.T) {
+	unavailable := &mockDeviceWireless{managed: true, state: gonetworkmanager.NmDeviceStateUnavailable}
+	unmanaged := &mockDeviceWireless{managed: false, state: gonetworkmanager.NmDeviceStateDisconnected}
+	available := &mockDeviceWireless{managed: true, state: gonetworkmanager.NmDeviceStateDisconnected}
+
+	nm := &mockNM{
+		getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
+			return []gonetworkmanager.Device{unavailable, unmanaged, available}, nil
+		},
+	}
+
+	b := &Backend{NM: nm}
+	dev, err := b.getWirelessDevice()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if dev != available {
+		t.Errorf("expected available device %v, got %v", available, dev)
 	}
 }
 

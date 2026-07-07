@@ -4,8 +4,15 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
       in
@@ -16,7 +23,14 @@
           src = ./.;
           # Updated by `make vendorHash`
           vendorHash = "sha256-2smXAK3mRweg0yKDerKgu3fcT3ulDjRSbbkMCSe+nVs=";
-          ldflags = [ "-s" "-w" ];
+          ldflags = [
+            "-s"
+            "-w"
+          ];
+        };
+
+        checks = import ./checks {
+          inherit self system pkgs;
         };
 
         apps.default = {
@@ -30,5 +44,6 @@
             pkgs.golint
           ];
         };
-      });
+      }
+    );
 }

@@ -1,0 +1,31 @@
+name: VM integration checks
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  hwsim-vm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM group permissions
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
+      - uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            system-features = nixos-test benchmark big-parallel kvm
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+        with:
+          use-flakehub: disabled
+      - name: Evaluate flake outputs
+        run: nix flake check --show-trace --all-systems --no-build
+      - name: Run hwsim VM tests
+        run: nix build .#checks.x86_64-linux.networkmanager-hwsim .#checks.x86_64-linux.iwd-hwsim --show-trace -L
