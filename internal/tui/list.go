@@ -134,7 +134,7 @@ func (m *ListModel) OnEnter() tea.Cmd {
 	return tea.Batch(
 		m.scanner.SetSchedule(ScanFast),
 		// Start a scan right away
-		func() tea.Msg { return scanMsg{} },
+		func() tea.Msg { return scanMsg{mode: wifi.ScanAuto} },
 	)
 }
 
@@ -149,7 +149,7 @@ func NewListModelWithWindow(window *WindowState) *ListModel {
 		desiredColumnWidth: defaultSSIDColumnWidth + 2,
 		window:             window,
 	}
-	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
+	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{mode: wifi.ScanAuto} })
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -365,7 +365,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			editModel := m.newEditModel(nil)
 			return editModel, nil
 		case "s":
-			return m, func() tea.Msg { return scanMsg{} }
+			return m, func() tea.Msg { return scanMsg{mode: wifi.ScanForce} }
 		case "S":
 			enabled, cmd := m.scanner.Toggle()
 			var msg string

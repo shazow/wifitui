@@ -74,7 +74,9 @@ type (
 	errorMsg struct{ err error }
 
 	// To main model
-	scanMsg    struct{}
+	scanMsg struct {
+		mode wifi.ScanMode
+	}
 	connectMsg struct {
 		item        networkItem
 		autoConnect bool

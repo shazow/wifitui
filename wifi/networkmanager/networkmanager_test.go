@@ -719,6 +719,37 @@ func TestActivateNetwork_UsesAccessPointMatchingKnownKeyManagement(t *testing.T)
 	}
 }
 
+func TestActivateNetwork_UsesStrongestCompatibleAccessPoint(t *testing.T) {
+	weakAP := newMockAccessPoint("Corp", "00:00:00:00:00:17", 20)
+	weakAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmtPSK)
+	strongAP := newMockAccessPoint("Corp", "00:00:00:00:00:18", 90)
+	strongAP.wpaFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmtPSK)
+	strongAP.rsnFlags = 0
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{weakAP, strongAP},
+	}
+	knownPSK := newMockConnection("/org/freedesktop/NetworkManager/Settings/6", "Corp PSK", "Corp", wifi.SecurityWPA)
+	b := newTestBackend(device, []gonetworkmanager.Connection{knownPSK})
+
+	mockManager := b.NM.(*mockNM)
+	var activatedAP gonetworkmanager.AccessPoint
+	mockManager.activateWirelessConnectionFunc = func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, ap gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error) {
+		activatedAP = ap
+		return &mockActiveConnection{}, nil
+	}
+
+	_, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+	if err := b.ActivateNetwork("Corp"); err != nil {
+		t.Fatalf("ActivateNetwork(Corp) returned error: %v", err)
+	}
+	if activatedAP != strongAP {
+		t.Fatalf("ActivateNetwork used AP %#v, want strongest compatible AP %#v", activatedAP, strongAP)
+	}
+}
+
 func TestActivateNetwork_DoesNotPairSavedProfileWithIncompatibleAccessPoint(t *testing.T) {
 	eapAP := newMockAccessPoint("Corp", "00:00:00:00:00:17", 90)
 	eapAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmt8021X)

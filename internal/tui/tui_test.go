@@ -65,7 +65,7 @@ func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
 	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = updatedModel.(*model)
 
-	updatedModel, cmd := m.Update(scanMsg{})
+	updatedModel, cmd := m.Update(scanMsg{mode: wifi.ScanAuto})
 	m = updatedModel.(*model)
 	if cmd == nil {
 		t.Fatal("scanMsg did not return a command")
@@ -81,6 +81,31 @@ func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
 	}
 	if strings.Contains(view, "Error:") {
 		t.Errorf("View should not show the fatal error screen for scan warning in\n%s", view)
+	}
+}
+
+func TestTuiModel_ManualScanForcesRefresh(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	watch := &watchBackend{
+		Backend: backend,
+		networks: []wifi.Network{
+			{SSID: "ManualScanNet", IsVisible: true},
+		},
+	}
+
+	m, err := NewModel(watch)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+	updatedModel, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	m = updatedModel.(*model)
+	m = runTUITestCommand(t, m, cmd)
+
+	if len(watch.listScans) != 1 || watch.listScans[0] != wifi.ScanForce {
+		t.Fatalf("manual scan used scans %#v, want only ScanForce", watch.listScans)
 	}
 }
 

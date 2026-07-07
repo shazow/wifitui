@@ -156,7 +156,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusMessage = "Scanning for networks..."
 		m.loading = true
 		return m, func() tea.Msg {
-			result, err := m.backend.ListNetworks(wifi.ScanAuto)
+			result, err := m.backend.ListNetworks(msg.mode)
 			if err != nil {
 				return errorMsg{err}
 			}

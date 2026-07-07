@@ -823,12 +823,23 @@ func (b *Backend) getActivationTarget(ssid string) (gonetworkmanager.Connection,
 		}
 	}
 
+	var bestConn gonetworkmanager.Connection
+	var bestAP gonetworkmanager.AccessPoint
+	var bestStrength uint8
 	for _, key := range b.networkKeysBySSID[ssid] {
 		conn, connOK := b.connections[key]
 		ap, apOK := b.accessPoints[key]
 		if connOK && apOK {
-			return conn, ap, nil
+			strength, _ := ap.GetPropertyStrength()
+			if bestAP == nil || strength > bestStrength {
+				bestConn = conn
+				bestAP = ap
+				bestStrength = strength
+			}
 		}
+	}
+	if bestAP != nil {
+		return bestConn, bestAP, nil
 	}
 
 	for _, key := range b.networkKeysBySSID[ssid] {
