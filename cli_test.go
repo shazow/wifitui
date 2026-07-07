@@ -147,18 +147,18 @@ func TestRunListJSON(t *testing.T) {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
-	var connections []wifi.Connection
-	if err := json.Unmarshal(buf.Bytes(), &connections); err != nil {
+	var networks []wifi.Network
+	if err := json.Unmarshal(buf.Bytes(), &networks); err != nil {
 		t.Fatalf("runList() output is not valid JSON: %v. got=%q", err, buf.String())
 	}
 
-	if len(connections) == 0 {
+	if len(networks) == 0 {
 		t.Fatalf("runList() output is empty")
 	}
 
 	// Just check for one of the SSIDs
 	found := false
-	for _, c := range connections {
+	for _, c := range networks {
 		if c.SSID == "HideYoKidsHideYoWiFi" {
 			found = true
 			break
@@ -181,12 +181,12 @@ func TestRunShowJSON(t *testing.T) {
 		t.Fatalf("runShow() with found network failed: %v", err)
 	}
 
-	type connectionWithSecret struct {
-		wifi.Connection
+	type networkWithSecret struct {
+		wifi.Network
 		Passphrase string `json:"passphrase,omitempty"`
 	}
 
-	var connWithSecretData connectionWithSecret
+	var connWithSecretData networkWithSecret
 	if err := json.Unmarshal(buf.Bytes(), &connWithSecretData); err != nil {
 		t.Fatalf("runShow() output is not valid JSON: %v. got=%q", err, buf.String())
 	}
@@ -206,7 +206,7 @@ func TestRunShowJSON(t *testing.T) {
 	}
 
 	// Re-initialize the struct to avoid carrying over the passphrase
-	connWithSecretData = connectionWithSecret{}
+	connWithSecretData = networkWithSecret{}
 	if err := json.Unmarshal(buf.Bytes(), &connWithSecretData); err != nil {
 		t.Fatalf("runShow() output is not valid JSON: %v. got=%q", err, buf.String())
 	}
@@ -236,7 +236,7 @@ func TestRunConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get network list: %v", err)
 	}
-	networks := result.Connections
+	networks := result.Networks
 	found := false
 	for _, n := range networks {
 		if n.SSID == "new-network" {
@@ -259,7 +259,7 @@ func TestRunConnect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to get network list: %v", err)
 	}
-	networks = result.Connections
+	networks = result.Networks
 	found = false
 	for _, n := range networks {
 		if n.SSID == "Password is password" {
@@ -586,52 +586,52 @@ func TestParseRetryConfig(t *testing.T) {
 	}
 }
 
-func TestFilterVisibleConnections(t *testing.T) {
-	connections := []wifi.Connection{
+func TestFilterVisibleNetworks(t *testing.T) {
+	networks := []wifi.Network{
 		{SSID: "visible1", IsVisible: true},
 		{SSID: "hidden1", IsVisible: false},
 		{SSID: "visible2", IsVisible: true},
 		{SSID: "hidden2", IsVisible: false},
 	}
 
-	visible := filterVisibleConnections(connections)
+	visible := filterVisibleNetworks(networks)
 	if len(visible) != 2 {
-		t.Fatalf("filterVisibleConnections() returned %d connections, want 2", len(visible))
+		t.Fatalf("filterVisibleNetworks() returned %d networks, want 2", len(visible))
 	}
 	for _, c := range visible {
 		if !c.IsVisible {
-			t.Errorf("filterVisibleConnections() returned non-visible connection %q", c.SSID)
+			t.Errorf("filterVisibleNetworks() returned non-visible network %q", c.SSID)
 		}
 	}
 
 	// Empty input
-	if got := filterVisibleConnections(nil); got != nil {
-		t.Errorf("filterVisibleConnections(nil) = %v, want nil", got)
+	if got := filterVisibleNetworks(nil); got != nil {
+		t.Errorf("filterVisibleNetworks(nil) = %v, want nil", got)
 	}
 }
 
-func TestFindConnectionBySSID(t *testing.T) {
-	connections := []wifi.Connection{
+func TestFindNetworkBySSID(t *testing.T) {
+	networks := []wifi.Network{
 		{SSID: "NetworkA"},
 		{SSID: "NetworkB"},
 		{SSID: "NetworkC"},
 	}
 
-	c, found := findConnectionBySSID(connections, "NetworkB")
+	c, found := findNetworkBySSID(networks, "NetworkB")
 	if !found {
-		t.Fatal("findConnectionBySSID() did not find existing network")
+		t.Fatal("findNetworkBySSID() did not find existing network")
 	}
 	if c.SSID != "NetworkB" {
-		t.Errorf("findConnectionBySSID() returned wrong network: got %q, want %q", c.SSID, "NetworkB")
+		t.Errorf("findNetworkBySSID() returned wrong network: got %q, want %q", c.SSID, "NetworkB")
 	}
 
-	_, found = findConnectionBySSID(connections, "NotThere")
+	_, found = findNetworkBySSID(networks, "NotThere")
 	if found {
-		t.Error("findConnectionBySSID() returned true for missing network")
+		t.Error("findNetworkBySSID() returned true for missing network")
 	}
 
-	_, found = findConnectionBySSID(nil, "NetworkA")
+	_, found = findNetworkBySSID(nil, "NetworkA")
 	if found {
-		t.Error("findConnectionBySSID() returned true for empty slice")
+		t.Error("findNetworkBySSID() returned true for empty slice")
 	}
 }

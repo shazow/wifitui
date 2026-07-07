@@ -25,8 +25,8 @@ func TestEditModel_TabKey(t *testing.T) {
 }
 
 func TestEditModel_PasswordReveal(t *testing.T) {
-	item := &connectionItem{
-		Connection: wifi.Connection{IsKnown: true, IsSecure: true},
+	item := &networkItem{
+		Network: wifi.Network{IsKnown: true, IsSecure: true},
 	}
 	m := NewEditModel(item)
 	m.passwordAdapter.Model.SetValue("password")
@@ -87,8 +87,8 @@ func TestEditModel_WindowResizeUsesTerminalWidth(t *testing.T) {
 }
 
 func TestEditModel_ForgetFlow(t *testing.T) {
-	item := &connectionItem{
-		Connection: wifi.Connection{SSID: "TestNetwork", IsKnown: true},
+	item := &networkItem{
+		Network: wifi.Network{SSID: "TestNetwork", IsKnown: true},
 	}
 	m := NewEditModel(item)
 
@@ -159,8 +159,8 @@ func TestSecretLoadingLoop(t *testing.T) {
 	}
 
 	// Create an EditModel for a known connection
-	conn := &connectionItem{
-		Connection: wifi.Connection{
+	conn := &networkItem{
+		Network: wifi.Network{
 			SSID:    "KnownNet",
 			IsKnown: true,
 		},

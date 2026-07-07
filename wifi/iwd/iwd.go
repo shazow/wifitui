@@ -202,8 +202,8 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		return wifi.NetworksResult{}, fmt.Errorf("failed to get ordered networks: %w", err)
 	}
 
-	var connections []wifi.Connection
-	visibleNetworks := make(map[string]wifi.Connection)
+	var connections []wifi.Network
+	visibleNetworks := make(map[string]wifi.Network)
 
 	for _, net := range ordered {
 		networkObj := conn.Object(iwdDest, net.Path)
@@ -270,7 +270,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 				}
 			}
 
-			visibleNetworks[ssid] = wifi.Connection{
+			visibleNetworks[ssid] = wifi.Network{
 				SSID:         ssid,
 				IsActive:     isActive,
 				IsSecure:     security != wifi.SecurityOpen,
@@ -314,7 +314,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 				c.AutoConnect = autoConnect
 				visibleNetworks[ssid] = c
 			} else {
-				connections = append(connections, wifi.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect})
+				connections = append(connections, wifi.Network{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect})
 			}
 		}
 	}
@@ -323,10 +323,10 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		connections = append(connections, c)
 	}
 
-	return wifi.NetworksResult{Connections: connections}, nil
+	return wifi.NetworksResult{Networks: connections}, nil
 }
 
-func (b *Backend) ActivateConnection(ssid string) error {
+func (b *Backend) ActivateNetwork(ssid string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -417,7 +417,7 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 	return "", fmt.Errorf("getting secrets is not supported by the iwd backend: %w", wifi.ErrNotSupported)
 }
 
-func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	if opts.Password != nil {
 		return fmt.Errorf("updating secrets is not supported by the iwd backend: %w", wifi.ErrNotSupported)
 	}

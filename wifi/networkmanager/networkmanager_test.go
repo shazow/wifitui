@@ -295,7 +295,7 @@ func TestListNetworks_ReturnsCachedListWhenScanFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanAuto) returned fatal scan error: %v", err)
 	}
-	connections := result.Connections
+	connections := result.Networks
 	if len(connections) != 1 {
 		t.Fatalf("ListNetworks(ScanAuto) returned %d connections, want 1", len(connections))
 	}
@@ -370,7 +370,7 @@ func TestListNetworks_SkipsScanWhenLastScanFresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanAuto) returned error: %v", err)
 	}
-	connections := result.Connections
+	connections := result.Networks
 	if scanCalled {
 		t.Fatal("ListNetworks(ScanAuto) requested a scan even though LastScan was fresh")
 	}
@@ -401,8 +401,8 @@ func TestListNetworks_ForceScanWhenLastScanFresh(t *testing.T) {
 	if !scanCalled {
 		t.Fatal("ListNetworks(ScanForce) skipped scan even though force was requested")
 	}
-	if len(result.Connections) != 1 || result.Connections[0].SSID != "Forced" {
-		t.Fatalf("ListNetworks(ScanForce) returned %#v, want Forced network", result.Connections)
+	if len(result.Networks) != 1 || result.Networks[0].SSID != "Forced" {
+		t.Fatalf("ListNetworks(ScanForce) returned %#v, want Forced network", result.Networks)
 	}
 }
 
@@ -508,7 +508,7 @@ func TestListNetworks_UsesAllAccessPoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
-	connections := result.Connections
+	connections := result.Networks
 	if !device.getAllAccessPointsCalled {
 		t.Fatal("ListNetworks(ScanNever) did not call GetAllAccessPoints")
 	}
@@ -530,7 +530,7 @@ func TestListNetworks_MergesDuplicateAccessPointsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
-	connections := result.Connections
+	connections := result.Networks
 	if len(connections) != 1 {
 		t.Fatalf("ListNetworks(ScanNever) returned %d connections, want 1", len(connections))
 	}
@@ -555,7 +555,7 @@ func TestListNetworks_PreservesWeakerDuplicateAccessPoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
-	connections := result.Connections
+	connections := result.Networks
 	if len(connections) != 1 {
 		t.Fatalf("ListNetworks(ScanNever) returned %d connections, want 1", len(connections))
 	}
@@ -583,7 +583,7 @@ func TestListNetworks_DoesNotMarkOpenVariantKnownWhenWPAProfileExists(t *testing
 	}
 
 	var openFound, wpaFound bool
-	for _, conn := range result.Connections {
+	for _, conn := range result.Networks {
 		if conn.SSID != "Cafe" {
 			continue
 		}
@@ -601,7 +601,7 @@ func TestListNetworks_DoesNotMarkOpenVariantKnownWhenWPAProfileExists(t *testing
 		}
 	}
 	if !openFound || !wpaFound {
-		t.Fatalf("ListNetworks returned %#v, want separate open and WPA Cafe variants", result.Connections)
+		t.Fatalf("ListNetworks returned %#v, want separate open and WPA Cafe variants", result.Networks)
 	}
 }
 
@@ -623,7 +623,7 @@ func TestListNetworks_KeepsSameSSIDWithDifferentWPAFlagsSeparate(t *testing.T) {
 	}
 
 	var corpRows int
-	for _, conn := range result.Connections {
+	for _, conn := range result.Networks {
 		if conn.SSID == "Corp" {
 			corpRows++
 			if got := len(conn.AccessPoints); got != 1 {
@@ -632,7 +632,7 @@ func TestListNetworks_KeepsSameSSIDWithDifferentWPAFlagsSeparate(t *testing.T) {
 		}
 	}
 	if corpRows != 2 {
-		t.Fatalf("ListNetworks returned %d Corp rows, want 2 for different WPA/RSN flags: %#v", corpRows, result.Connections)
+		t.Fatalf("ListNetworks returned %d Corp rows, want 2 for different WPA/RSN flags: %#v", corpRows, result.Networks)
 	}
 }
 
@@ -653,7 +653,7 @@ func TestListNetworks_DoesNotMark8021XVariantKnownWhenPSKProfileExists(t *testin
 	}
 
 	var pskFound, eapFound bool
-	for _, conn := range result.Connections {
+	for _, conn := range result.Networks {
 		if conn.SSID != "Corp" || len(conn.AccessPoints) != 1 {
 			continue
 		}
@@ -671,7 +671,7 @@ func TestListNetworks_DoesNotMark8021XVariantKnownWhenPSKProfileExists(t *testin
 		}
 	}
 	if !pskFound || !eapFound {
-		t.Fatalf("ListNetworks returned %#v, want separate PSK and 802.1x Corp variants", result.Connections)
+		t.Fatalf("ListNetworks returned %#v, want separate PSK and 802.1x Corp variants", result.Networks)
 	}
 }
 
@@ -691,7 +691,7 @@ func TestListNetworks_DoesNotMarkDifferentModeVariantKnown(t *testing.T) {
 		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
 
-	for _, conn := range result.Connections {
+	for _, conn := range result.Networks {
 		if len(conn.AccessPoints) == 1 && conn.AccessPoints[0].BSSID == adhocAP.bssid {
 			if conn.IsKnown {
 				t.Fatal("ad-hoc Direct variant was marked known by an infrastructure saved profile")
@@ -699,10 +699,10 @@ func TestListNetworks_DoesNotMarkDifferentModeVariantKnown(t *testing.T) {
 			return
 		}
 	}
-	t.Fatalf("ListNetworks returned %#v, want visible ad-hoc Direct variant", result.Connections)
+	t.Fatalf("ListNetworks returned %#v, want visible ad-hoc Direct variant", result.Networks)
 }
 
-func TestActivateConnection_UsesAccessPointMatchingKnownSecurity(t *testing.T) {
+func TestActivateNetwork_UsesAccessPointMatchingKnownSecurity(t *testing.T) {
 	openAP := newMockAccessPoint("Cafe", "00:00:00:00:00:12", 90)
 	openAP.rsnFlags = 0
 	wpaAP := newMockAccessPoint("Cafe", "00:00:00:00:00:13", 40)
@@ -723,15 +723,15 @@ func TestActivateConnection_UsesAccessPointMatchingKnownSecurity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
-	if err := b.ActivateConnection("Cafe"); err != nil {
-		t.Fatalf("ActivateConnection(Cafe) returned error: %v", err)
+	if err := b.ActivateNetwork("Cafe"); err != nil {
+		t.Fatalf("ActivateNetwork(Cafe) returned error: %v", err)
 	}
 	if activatedAP != wpaAP {
-		t.Fatalf("ActivateConnection used AP %#v, want WPA AP %#v", activatedAP, wpaAP)
+		t.Fatalf("ActivateNetwork used AP %#v, want WPA AP %#v", activatedAP, wpaAP)
 	}
 }
 
-func TestActivateConnection_UsesAccessPointMatchingKnownKeyManagement(t *testing.T) {
+func TestActivateNetwork_UsesAccessPointMatchingKnownKeyManagement(t *testing.T) {
 	eapAP := newMockAccessPoint("Corp", "00:00:00:00:00:15", 90)
 	eapAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmt8021X)
 	pskAP := newMockAccessPoint("Corp", "00:00:00:00:00:16", 40)
@@ -753,15 +753,15 @@ func TestActivateConnection_UsesAccessPointMatchingKnownKeyManagement(t *testing
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
-	if err := b.ActivateConnection("Corp"); err != nil {
-		t.Fatalf("ActivateConnection(Corp) returned error: %v", err)
+	if err := b.ActivateNetwork("Corp"); err != nil {
+		t.Fatalf("ActivateNetwork(Corp) returned error: %v", err)
 	}
 	if activatedAP != pskAP {
-		t.Fatalf("ActivateConnection used AP %#v, want PSK AP %#v", activatedAP, pskAP)
+		t.Fatalf("ActivateNetwork used AP %#v, want PSK AP %#v", activatedAP, pskAP)
 	}
 }
 
-func TestActivateConnection_DoesNotPairSavedProfileWithIncompatibleAccessPoint(t *testing.T) {
+func TestActivateNetwork_DoesNotPairSavedProfileWithIncompatibleAccessPoint(t *testing.T) {
 	eapAP := newMockAccessPoint("Corp", "00:00:00:00:00:17", 90)
 	eapAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmt8021X)
 	device := &mockDeviceWireless{
@@ -781,12 +781,12 @@ func TestActivateConnection_DoesNotPairSavedProfileWithIncompatibleAccessPoint(t
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
-	err = b.ActivateConnection("Corp")
+	err = b.ActivateNetwork("Corp")
 	if !errors.Is(err, wifi.ErrNotFound) {
-		t.Fatalf("ActivateConnection(Corp) error = %v, want ErrNotFound", err)
+		t.Fatalf("ActivateNetwork(Corp) error = %v, want ErrNotFound", err)
 	}
 	if activatedAP != nil {
-		t.Fatalf("ActivateConnection used incompatible AP %#v", activatedAP)
+		t.Fatalf("ActivateNetwork used incompatible AP %#v", activatedAP)
 	}
 }
 

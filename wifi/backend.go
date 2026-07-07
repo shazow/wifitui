@@ -20,8 +20,8 @@ type AccessPoint struct {
 	Frequency uint  // MHz
 }
 
-// Connection represents a single network, visible or known.
-type Connection struct {
+// Network represents a single Wi-Fi network, visible or known.
+type Network struct {
 	SSID          string
 	IsActive      bool
 	IsKnown       bool
@@ -35,7 +35,7 @@ type Connection struct {
 }
 
 // Strength returns the strength of the strongest access point, or 0 if none.
-func (c Connection) Strength() uint8 {
+func (c Network) Strength() uint8 {
 	if len(c.AccessPoints) == 0 {
 		return 0
 	}
@@ -49,10 +49,10 @@ func (c Connection) Strength() uint8 {
 	return maxStrength
 }
 
-// AddAccessPoint adds the access points from 'other' to this connection.
+// AddAccessPoint adds the access points from 'other' to this network.
 // It returns ErrAccessPointMismatch if the security or SSID do not match.
 // It also merges other metadata (Active, Visible, Known, etc.) if applicable.
-func (c *Connection) AddAccessPoint(other Connection) error {
+func (c *Network) AddAccessPoint(other Network) error {
 	if c.SSID != other.SSID || c.Security != other.Security {
 		return ErrAccessPointMismatch
 	}
@@ -78,7 +78,7 @@ func (c *Connection) AddAccessPoint(other Connection) error {
 	return nil
 }
 
-// UpdateOptions specifies the properties to update for a connection.
+// UpdateOptions specifies the properties to update for a known network.
 // A nil value for a field means that the property should not be changed.
 type UpdateOptions struct {
 	Password    *string
@@ -100,24 +100,24 @@ const (
 // NetworksResult contains the networks returned by a list operation and
 // whether they came from a cached fallback after a requested scan failed.
 type NetworksResult struct {
-	Connections []Connection
-	IsCached    bool
+	Networks []Network
+	IsCached bool
 }
 
-// Backend defines the interface for managing network connections.
+// Backend defines the interface for managing Wi-Fi networks.
 type Backend interface {
 	// ListNetworks returns all networks and optionally requests a scan first.
 	ListNetworks(scan ScanMode) (NetworksResult, error)
-	// ActivateConnection activates a known network.
-	ActivateConnection(ssid string) error
+	// ActivateNetwork activates a known network.
+	ActivateNetwork(ssid string) error
 	// ForgetNetwork removes a known network configuration.
 	ForgetNetwork(ssid string) error
 	// JoinNetwork connects to a new network, potentially creating a new configuration.
 	JoinNetwork(ssid string, password string, security SecurityType, isHidden bool) error
-	// GetSecrets retrieves the password for a known connection.
+	// GetSecrets retrieves the password for a known network.
 	GetSecrets(ssid string) (string, error)
-	// UpdateConnection updates a known connection.
-	UpdateConnection(ssid string, opts UpdateOptions) error
+	// UpdateNetwork updates a known network.
+	UpdateNetwork(ssid string, opts UpdateOptions) error
 
 	// IsWirelessEnabled checks if the wireless radio is enabled.
 	IsWirelessEnabled() (bool, error)

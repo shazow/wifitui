@@ -16,7 +16,7 @@ func TestMultipleAccessPointsDisplay(t *testing.T) {
 	mb := b.(*mock.MockBackend)
 
 	// Configure specific connections
-	mb.VisibleConnections = []wifi.Connection{
+	mb.VisibleNetworks = []wifi.Network{
 		{
 			SSID:      "MeshNetwork",
 			IsVisible: true,
@@ -34,7 +34,7 @@ func TestMultipleAccessPointsDisplay(t *testing.T) {
 			},
 		},
 	}
-	mb.KnownConnections = nil // Reset known connections to avoid interference
+	mb.KnownNetworks = nil // Reset known networks to avoid interference
 	mb.ActionSleep = 0
 	mb.DisableRandomization = true
 
@@ -43,7 +43,7 @@ func TestMultipleAccessPointsDisplay(t *testing.T) {
 
 	// Simulate loading connections
 	result, _ := mb.ListNetworks(wifi.ScanAuto)
-	msg := connectionsLoadedMsg(result.Connections)
+	msg := networksLoadedMsg(result.Networks)
 	model.Update(msg)
 
 	items := model.list.Items()
@@ -56,7 +56,7 @@ func TestMultipleAccessPointsDisplay(t *testing.T) {
 	checkDescription := func(ssid string) {
 		found := false
 		for _, item := range items {
-			c := item.(connectionItem)
+			c := item.(networkItem)
 			if c.SSID == ssid {
 				found = true
 

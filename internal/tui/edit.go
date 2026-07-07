@@ -30,7 +30,7 @@ type EditModel struct {
 	isForgetting        bool
 	secretsLoaded       bool
 	hasError            bool
-	selectedItem        connectionItem
+	selectedItem        networkItem
 	width               int
 	window              *WindowState
 }
@@ -41,13 +41,13 @@ const (
 	editInputFrameWidth     = 4 // text input border + horizontal padding
 )
 
-func NewEditModel(item *connectionItem) *EditModel {
+func NewEditModel(item *networkItem) *EditModel {
 	return NewEditModelWithWindow(item, nil)
 }
 
-func NewEditModelWithWindow(item *connectionItem, window *WindowState) *EditModel {
+func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 	if item == nil {
-		item = &connectionItem{}
+		item = &networkItem{}
 	}
 	isNew := item.SSID == ""
 	var items []Focusable
@@ -159,7 +159,7 @@ func NewEditModelWithWindow(item *connectionItem, window *WindowState) *EditMode
 				return func() tea.Msg {
 					newPassword := m.passwordAdapter.Model.Value()
 					autoConnect := m.autoConnectCheckbox.Checked()
-					return updateConnectionMsg{
+					return updateNetworkMsg{
 						item: m.selectedItem,
 						UpdateOptions: wifi.UpdateOptions{
 							Password:    &newPassword,
@@ -301,7 +301,7 @@ func (m *EditModel) applyWindowWidth(width int) {
 func (m *EditModel) View() string {
 	var s strings.Builder
 	s.WriteString("\n  ")
-	s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true).Render("WiFi Connection"))
+	s.WriteString(lipgloss.NewStyle().Foreground(CurrentTheme.Primary).Bold(true).Render("WiFi Network"))
 	s.WriteString("\n")
 
 	formatLabel := lipgloss.NewStyle().Foreground(CurrentTheme.Subtle)
@@ -395,7 +395,7 @@ func ShouldDisplayPasswordField(security wifi.SecurityType) bool {
 
 // forgetHandler handles the key presses for the forget confirmation.
 // It returns whether the forget flow is finished, and a command to execute.
-func forgetHandler(msg tea.Msg, item connectionItem) (finished bool, cmd tea.Cmd) {
+func forgetHandler(msg tea.Msg, item networkItem) (finished bool, cmd tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {

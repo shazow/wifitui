@@ -25,7 +25,7 @@ func runTUI(b wifi.Backend) error {
 	return nil
 }
 
-func formatConnection(c wifi.Connection) string {
+func formatNetwork(c wifi.Network) string {
 	var parts []string
 	if c.IsVisible {
 		parts = append(parts, fmt.Sprintf("%d%%", c.Strength()))
@@ -48,10 +48,10 @@ func writeJSON(w io.Writer, v any) error {
 	return enc.Encode(v)
 }
 
-// filterVisibleConnections returns only the connections that are currently visible.
-func filterVisibleConnections(connections []wifi.Connection) []wifi.Connection {
-	var visible []wifi.Connection
-	for _, c := range connections {
+// filterVisibleNetworks returns only the networks that are currently visible.
+func filterVisibleNetworks(networks []wifi.Network) []wifi.Network {
+	var visible []wifi.Network
+	for _, c := range networks {
 		if c.IsVisible {
 			visible = append(visible, c)
 		}
@@ -59,19 +59,19 @@ func filterVisibleConnections(connections []wifi.Connection) []wifi.Connection {
 	return visible
 }
 
-// findConnectionBySSID returns the first connection matching the given SSID and true,
+// findNetworkBySSID returns the first network matching the given SSID and true,
 // or the zero value and false if no match is found.
-func findConnectionBySSID(connections []wifi.Connection, ssid string) (wifi.Connection, bool) {
-	for _, c := range connections {
+func findNetworkBySSID(networks []wifi.Network, ssid string) (wifi.Network, bool) {
+	for _, c := range networks {
 		if c.SSID == ssid {
 			return c, true
 		}
 	}
-	return wifi.Connection{}, false
+	return wifi.Network{}, false
 }
 
-// writeConnectionDetails writes human-readable details for a connection to w.
-func writeConnectionDetails(w io.Writer, c wifi.Connection, secret string) error {
+// writeNetworkDetails writes human-readable details for a network to w.
+func writeNetworkDetails(w io.Writer, c wifi.Network, secret string) error {
 	var writeErr error
 	write := func(format string, args ...any) {
 		if writeErr != nil {
@@ -102,18 +102,18 @@ func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) err
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
-	connections := result.Connections
+	networks := result.Networks
 
 	if !all {
-		connections = filterVisibleConnections(connections)
+		networks = filterVisibleNetworks(networks)
 	}
 
 	if jsonOut {
-		return writeJSON(w, connections)
+		return writeJSON(w, networks)
 	}
 
-	for _, c := range connections {
-		fmt.Fprintf(w, "%s\t%s\n", c.SSID, formatConnection(c))
+	for _, c := range networks {
+		fmt.Fprintf(w, "%s\t%s\n", c.SSID, formatNetwork(c))
 	}
 	if scan && result.IsCached {
 		fmt.Fprintln(w, "Warning: scan failed; showing cached results")
@@ -127,9 +127,9 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}
-	connections := result.Connections
+	networks := result.Networks
 
-	c, found := findConnectionBySSID(connections, ssid)
+	c, found := findNetworkBySSID(networks, ssid)
 	if !found {
 		return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 	}
@@ -146,20 +146,20 @@ func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
 
 	if jsonOut {
 		// We need a custom struct to include the passphrase
-		type connectionWithSecret struct {
-			wifi.Connection
+		type networkWithSecret struct {
+			wifi.Network
 			Passphrase string `json:"passphrase,omitempty"`
 		}
-		return writeJSON(w, connectionWithSecret{Connection: c, Passphrase: secret})
+		return writeJSON(w, networkWithSecret{Network: c, Passphrase: secret})
 	}
 
-	return writeConnectionDetails(w, c, secret)
+	return writeNetworkDetails(w, c, secret)
 }
 
 func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, isHidden bool, shouldScan bool, b wifi.Backend) error {
-	// Populate the backend's internal state (e.g. NetworkManager's Connections
-	// and AccessPoints maps).
-	// ActivateConnection and JoinNetwork rely on this state being present.
+	// Populate the backend's internal state (e.g. NetworkManager's saved profiles
+	// and access point caches).
+	// ActivateNetwork and JoinNetwork rely on this state being present.
 	scan := wifi.ScanNever
 	if shouldScan {
 		scan = wifi.ScanAuto
@@ -172,7 +172,7 @@ func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, 
 		return b.JoinNetwork(ssid, passphrase, security, isHidden)
 	}
 
-	return b.ActivateConnection(ssid)
+	return b.ActivateNetwork(ssid)
 }
 
 // RetryConfig defines the configuration for connection retries.

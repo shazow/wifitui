@@ -636,7 +636,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		}
 	}
 
-	applyProfile := func(conn *wifi.Connection, profile savedProfile) {
+	applyProfile := func(conn *wifi.Network, profile savedProfile) {
 		conn.IsKnown = true
 		conn.LastConnected = profile.lastConnected
 		conn.AutoConnect = profile.autoConnect
@@ -647,7 +647,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		}
 	}
 
-	uniqueConns := make(map[networkKey]wifi.Connection)
+	uniqueConns := make(map[networkKey]wifi.Network)
 	processedProfiles := make(map[dbus.ObjectPath]bool)
 	for _, ap := range accessPoints {
 		ssid, err := ap.GetPropertySSID()
@@ -695,9 +695,9 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 			newAccessPoints[key] = ap
 		}
 
-		// Check if we already have this Connection processed
+		// Check if we already have this network processed.
 		if conn, exists := uniqueConns[key]; exists {
-			tempConn := wifi.Connection{
+			tempConn := wifi.Network{
 				SSID:         ssid,
 				Security:     security,
 				IsSecure:     isSecure,
@@ -715,7 +715,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 			continue
 		}
 
-		connInfo := wifi.Connection{
+		connInfo := wifi.Network{
 			SSID:         ssid,
 			IsKnown:      false,
 			IsSecure:     isSecure,
@@ -732,7 +732,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	}
 
 	// Now build the final list from uniqueConns
-	var conns []wifi.Connection
+	var conns []wifi.Network
 	for _, c := range uniqueConns {
 		conns = append(conns, c)
 	}
@@ -745,7 +745,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		key := networkKey{ssid: profile.ssid, security: profile.security, mode: uint32(profile.mode)}
 		newConnections[key] = profile.connection
 		addNetworkKey(newNetworkKeysBySSID, key)
-		conns = append(conns, wifi.Connection{
+		conns = append(conns, wifi.Network{
 			SSID:          profile.ssid,
 			IsKnown:       true,
 			IsHidden:      profile.hidden,
@@ -760,8 +760,8 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	b.accessPoints = newAccessPoints
 	b.networkKeysBySSID = newNetworkKeysBySSID
 
-	wifi.SortConnections(conns)
-	return wifi.NetworksResult{Connections: conns, IsCached: isCached}, nil
+	wifi.SortNetworks(conns)
+	return wifi.NetworksResult{Networks: conns, IsCached: isCached}, nil
 }
 
 func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
@@ -848,7 +848,7 @@ func (b *Backend) getActivationTarget(ssid string) (gonetworkmanager.Connection,
 	return conn, ap, nil
 }
 
-func (b *Backend) ActivateConnection(ssid string) error {
+func (b *Backend) ActivateNetwork(ssid string) error {
 	conn, ap, err := b.getActivationTarget(ssid)
 	if err != nil {
 		return err
@@ -995,7 +995,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 
 	var activeConn gonetworkmanager.ActiveConnection
 	if isHidden {
-		// Use the generic ActivateConnection for hidden networks as there is no specific object.
+		// Use NetworkManager's generic ActivateConnection for hidden networks as there is no specific object.
 		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
 	} else {
 		ap, apErr := b.getAccessPoint(ssid)
@@ -1121,7 +1121,7 @@ func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
 	}
 }
 
-func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	conn, err := b.getConnection(ssid)
 	if err != nil {
 		return err

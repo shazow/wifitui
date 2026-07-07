@@ -2,14 +2,14 @@ package wifi
 
 import "testing"
 
-func TestNetworksResultCarriesConnectionsAndCachedState(t *testing.T) {
+func TestNetworksResultCarriesNetworksAndCachedState(t *testing.T) {
 	result := NetworksResult{
-		Connections: []Connection{{SSID: "Cafe"}},
-		IsCached:    true,
+		Networks: []Network{{SSID: "Cafe"}},
+		IsCached: true,
 	}
 
-	if len(result.Connections) != 1 || result.Connections[0].SSID != "Cafe" {
-		t.Fatalf("NetworksResult.Connections = %#v, want Cafe connection", result.Connections)
+	if len(result.Networks) != 1 || result.Networks[0].SSID != "Cafe" {
+		t.Fatalf("NetworksResult.Networks = %#v, want Cafe network", result.Networks)
 	}
 	if !result.IsCached {
 		t.Fatal("NetworksResult.IsCached = false, want true")

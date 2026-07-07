@@ -103,7 +103,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	scannedNetworks := parseSystemProfilerOutput(string(out))
 
 	// Aggregate networks by SSID
-	aggregatedConns := make(map[string]wifi.Connection)
+	aggregatedConns := make(map[string]wifi.Network)
 
 	for _, net := range scannedNetworks {
 		isKnown := knownSSIDs[net.ssid]
@@ -119,7 +119,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 			}
 			aggregatedConns[net.ssid] = conn
 		} else {
-			aggregatedConns[net.ssid] = wifi.Connection{
+			aggregatedConns[net.ssid] = wifi.Network{
 				SSID:         net.ssid,
 				IsActive:     isActive,
 				IsKnown:      isKnown,
@@ -132,7 +132,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		}
 	}
 
-	var conns []wifi.Connection
+	var conns []wifi.Network
 	for _, conn := range aggregatedConns {
 		conns = append(conns, conn)
 	}
@@ -140,7 +140,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	// Add known networks that are not visible
 	for ssid := range knownSSIDs {
 		if _, exists := aggregatedConns[ssid]; !exists {
-			conns = append(conns, wifi.Connection{
+			conns = append(conns, wifi.Network{
 				SSID:        ssid,
 				IsKnown:     true,
 				AutoConnect: true,
@@ -148,11 +148,11 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		}
 	}
 
-	return wifi.NetworksResult{Connections: conns}, nil
+	return wifi.NetworksResult{Networks: conns}, nil
 }
 
-// ActivateConnection activates a known network.
-func (b *Backend) ActivateConnection(ssid string) error {
+// ActivateNetwork activates a known network.
+func (b *Backend) ActivateNetwork(ssid string) error {
 	// For known networks, networksetup uses stored credentials from the keychain
 	// automatically - no need to fetch the password ourselves.
 	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid)
@@ -217,8 +217,8 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// UpdateConnection updates a known connection.
-func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+// UpdateNetwork updates a known network.
+func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	if opts.Password != nil {
 		// In macOS, we need to delete the old password and add a new one.
 		// The -U flag in add-generic-password updates the item if it exists,

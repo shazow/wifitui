@@ -67,8 +67,8 @@ type networkChangedMsg struct {
 	changes <-chan struct{}
 }
 type networkDebouncedMsg struct{}
-type updateConnectionMsg struct {
-	item connectionItem
+type updateNetworkMsg struct {
+	item networkItem
 	wifi.UpdateOptions
 }
 
@@ -126,9 +126,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return errorMsg{err}
 			}
-			connections := result.Connections
-			wifi.SortConnections(connections)
-			return connectionsLoadedMsg(connections)
+			networks := result.Networks
+			wifi.SortNetworks(networks)
+			return networksLoadedMsg(networks)
 		}
 	case errorMsg:
 		m.loading = false
@@ -160,11 +160,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if err != nil {
 				return errorMsg{err}
 			}
-			connections := result.Connections
-			wifi.SortConnections(connections)
+			networks := result.Networks
+			wifi.SortNetworks(networks)
 			return scanFinishedMsg{
-				connections: connections,
-				isCached:    result.IsCached,
+				networks: networks,
+				isCached: result.IsCached,
 			}
 		}
 	case connectMsg:
@@ -175,19 +175,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.autoConnect != msg.item.AutoConnect {
 			batch = append(batch, func() tea.Msg {
-				err := m.backend.UpdateConnection(msg.item.SSID, wifi.UpdateOptions{AutoConnect: &msg.autoConnect})
+				err := m.backend.UpdateNetwork(msg.item.SSID, wifi.UpdateOptions{AutoConnect: &msg.autoConnect})
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
 				}
-				return connectionSavedMsg{}
+				return networkSavedMsg{}
 			})
 		}
 		batch = append(batch, func() tea.Msg {
-			err := m.backend.ActivateConnection(msg.item.SSID)
+			err := m.backend.ActivateNetwork(msg.item.SSID)
 			if err != nil {
 				return errorMsg{fmt.Errorf("failed to activate connection: %w", err)}
 			}
-			return connectionSavedMsg{} // Re-use this to trigger a refresh
+			return networkSavedMsg{} // Re-use this to trigger a refresh
 		})
 		return m, tea.Batch(batch...)
 	case joinNetworkMsg:
@@ -198,7 +198,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 				}
-				return connectionSavedMsg{}
+				return networkSavedMsg{}
 			},
 		)
 	case loadSecretsMsg:
@@ -212,15 +212,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return secretsLoadedMsg{item: msg.item, secret: secret}
 			},
 		)
-	case updateConnectionMsg:
+	case updateNetworkMsg:
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Saving %q...", msg.item.SSID), loading: true} },
 			func() tea.Msg {
-				err := m.backend.UpdateConnection(msg.item.SSID, msg.UpdateOptions)
+				err := m.backend.UpdateNetwork(msg.item.SSID, msg.UpdateOptions)
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
 				}
-				return connectionSavedMsg{}
+				return networkSavedMsg{}
 			},
 		)
 	case forgetNetworkMsg:
@@ -233,7 +233,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
 				}
-				return connectionSavedMsg{forgottenSSID: msg.item.SSID} // Re-use this to trigger a refresh
+				return networkSavedMsg{forgottenSSID: msg.item.SSID} // Re-use this to trigger a refresh
 			},
 		)
 	case tea.KeyMsg:
@@ -278,7 +278,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case secretsLoadedMsg:
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
-	case connectionsLoadedMsg:
+	case networksLoadedMsg:
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case scanFinishedMsg:
@@ -287,7 +287,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.isCached {
 			m.statusMessage = "Warning: scan failed; showing cached results"
 		}
-	case connectionSavedMsg:
+	case networkSavedMsg:
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: "Saved. Refreshing...", loading: true} },
 			func() tea.Msg { return popViewMsg{} },
@@ -296,12 +296,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return errorMsg{err}
 				}
-				connections := result.Connections
+				networks := result.Networks
 				if msg.forgottenSSID != "" {
 					// Remove the forgotten network from the list.
 					// If visible, mark as not known; if not visible, remove entirely.
-					filtered := connections[:0]
-					for _, conn := range connections {
+					filtered := networks[:0]
+					for _, conn := range networks {
 						if conn.SSID == msg.forgottenSSID {
 							if conn.IsVisible {
 								conn.IsKnown = false
@@ -313,10 +313,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							filtered = append(filtered, conn)
 						}
 					}
-					connections = filtered
+					networks = filtered
 				}
-				wifi.SortConnections(connections)
-				return connectionsLoadedMsg(connections)
+				wifi.SortNetworks(networks)
+				return networksLoadedMsg(networks)
 			},
 		)
 

@@ -16,7 +16,7 @@ func TestTuiModel_ScanFinishedUpdatesList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mock.New() failed: %v", err)
 	}
-	connections := []wifi.Connection{
+	connections := []wifi.Network{
 		{SSID: "TestNet1"},
 		{SSID: "TestNet2"},
 	}
@@ -32,7 +32,7 @@ func TestTuiModel_ScanFinishedUpdatesList(t *testing.T) {
 	m = updatedModel.(*model)
 
 	// Simulate a scan finishing
-	msg := scanFinishedMsg{connections: connections}
+	msg := scanFinishedMsg{networks: connections}
 	updatedModel, _ = m.Update(msg)
 	m = updatedModel.(*model)
 
@@ -132,7 +132,7 @@ func TestTuiModel_NetworkChangeDebouncesRefresh(t *testing.T) {
 	watch := &watchBackend{
 		Backend: backend,
 		changes: changes,
-		networks: []wifi.Connection{
+		networks: []wifi.Network{
 			{SSID: "UpdatedNet", IsVisible: true},
 		},
 	}
@@ -180,9 +180,9 @@ func TestTuiModel_NetworkChangeDebouncesRefresh(t *testing.T) {
 	}
 
 	msg := refreshCmd()
-	loaded, ok := msg.(connectionsLoadedMsg)
+	loaded, ok := msg.(networksLoadedMsg)
 	if !ok {
-		t.Fatalf("refresh command returned %T, want connectionsLoadedMsg", msg)
+		t.Fatalf("refresh command returned %T, want networksLoadedMsg", msg)
 	}
 	if len(watch.listScans) != 1 || watch.listScans[0] != wifi.ScanNever {
 		t.Fatalf("refresh command used scans %#v, want only ScanNever", watch.listScans)
@@ -277,7 +277,7 @@ type watchBackend struct {
 	watchCalled bool
 	ctx         context.Context
 	listScans   []wifi.ScanMode
-	networks    []wifi.Connection
+	networks    []wifi.Network
 }
 
 func (b *watchBackend) WatchNetworkChanges(ctx context.Context) (<-chan struct{}, error) {
@@ -289,7 +289,7 @@ func (b *watchBackend) WatchNetworkChanges(ctx context.Context) (<-chan struct{}
 func (b *watchBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	b.listScans = append(b.listScans, scan)
 	if b.networks != nil {
-		return wifi.NetworksResult{Connections: b.networks}, nil
+		return wifi.NetworksResult{Networks: b.networks}, nil
 	}
 	return b.Backend.ListNetworks(scan)
 }

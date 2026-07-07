@@ -37,7 +37,7 @@ func TestListModel_ContentAwareLayout(t *testing.T) {
 
 	checkContentLayout := func(ssid string, windowWidth int, expectedWidth int) {
 		// Create a connection
-		conns := []wifi.Connection{
+		conns := []wifi.Network{
 			{
 				SSID:      ssid,
 				IsVisible: true,
@@ -46,7 +46,7 @@ func TestListModel_ContentAwareLayout(t *testing.T) {
 		}
 
 		// Load connections
-		m.Update(connectionsLoadedMsg(conns))
+		m.Update(networksLoadedMsg(conns))
 
 		// Trigger resize to update layout
 		m.Update(tea.WindowSizeMsg{Width: windowWidth, Height: 20})
