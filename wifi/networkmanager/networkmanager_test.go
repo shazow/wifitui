@@ -750,6 +750,45 @@ func TestActivateNetwork_UsesStrongestCompatibleAccessPoint(t *testing.T) {
 	}
 }
 
+func TestActivateNetwork_UsesSavedProfileWithoutCachedAccessPoint(t *testing.T) {
+	device := &mockDeviceWireless{}
+	knownHidden := newMockConnection("/org/freedesktop/NetworkManager/Settings/7", "HiddenNet", "HiddenNet", wifi.SecurityWPA)
+	knownHidden.settings["802-11-wireless"]["hidden"] = true
+	b := newTestBackend(device, []gonetworkmanager.Connection{knownHidden})
+
+	mockManager := b.NM.(*mockNM)
+	var activatedConn gonetworkmanager.Connection
+	var activatedDevice gonetworkmanager.Device
+	var activatedObject *dbus.Object
+	mockManager.activateConnectionFunc = func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject *dbus.Object) (gonetworkmanager.ActiveConnection, error) {
+		activatedConn = conn
+		activatedDevice = device
+		activatedObject = specificObject
+		return &mockActiveConnection{}, nil
+	}
+	mockManager.activateWirelessConnectionFunc = func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, ap gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error) {
+		t.Fatalf("ActivateNetwork used ActivateWirelessConnection with AP %#v, want generic ActivateConnection", ap)
+		return nil, nil
+	}
+
+	_, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+	if err := b.ActivateNetwork("HiddenNet"); err != nil {
+		t.Fatalf("ActivateNetwork(HiddenNet) returned error: %v", err)
+	}
+	if activatedConn != knownHidden {
+		t.Fatalf("ActivateNetwork used connection %#v, want saved hidden profile %#v", activatedConn, knownHidden)
+	}
+	if activatedDevice != device {
+		t.Fatalf("ActivateNetwork used device %#v, want wireless device %#v", activatedDevice, device)
+	}
+	if activatedObject != nil {
+		t.Fatalf("ActivateNetwork used specific object %#v, want nil", activatedObject)
+	}
+}
+
 func TestActivateNetwork_DoesNotPairSavedProfileWithIncompatibleAccessPoint(t *testing.T) {
 	eapAP := newMockAccessPoint("Corp", "00:00:00:00:00:17", 90)
 	eapAP.rsnFlags = uint32(gonetworkmanager.Nm80211APSecKeyMgmt8021X)

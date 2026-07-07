@@ -852,11 +852,7 @@ func (b *Backend) getActivationTarget(ssid string) (gonetworkmanager.Connection,
 	if err != nil {
 		return nil, nil, err
 	}
-	ap, err := b.getAccessPoint(ssid)
-	if err != nil {
-		return nil, nil, err
-	}
-	return conn, ap, nil
+	return conn, nil, nil
 }
 
 func (b *Backend) ActivateNetwork(ssid string) error {
@@ -870,7 +866,12 @@ func (b *Backend) ActivateNetwork(ssid string) error {
 		return err
 	}
 
-	activeConn, err := b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	var activeConn gonetworkmanager.ActiveConnection
+	if ap == nil {
+		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
+	} else {
+		activeConn, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	}
 	if err != nil {
 		return err
 	}
