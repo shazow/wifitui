@@ -20,7 +20,7 @@ type itemDelegate struct {
 }
 
 func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(connectionItem)
+	i, ok := listItem.(networkItem)
 	if !ok {
 		// Fallback to default render for any other item types
 		d.DefaultDelegate.Render(w, m, index, listItem)
@@ -134,7 +134,7 @@ func (m *ListModel) OnEnter() tea.Cmd {
 	return tea.Batch(
 		m.scanner.SetSchedule(ScanFast),
 		// Start a scan right away
-		func() tea.Msg { return scanMsg{} },
+		func() tea.Msg { return scanMsg{mode: wifi.ScanAuto} },
 	)
 }
 
@@ -149,7 +149,7 @@ func NewListModelWithWindow(window *WindowState) *ListModel {
 		desiredColumnWidth: defaultSSIDColumnWidth + 2,
 		window:             window,
 	}
-	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{} })
+	m.scanner = NewScanSchedule(func() tea.Msg { return scanMsg{mode: wifi.ScanAuto} })
 	delegate := itemDelegate{
 		listModel: m,
 	}
@@ -201,14 +201,14 @@ func (m *ListModel) availableWidth() int {
 	return m.window.ContentWidth(h+bh, m.width, 1)
 }
 
-// refreshColumns recalculates the desired SSID column width from the latest connection snapshot.
+// refreshColumns recalculates the desired SSID column width from the latest network snapshot.
 //
-// Call this whenever the connection list changes (e.g. after scans or reloads)
+// Call this whenever the network list changes (e.g. after scans or reloads)
 // before updateListSize so the rendered columns can adapt to content.
-func (m *ListModel) refreshColumns(conns []wifi.Connection) {
+func (m *ListModel) refreshColumns(conns []wifi.Network) {
 	maxW := 0
 	for _, c := range conns {
-		item := connectionItem{Connection: c}
+		item := networkItem{Network: c}
 		w := lipgloss.Width(getIcon(item) + item.Title())
 		if w > maxW {
 			maxW = w
@@ -281,7 +281,7 @@ func (m *ListModel) SetItems(items []list.Item) {
 	m.list.SetItems(items)
 }
 
-func (m *ListModel) newEditModel(item *connectionItem) *EditModel {
+func (m *ListModel) newEditModel(item *networkItem) *EditModel {
 	if m.window != nil {
 		return NewEditModelWithWindow(item, m.window)
 	}
@@ -296,7 +296,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 	oldIndex := m.list.Index()
 
 	if m.isForgetting {
-		selected, ok := m.list.SelectedItem().(connectionItem)
+		selected, ok := m.list.SelectedItem().(networkItem)
 		if !ok {
 			m.isForgetting = false
 		} else {
@@ -323,20 +323,20 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.height = msg.Height
 		m.updateListSize()
 		return m, nil
-	case connectionsLoadedMsg:
+	case networksLoadedMsg:
 		m.refreshColumns(msg)
 		items := make([]list.Item, len(msg))
 		for i, c := range msg {
-			items[i] = connectionItem{Connection: c}
+			items[i] = networkItem{Network: c}
 		}
 		m.list.SetItems(items)
 		m.updateListSize()
 		return m, nil
 	case scanFinishedMsg:
-		m.refreshColumns(msg)
-		items := make([]list.Item, len(msg))
-		for i, c := range msg {
-			items[i] = connectionItem{Connection: c}
+		m.refreshColumns(msg.networks)
+		items := make([]list.Item, len(msg.networks))
+		for i, c := range msg.networks {
+			items[i] = networkItem{Network: c}
 		}
 		m.list.SetItems(items)
 		m.updateListSize()
@@ -365,7 +365,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			editModel := m.newEditModel(nil)
 			return editModel, nil
 		case "s":
-			return m, func() tea.Msg { return scanMsg{} }
+			return m, func() tea.Msg { return scanMsg{mode: wifi.ScanForce} }
 		case "S":
 			enabled, cmd := m.scanner.Toggle()
 			var msg string
@@ -379,7 +379,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			})
 		case "f":
 			if len(m.list.Items()) > 0 {
-				selected, ok := m.list.SelectedItem().(connectionItem)
+				selected, ok := m.list.SelectedItem().(networkItem)
 				if ok && selected.IsKnown {
 					m.isForgetting = true
 					return m, nil
@@ -387,7 +387,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			}
 		case "c":
 			if len(m.list.Items()) > 0 {
-				selected, ok := m.list.SelectedItem().(connectionItem)
+				selected, ok := m.list.SelectedItem().(networkItem)
 				if ok {
 					if selected.IsKnown {
 						return m, func() tea.Msg { return connectMsg{item: selected} }
@@ -399,7 +399,7 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 			}
 		case "enter":
 			if len(m.list.Items()) > 0 {
-				selected, ok := m.list.SelectedItem().(connectionItem)
+				selected, ok := m.list.SelectedItem().(networkItem)
 				if !ok {
 					break
 				}
@@ -475,7 +475,7 @@ func truncateString(s string, maxW int) string {
 	return sb.String()
 }
 
-func getIcon(i connectionItem) string {
+func getIcon(i networkItem) string {
 	var icon string
 	if i.IsVisible {
 		switch i.Security {

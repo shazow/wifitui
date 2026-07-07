@@ -2,23 +2,23 @@ package wifi
 
 import "sort"
 
-// SortConnections sorts a slice of Connection structs in place.
+// SortNetworks sorts a slice of Network structs in place.
 // The sorting order is:
-// 1. Active connection first.
+// 1. Active network first.
 // 2. Visible networks, sorted by signal strength (strongest first).
 // 3. Non-visible known networks, sorted by LastConnected timestamp (most recent first).
 // 4. Fallback to SSID alphabetically.
-func SortConnections(connections []Connection) {
-	sort.SliceStable(connections, func(i, j int) bool {
-		a := connections[i]
-		b := connections[j]
+func SortNetworks(networks []Network) {
+	sort.SliceStable(networks, func(i, j int) bool {
+		a := networks[i]
+		b := networks[j]
 
-		// Active connections first.
+		// Active networks first.
 		if a.IsActive != b.IsActive {
 			return a.IsActive
 		}
 
-		// Visible connections before non-visible.
+		// Visible networks before non-visible.
 		if a.IsVisible != b.IsVisible {
 			return a.IsVisible
 		}

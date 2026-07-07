@@ -10,22 +10,22 @@ import (
 
 var DefaultActionSleep = 500 * time.Millisecond
 
-// mockConnection wraps a backend.Connection with mock-specific metadata.
-type mockConnection struct {
-	wifi.Connection
+// mockNetwork wraps a backend.Network with mock-specific metadata.
+type mockNetwork struct {
+	wifi.Network
 	Secret string
 }
 
 // MockBackend is a mock implementation of the backend.Backend interface for testing.
 type MockBackend struct {
-	VisibleConnections     []wifi.Connection
-	KnownConnections       []mockConnection
-	ActiveConnectionIndex  int
+	VisibleNetworks        []wifi.Network
+	KnownNetworks          []mockNetwork
+	ActiveNetworkIndex     int
 	ActivateError          error
 	ForgetError            error
 	JoinError              error
 	GetSecretsError        error
-	UpdateConnectionError  error
+	UpdateNetworkError     error
 	WirelessEnabled        bool
 	IsWirelessEnabledError error
 	SetWirelessError       error
@@ -44,7 +44,7 @@ func ago(duration time.Duration) *time.Time {
 
 // New creates a new mock.Backend with a list of fun wifi networks.
 func New() (wifi.Backend, error) {
-	initialConnections := []wifi.Connection{
+	initialNetworks := []wifi.Network{
 		{SSID: "HideYoKidsHideYoWiFi", LastConnected: ago(2 * time.Hour), IsKnown: true, AutoConnect: true, Security: wifi.SecurityWPA},
 		{SSID: "GET off my LAN", Security: wifi.SecurityWPA, LastConnected: ago(761 * time.Hour), IsKnown: true, AutoConnect: false},
 		{SSID: "NeverGonnaGiveYouIP", Security: wifi.SecurityWEP, IsVisible: true},
@@ -80,19 +80,19 @@ func New() (wifi.Backend, error) {
 		"HideYoKidsHideYoWiFi": "hidden",
 	}
 
-	var knownConnections []mockConnection
-	for _, c := range initialConnections {
+	var knownNetworks []mockNetwork
+	for _, c := range initialNetworks {
 		if c.IsKnown {
-			knownConnections = append(knownConnections, mockConnection{
-				Connection: c,
-				Secret:     secrets[c.SSID],
+			knownNetworks = append(knownNetworks, mockNetwork{
+				Network: c,
+				Secret:  secrets[c.SSID],
 			})
 		}
 	}
 
 	// For testing duplicate SSIDs (different security/known status, although in reality SSID+Security is the key, but backend usually keys by SSID)
-	knownConnections = append(knownConnections, mockConnection{
-		Connection: wifi.Connection{
+	knownNetworks = append(knownNetworks, mockNetwork{
+		Network: wifi.Network{
 			SSID:         "HideYoKidsHideYoWiFi",
 			AccessPoints: []wifi.AccessPoint{{Strength: 25}},
 			IsKnown:      true,
@@ -102,115 +102,115 @@ func New() (wifi.Backend, error) {
 	})
 
 	return &MockBackend{
-		VisibleConnections:    initialConnections,
-		KnownConnections:      knownConnections,
-		ActiveConnectionIndex: -1, // No connection active initially
-		ActionSleep:           DefaultActionSleep,
-		WirelessEnabled:       true,
+		VisibleNetworks:    initialNetworks,
+		KnownNetworks:      knownNetworks,
+		ActiveNetworkIndex: -1, // No network active initially
+		ActionSleep:        DefaultActionSleep,
+		WirelessEnabled:    true,
 	}, nil
 }
 
-// setActiveConnection sets the active connection and ensures all other connections are inactive.
-func (m *MockBackend) setActiveConnection(ssid string) {
-	m.ActiveConnectionIndex = -1
-	for i := range m.KnownConnections {
-		isActive := m.KnownConnections[i].SSID == ssid
-		m.KnownConnections[i].IsActive = isActive
+// setActiveNetwork sets the active network and ensures all other networks are inactive.
+func (m *MockBackend) setActiveNetwork(ssid string) {
+	m.ActiveNetworkIndex = -1
+	for i := range m.KnownNetworks {
+		isActive := m.KnownNetworks[i].SSID == ssid
+		m.KnownNetworks[i].IsActive = isActive
 		if isActive {
-			m.ActiveConnectionIndex = i
+			m.ActiveNetworkIndex = i
 		}
 	}
 
-	// Also update the visible connections slice for consistency
-	for i := range m.VisibleConnections {
-		m.VisibleConnections[i].IsActive = (m.VisibleConnections[i].SSID == ssid)
+	// Also update the visible networks slice for consistency
+	for i := range m.VisibleNetworks {
+		m.VisibleNetworks[i].IsActive = (m.VisibleNetworks[i].SSID == ssid)
 	}
 }
 
-func (m *MockBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+func (m *MockBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	time.Sleep(m.ActionSleep)
 
 	if !m.WirelessEnabled {
-		return nil, wifi.ErrWirelessDisabled
+		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
 	}
 	// For mock, we can re-randomize strengths on each scan
-	if shouldScan && !m.DisableRandomization {
+	if scan != wifi.ScanNever && !m.DisableRandomization {
 		s := rand.NewSource(time.Now().Unix())
 		r := rand.New(s)
-		for i := range m.VisibleConnections {
-			for j := range m.VisibleConnections[i].AccessPoints {
-				if m.VisibleConnections[i].AccessPoints[j].Strength > 0 {
-					m.VisibleConnections[i].AccessPoints[j].Strength = uint8(r.Intn(70) + 30)
+		for i := range m.VisibleNetworks {
+			for j := range m.VisibleNetworks[i].AccessPoints {
+				if m.VisibleNetworks[i].AccessPoints[j].Strength > 0 {
+					m.VisibleNetworks[i].AccessPoints[j].Strength = uint8(r.Intn(70) + 30)
 				}
 			}
 		}
 	}
 
 	// Aggregate and prepare result
-	// Note: In this new version of MockBackend, we assume VisibleConnections are already aggregated in New().
-	// But we still need to merge known connections if they are not visible?
+	// Note: In this new version of MockBackend, we assume VisibleNetworks are already aggregated in New().
+	// But we still need to merge known networks if they are not visible?
 	// The original logic was complex because it simulated a bug. Now we simulate "correct" behavior.
 
-	processed := make(map[string]wifi.Connection)
+	processed := make(map[string]wifi.Network)
 
-	// Process visible connections
-	for _, c := range m.VisibleConnections {
+	// Process visible networks
+	for _, c := range m.VisibleNetworks {
 		// In previous "buggy" version we appended blindly. Now we use a map if we want to ensure uniqueness,
 		// but since we manually constructed the list in New(), let's assume they are unique enough for mock purposes.
 		// However, to be safe and consistent with other backends, let's map by SSID.
 
-		connToAdd := c
+		networkToAdd := c
 
-		// Check against known connections to update status
+		// Check against known networks to update status
 		isKnown := false
-		for _, kc := range m.KnownConnections {
+		for _, kc := range m.KnownNetworks {
 			if kc.SSID == c.SSID {
 				isKnown = true
-				// Merge known connection details
-				knownConn := kc.Connection
-				connToAdd.IsKnown = true
-				connToAdd.AutoConnect = knownConn.AutoConnect
-				connToAdd.Security = knownConn.Security
-				connToAdd.LastConnected = knownConn.LastConnected
+				// Merge known network details
+				knownNetwork := kc.Network
+				networkToAdd.IsKnown = true
+				networkToAdd.AutoConnect = knownNetwork.AutoConnect
+				networkToAdd.Security = knownNetwork.Security
+				networkToAdd.LastConnected = knownNetwork.LastConnected
 				break
 			}
 		}
 		if !isKnown {
-			connToAdd.IsKnown = false
-			connToAdd.AutoConnect = false
+			networkToAdd.IsKnown = false
+			networkToAdd.AutoConnect = false
 		}
 
-		processed[c.SSID] = connToAdd
+		processed[c.SSID] = networkToAdd
 	}
 
-	// Add known connections that weren't visible
-	for _, kc := range m.KnownConnections {
+	// Add known networks that weren't visible
+	for _, kc := range m.KnownNetworks {
 		if _, ok := processed[kc.SSID]; !ok {
-			processed[kc.SSID] = kc.Connection
+			processed[kc.SSID] = kc.Network
 		}
 	}
 
-	var result []wifi.Connection
+	var result []wifi.Network
 	for _, c := range processed {
 		wifi.SortAccessPoints(c.AccessPoints)
 		result = append(result, c)
 	}
 
-	return result, nil
+	return wifi.NetworksResult{Networks: result}, nil
 }
 
-func (m *MockBackend) ActivateConnection(ssid string) error {
+func (m *MockBackend) ActivateNetwork(ssid string) error {
 	time.Sleep(m.ActionSleep)
 
 	if m.ActivateError != nil {
 		return m.ActivateError
 	}
 	// "Act on first match" logic for ambiguity.
-	for i, c := range m.KnownConnections {
+	for i, c := range m.KnownNetworks {
 		if c.SSID == ssid {
-			m.setActiveConnection(ssid)
+			m.setActiveNetwork(ssid)
 			now := time.Now()
-			m.KnownConnections[i].LastConnected = &now
+			m.KnownNetworks[i].LastConnected = &now
 			return nil
 		}
 	}
@@ -225,17 +225,17 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 	}
 
 	var activeSSID string
-	if m.ActiveConnectionIndex >= 0 && m.ActiveConnectionIndex < len(m.KnownConnections) {
-		activeSSID = m.KnownConnections[m.ActiveConnectionIndex].SSID
+	if m.ActiveNetworkIndex >= 0 && m.ActiveNetworkIndex < len(m.KnownNetworks) {
+		activeSSID = m.KnownNetworks[m.ActiveNetworkIndex].SSID
 	}
 
-	var newKnownConnections []mockConnection
+	var newKnownNetworks []mockNetwork
 	found := false
-	for _, c := range m.KnownConnections {
+	for _, c := range m.KnownNetworks {
 		if c.SSID == ssid {
 			found = true
 		} else {
-			newKnownConnections = append(newKnownConnections, c)
+			newKnownNetworks = append(newKnownNetworks, c)
 		}
 	}
 
@@ -243,12 +243,12 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 		return fmt.Errorf("network not found: %s: %w", ssid, wifi.ErrNotFound)
 	}
 
-	m.KnownConnections = newKnownConnections
+	m.KnownNetworks = newKnownNetworks
 
 	if activeSSID == ssid {
-		m.setActiveConnection("") // Deactivate all
+		m.setActiveNetwork("") // Deactivate all
 	} else {
-		m.setActiveConnection(activeSSID) // Re-sync active connection
+		m.setActiveNetwork(activeSSID) // Re-sync active network
 	}
 
 	return nil
@@ -261,10 +261,10 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 		return m.JoinError
 	}
 
-	var c wifi.Connection
+	var c wifi.Network
 	found := false
 	foundIndex := -1
-	for i, vc := range m.VisibleConnections {
+	for i, vc := range m.VisibleNetworks {
 		if vc.SSID == ssid {
 			c = vc
 			found = true
@@ -273,7 +273,7 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 		}
 	}
 	if !found {
-		c = wifi.Connection{
+		c = wifi.Network{
 			SSID:     ssid,
 			Security: security,
 			IsHidden: isHidden,
@@ -283,31 +283,31 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 	c.IsKnown = true
 	c.AutoConnect = true
 	if found {
-		m.VisibleConnections[foundIndex] = c
+		m.VisibleNetworks[foundIndex] = c
 	}
 
-	newConnection := mockConnection{
-		Connection: c,
-		Secret:     password,
+	newNetwork := mockNetwork{
+		Network: c,
+		Secret:  password,
 	}
 
 	// Check if we are replacing an existing known connection, otherwise append.
 	foundInKnown := false
-	for i, kc := range m.KnownConnections {
+	for i, kc := range m.KnownNetworks {
 		if kc.SSID == ssid {
-			m.KnownConnections[i] = newConnection
+			m.KnownNetworks[i] = newNetwork
 			foundInKnown = true
 			break
 		}
 	}
 	if !foundInKnown {
-		m.KnownConnections = append(m.KnownConnections, newConnection)
+		m.KnownNetworks = append(m.KnownNetworks, newNetwork)
 	}
 
-	m.setActiveConnection(ssid)
+	m.setActiveNetwork(ssid)
 	now := time.Now()
-	if m.ActiveConnectionIndex != -1 {
-		m.KnownConnections[m.ActiveConnectionIndex].LastConnected = &now
+	if m.ActiveNetworkIndex != -1 {
+		m.KnownNetworks[m.ActiveNetworkIndex].LastConnected = &now
 	}
 
 	return nil
@@ -320,7 +320,7 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 		return "", m.GetSecretsError
 	}
 	// "Act on first match" logic for ambiguity.
-	for _, c := range m.KnownConnections {
+	for _, c := range m.KnownNetworks {
 		if c.SSID == ssid {
 			return c.Secret, nil
 		}
@@ -328,25 +328,25 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 	return "", fmt.Errorf("no secrets for %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func (m *MockBackend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+func (m *MockBackend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	time.Sleep(m.ActionSleep)
 
-	if m.UpdateConnectionError != nil {
-		return m.UpdateConnectionError
+	if m.UpdateNetworkError != nil {
+		return m.UpdateNetworkError
 	}
 	// "Act on first match" logic for ambiguity.
-	for i, c := range m.KnownConnections {
+	for i, c := range m.KnownNetworks {
 		if c.SSID == ssid {
 			if opts.Password != nil {
-				m.KnownConnections[i].Secret = *opts.Password
+				m.KnownNetworks[i].Secret = *opts.Password
 			}
 			if opts.AutoConnect != nil {
-				m.KnownConnections[i].AutoConnect = *opts.AutoConnect
+				m.KnownNetworks[i].AutoConnect = *opts.AutoConnect
 			}
 			return nil
 		}
 	}
-	return fmt.Errorf("cannot update connection for unknown network %s: %w", ssid, wifi.ErrNotFound)
+	return fmt.Errorf("cannot update network for unknown network %s: %w", ssid, wifi.ErrNotFound)
 }
 
 func (m *MockBackend) IsWirelessEnabled() (bool, error) {

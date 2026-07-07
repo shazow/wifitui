@@ -39,13 +39,13 @@ type statusMsg struct {
 	loading bool
 }
 
-// connectionItem holds the information for a single WiFi connection in our list
-type connectionItem struct {
-	wifi.Connection
+// networkItem holds the information for a single Wi-Fi network in our list.
+type networkItem struct {
+	wifi.Network
 }
 
-func (i connectionItem) Title() string { return i.SSID }
-func (i connectionItem) Description() string {
+func (i networkItem) Title() string { return i.SSID }
+func (i networkItem) Description() string {
 	if i.Strength() > 0 {
 		return fmt.Sprintf("%d%%", i.Strength())
 	}
@@ -54,26 +54,31 @@ func (i connectionItem) Description() string {
 	}
 	return ""
 }
-func (i connectionItem) FilterValue() string { return i.Title() }
+func (i networkItem) FilterValue() string { return i.Title() }
 
 // Bubbletea messages are used to communicate between the main loop and commands
 type (
 	// From backend
-	connectionsLoadedMsg []wifi.Connection // Sent when connections are fetched
-	scanFinishedMsg      []wifi.Connection // Sent when a scan is finished
-	secretsLoadedMsg     struct {
-		item   connectionItem
+	networksLoadedMsg []wifi.Network // Sent when networks are fetched
+	scanFinishedMsg   struct {
+		networks []wifi.Network
+		isCached bool
+	}
+	secretsLoadedMsg struct {
+		item   networkItem
 		secret string
 	}
-	connectionSavedMsg struct {
+	networkSavedMsg struct {
 		forgottenSSID string
 	}
 	errorMsg struct{ err error }
 
 	// To main model
-	scanMsg    struct{}
+	scanMsg struct {
+		mode wifi.ScanMode
+	}
 	connectMsg struct {
-		item        connectionItem
+		item        networkItem
 		autoConnect bool
 	}
 	joinNetworkMsg struct {
@@ -82,13 +87,13 @@ type (
 		security wifi.SecurityType
 		isHidden bool
 	}
-	loadSecretsMsg  struct{ item connectionItem }
+	loadSecretsMsg  struct{ item networkItem }
 	updateSecretMsg struct {
-		item        connectionItem
+		item        networkItem
 		newPassword string
 		autoConnect bool
 	}
-	forgetNetworkMsg struct{ item connectionItem }
+	forgetNetworkMsg struct{ item networkItem }
 )
 
 // --- Checkbox ---

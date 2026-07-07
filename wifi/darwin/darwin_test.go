@@ -123,13 +123,13 @@ func TestRssiToStrength(t *testing.T) {
 		rssi     int
 		expected uint8
 	}{
-		{-50, 100},  // Strong signal
-		{-70, 60},   // Medium signal
-		{-90, 20},   // Weak signal
-		{-100, 0},   // Minimum
-		{-110, 0},   // Below minimum
-		{0, 0},      // Invalid
-		{10, 0},     // Invalid positive
+		{-50, 100}, // Strong signal
+		{-70, 60},  // Medium signal
+		{-90, 20},  // Weak signal
+		{-100, 0},  // Minimum
+		{-110, 0},  // Below minimum
+		{0, 0},     // Invalid
+		{10, 0},    // Invalid positive
 	}
 
 	for _, tt := range tests {

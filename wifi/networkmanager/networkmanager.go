@@ -3,9 +3,11 @@
 package networkmanager
 
 import (
+	"context"
 	"fmt"
 	"os/user"
 	"strings"
+	"sync"
 	"time"
 
 	gonetworkmanager "github.com/Wifx/gonetworkmanager/v3"
@@ -17,15 +19,53 @@ import (
 const (
 	connectionTimeout = 10 * time.Second
 	scanTimeout       = 30 * time.Second
+	scanInterval      = 30 * time.Second
+)
+
+const (
+	dbusPropertiesInterface        = "org.freedesktop.DBus.Properties"
+	nmWirelessDeviceInterface      = "org.freedesktop.NetworkManager.Device.Wireless"
+	nmWirelessAccessPointInterface = "org.freedesktop.NetworkManager.AccessPoint"
 )
 
 // Backend implements the backend.Backend interface using D-Bus to communicate with NetworkManager.
 type Backend struct {
-	NM           gonetworkmanager.NetworkManager
-	Settings     gonetworkmanager.Settings
-	Connections  map[string]gonetworkmanager.Connection
-	AccessPoints map[string]gonetworkmanager.AccessPoint
-	Device       gonetworkmanager.DeviceWireless
+	NM       gonetworkmanager.NetworkManager
+	Settings gonetworkmanager.Settings
+	Device   gonetworkmanager.DeviceWireless
+
+	connections       map[networkKey]gonetworkmanager.Connection
+	accessPoints      map[networkKey]gonetworkmanager.AccessPoint
+	networkKeysBySSID map[string][]networkKey
+
+	scanFunc     func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error
+	scanInterval time.Duration
+	lastScan     time.Time
+	scanCached   bool
+	scanMu       sync.Mutex
+	scanDone     chan struct{}
+}
+
+type networkKey struct {
+	ssid     string
+	security wifi.SecurityType
+	mode     uint32
+	flags    uint32
+	wpaFlags uint32
+	rsnFlags uint32
+}
+
+type savedProfile struct {
+	connection    gonetworkmanager.Connection
+	path          dbus.ObjectPath
+	id            string
+	ssid          string
+	security      wifi.SecurityType
+	mode          gonetworkmanager.Nm80211Mode
+	keyMgmt       gonetworkmanager.Nm80211APSec
+	lastConnected *time.Time
+	autoConnect   bool
+	hidden        bool
 }
 
 // New creates a new dbus.Backend.
@@ -53,8 +93,8 @@ func New() (wifi.Backend, error) {
 	return &Backend{
 		NM:           nm,
 		Settings:     settings,
-		Connections:  make(map[string]gonetworkmanager.Connection),
-		AccessPoints: make(map[string]gonetworkmanager.AccessPoint),
+		connections:  make(map[networkKey]gonetworkmanager.Connection),
+		accessPoints: make(map[networkKey]gonetworkmanager.AccessPoint),
 	}, nil
 }
 
@@ -89,13 +129,26 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 }
 
 func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
+	return b.scanAndWaitWithOptions(device, nil)
+}
+
+func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless, options map[string]dbus.Variant) error {
+	if b.scanFunc != nil {
+		return b.scanFunc(device, options)
+	}
+
+	var baseline time.Duration
+	if value, err := device.GetPropertyLastScan(); err == nil && value > 0 {
+		baseline = time.Duration(value) * time.Millisecond
+	}
+
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return fmt.Errorf("failed to connect to dbus: %w", err)
 	}
 
 	path := device.GetPath()
-	rule := fmt.Sprintf("type='signal',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='%s'", path)
+	rule := fmt.Sprintf("type='signal',interface='%s',member='PropertiesChanged',path='%s'", dbusPropertiesInterface, path)
 
 	// We need to add the match rule to receiving signals matching this rule.
 	call := conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, rule)
@@ -112,7 +165,7 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	// FIXME: Would be nice if we could detect whether a scan was already in progress (or if the device is ready to scan again),
 	// otherwise it seems scan requests get dropped if they're requested too frequently.
 	// Alternatively we can try to autodetect intervals that are too frequent by seeing how often scanTimeout is getting triggered, but this is not ideal.
-	err = device.RequestScan()
+	err = b.requestScan(device, options)
 	if err != nil {
 		return err
 	}
@@ -132,14 +185,26 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 				continue
 			}
 			iface, ok := sig.Body[0].(string)
-			if !ok || iface != "org.freedesktop.NetworkManager.Device.Wireless" {
+			if !ok || iface != nmWirelessDeviceInterface {
 				continue
 			}
 			changed, ok := sig.Body[1].(map[string]dbus.Variant)
 			if !ok {
 				continue
 			}
-			if _, ok := changed["LastScan"]; ok {
+			variant, ok := changed["LastScan"]
+			if !ok {
+				continue
+			}
+			value, ok := variant.Value().(int64)
+			if !ok {
+				return nil
+			}
+			var nextScan time.Duration
+			if value > 0 {
+				nextScan = time.Duration(value) * time.Millisecond
+			}
+			if baseline == 0 || nextScan > baseline {
 				return nil
 			}
 		case <-timer.C:
@@ -148,69 +213,442 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 	}
 }
 
-// BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
-	enabled, err := b.IsWirelessEnabled()
+func (b *Backend) requestScan(device gonetworkmanager.DeviceWireless, options map[string]dbus.Variant) error {
+	if len(options) == 0 {
+		return device.RequestScan()
+	}
+
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return fmt.Errorf("failed to connect to dbus: %w", err)
+	}
+	obj := conn.Object(gonetworkmanager.NetworkManagerInterface, device.GetPath())
+	return obj.Call(gonetworkmanager.DeviceWirelessRequestScan, 0, options).Store()
+}
+
+func hiddenSSIDScanOptions(ssid string) map[string]dbus.Variant {
+	return map[string]dbus.Variant{
+		"ssids": dbus.MakeVariant([][]byte{[]byte(ssid)}),
+	}
+}
+
+func (b *Backend) scanHiddenSSID(device gonetworkmanager.DeviceWireless, ssid string) {
+	if ssid == "" {
+		return
+	}
+	_ = b.scanAndWaitWithOptions(device, hiddenSSIDScanOptions(ssid))
+}
+
+// WatchNetworkChanges returns a channel that receives a value when NetworkManager
+// reports wireless device or access point changes.
+func (b *Backend) WatchNetworkChanges(ctx context.Context) (<-chan struct{}, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	device, err := b.getWirelessDevice()
 	if err != nil {
 		return nil, err
 	}
-	if !enabled {
-		return nil, wifi.ErrWirelessDisabled
+
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to dbus: %w", err)
 	}
-	newConnections := make(map[string]gonetworkmanager.Connection)
-	newAccessPoints := make(map[string]gonetworkmanager.AccessPoint)
+
+	devicePath := device.GetPath()
+	rules := networkChangeMatchRules(devicePath)
+	addedRules := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		call := conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, rule)
+		if call.Err != nil {
+			for _, added := range addedRules {
+				conn.BusObject().Call("org.freedesktop.DBus.RemoveMatch", 0, added)
+			}
+			return nil, fmt.Errorf("failed to add match rule: %w", call.Err)
+		}
+		addedRules = append(addedRules, rule)
+	}
+
+	signals := make(chan *dbus.Signal, 16)
+	changes := make(chan struct{}, 1)
+	conn.Signal(signals)
+
+	go func() {
+		defer close(changes)
+		defer conn.RemoveSignal(signals)
+		defer func() {
+			for _, rule := range addedRules {
+				conn.BusObject().Call("org.freedesktop.DBus.RemoveMatch", 0, rule)
+			}
+		}()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case sig, ok := <-signals:
+				if !ok {
+					return
+				}
+				if !isNetworkChangeSignal(sig, devicePath) {
+					continue
+				}
+				select {
+				case changes <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}()
+
+	return changes, nil
+}
+
+func networkChangeMatchRules(devicePath dbus.ObjectPath) []string {
+	path := string(devicePath)
+	return []string{
+		fmt.Sprintf("type='signal',interface='%s',member='PropertiesChanged',path='%s',arg0='%s'", dbusPropertiesInterface, path, nmWirelessDeviceInterface),
+		fmt.Sprintf("type='signal',interface='%s',member='AccessPointAdded',path='%s'", nmWirelessDeviceInterface, path),
+		fmt.Sprintf("type='signal',interface='%s',member='AccessPointRemoved',path='%s'", nmWirelessDeviceInterface, path),
+		fmt.Sprintf("type='signal',interface='%s',member='PropertiesChanged',arg0='%s'", dbusPropertiesInterface, nmWirelessAccessPointInterface),
+	}
+}
+
+func isNetworkChangeSignal(sig *dbus.Signal, devicePath dbus.ObjectPath) bool {
+	if sig == nil {
+		return false
+	}
+
+	switch sig.Name {
+	case "org.freedesktop.DBus.Properties.PropertiesChanged":
+		if len(sig.Body) == 0 {
+			return false
+		}
+		iface, ok := sig.Body[0].(string)
+		if !ok {
+			return false
+		}
+		if iface == nmWirelessDeviceInterface {
+			return sig.Path == devicePath
+		}
+		return iface == nmWirelessAccessPointInterface
+	case "org.freedesktop.NetworkManager.Device.Wireless.AccessPointAdded",
+		"org.freedesktop.NetworkManager.Device.Wireless.AccessPointRemoved":
+		return sig.Path == devicePath
+	default:
+		return false
+	}
+}
+
+func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) bool {
+	return b.scan(device, false)
+}
+
+func (b *Backend) scanNow(device gonetworkmanager.DeviceWireless) bool {
+	return b.scan(device, true)
+}
+
+func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) bool {
+	interval := scanInterval
+	if b.scanInterval > 0 {
+		interval = b.scanInterval
+	}
+
+	var done chan struct{}
+	runScan := false
+
+	b.scanMu.Lock()
+	if force || b.lastScan.IsZero() || time.Since(b.lastScan) >= interval {
+		if b.scanDone != nil {
+			done = b.scanDone
+		} else {
+			done = make(chan struct{})
+			b.scanDone = done
+			runScan = true
+		}
+	} else {
+		cached := b.scanCached
+		b.scanMu.Unlock()
+		return cached
+	}
+	b.scanMu.Unlock()
+
+	if runScan {
+		err := b.scanAndWait(device)
+		b.scanMu.Lock()
+		b.lastScan = time.Now()
+		b.scanCached = err != nil
+		close(done)
+		b.scanDone = nil
+		cached := b.scanCached
+		b.scanMu.Unlock()
+		return cached
+	} else if done != nil {
+		<-done
+	}
+
+	b.scanMu.Lock()
+	defer b.scanMu.Unlock()
+	return b.scanCached
+}
+
+func securityFromAccessPoint(flags, wpaFlags, rsnFlags uint32) (wifi.SecurityType, bool) {
+	isSecure := (flags&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0) || (wpaFlags > 0) || (rsnFlags > 0)
+	if wpaFlags > 0 || rsnFlags > 0 {
+		return wifi.SecurityWPA, isSecure
+	}
+	if isSecure {
+		return wifi.SecurityWEP, isSecure
+	}
+	return wifi.SecurityOpen, isSecure
+}
+
+func securityFromSettings(settings gonetworkmanager.ConnectionSettings) wifi.SecurityType {
+	wireless, ok := settings["802-11-wireless"]
+	if !ok {
+		return wifi.SecurityUnknown
+	}
+	securitySetting, ok := wireless["security"].(string)
+	if !ok || securitySetting == "" {
+		return wifi.SecurityOpen
+	}
+	securityValues, ok := settings[securitySetting]
+	if !ok {
+		return wifi.SecurityUnknown
+	}
+	keyMgmt, _ := securityValues["key-mgmt"].(string)
+	switch {
+	case keyMgmt == "none":
+		return wifi.SecurityWEP
+	case strings.Contains(keyMgmt, "wpa"),
+		strings.Contains(keyMgmt, "sae"),
+		strings.Contains(keyMgmt, "802.1x"):
+		return wifi.SecurityWPA
+	default:
+		return wifi.SecurityWPA
+	}
+}
+
+func modeFromSettings(settings gonetworkmanager.ConnectionSettings) gonetworkmanager.Nm80211Mode {
+	wireless, ok := settings["802-11-wireless"]
+	if !ok {
+		return gonetworkmanager.Nm80211ModeUnknown
+	}
+
+	mode, _ := wireless["mode"].(string)
+	switch strings.ToLower(mode) {
+	case "infrastructure", "infra":
+		return gonetworkmanager.Nm80211ModeInfra
+	case "adhoc", "ad-hoc":
+		return gonetworkmanager.Nm80211ModeAdhoc
+	case "ap":
+		return gonetworkmanager.Nm80211ModeAp
+	default:
+		return gonetworkmanager.Nm80211ModeUnknown
+	}
+}
+
+func keyManagementFromSettings(settings gonetworkmanager.ConnectionSettings) gonetworkmanager.Nm80211APSec {
+	wireless, ok := settings["802-11-wireless"]
+	if !ok {
+		return gonetworkmanager.Nm80211APSecNone
+	}
+	securitySetting, ok := wireless["security"].(string)
+	if !ok || securitySetting == "" {
+		return gonetworkmanager.Nm80211APSecNone
+	}
+	securityValues, ok := settings[securitySetting]
+	if !ok {
+		return gonetworkmanager.Nm80211APSecNone
+	}
+
+	keyMgmt, _ := securityValues["key-mgmt"].(string)
+	keyMgmt = strings.ToLower(keyMgmt)
+	switch {
+	case strings.HasPrefix(keyMgmt, "wpa-psk"):
+		return gonetworkmanager.Nm80211APSecKeyMgmtPSK
+	case keyMgmt == "sae":
+		return gonetworkmanager.Nm80211APSecKeyMgmtSAE
+	case strings.HasPrefix(keyMgmt, "wpa-eap"),
+		keyMgmt == "802.1x",
+		keyMgmt == "ieee8021x":
+		return gonetworkmanager.Nm80211APSecKeyMgmt8021X
+	case keyMgmt == "owe":
+		return gonetworkmanager.Nm80211APSecKeyMgmtOWE
+	default:
+		return gonetworkmanager.Nm80211APSecNone
+	}
+}
+
+func parseSavedProfile(conn gonetworkmanager.Connection) (savedProfile, bool) {
+	settings, err := conn.GetSettings()
+	if err != nil {
+		return savedProfile{}, false
+	}
+	connectionSettings, ok := settings["connection"]
+	if !ok {
+		return savedProfile{}, false
+	}
+	connType, _ := connectionSettings["type"].(string)
+	if connType != "802-11-wireless" {
+		return savedProfile{}, false
+	}
+	wireless, ok := settings["802-11-wireless"]
+	if !ok {
+		return savedProfile{}, false
+	}
+	ssidBytes, ok := wireless["ssid"].([]byte)
+	if !ok || len(ssidBytes) == 0 {
+		return savedProfile{}, false
+	}
+
+	profile := savedProfile{
+		connection:  conn,
+		path:        conn.GetPath(),
+		id:          "",
+		ssid:        string(ssidBytes),
+		security:    securityFromSettings(settings),
+		mode:        modeFromSettings(settings),
+		keyMgmt:     keyManagementFromSettings(settings),
+		autoConnect: true,
+	}
+	if id, ok := connectionSettings["id"].(string); ok {
+		profile.id = id
+	}
+	if ts, ok := connectionSettings["timestamp"].(uint64); ok && ts > 0 {
+		t := time.Unix(int64(ts), 0)
+		profile.lastConnected = &t
+	}
+	if autoConnect, ok := connectionSettings["autoconnect"].(bool); ok {
+		profile.autoConnect = autoConnect
+	}
+	if hidden, ok := wireless["hidden"].(bool); ok {
+		profile.hidden = hidden
+	}
+	return profile, true
+}
+
+func findCompatibleProfile(profiles []savedProfile, key networkKey) (savedProfile, bool) {
+	for _, profile := range profiles {
+		if profileMatchesNetwork(profile, key) {
+			return profile, true
+		}
+	}
+	return savedProfile{}, false
+}
+
+func profileMatchesNetwork(profile savedProfile, key networkKey) bool {
+	if profile.ssid != key.ssid || profile.security != key.security {
+		return false
+	}
+	if profile.mode != gonetworkmanager.Nm80211ModeUnknown && uint32(profile.mode) != key.mode {
+		return false
+	}
+	if profile.security != wifi.SecurityWPA {
+		return true
+	}
+
+	keyMgmt := uint32(profile.keyMgmt)
+	if keyMgmt == 0 {
+		return false
+	}
+	return keyMgmt&(key.wpaFlags|key.rsnFlags) != 0
+}
+
+func addNetworkKey(keys map[string][]networkKey, key networkKey) {
+	for _, existing := range keys[key.ssid] {
+		if existing == key {
+			return
+		}
+	}
+	keys[key.ssid] = append(keys[key.ssid], key)
+}
+
+// ListNetworks scans according to scan mode and returns all networks.
+func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	enabled, err := b.IsWirelessEnabled()
+	if err != nil {
+		return wifi.NetworksResult{}, err
+	}
+	if !enabled {
+		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
+	}
+	newConnections := make(map[networkKey]gonetworkmanager.Connection)
+	newAccessPoints := make(map[networkKey]gonetworkmanager.AccessPoint)
+	newNetworkKeysBySSID := make(map[string][]networkKey)
 
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
-	if shouldScan {
-		err = b.scanAndWait(wirelessDevice)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan: %w: %w", wifi.ErrOperationFailed, err)
-		}
+	isCached := false
+	switch scan {
+	case wifi.ScanAuto:
+		isCached = b.scanIfStale(wirelessDevice)
+	case wifi.ScanForce:
+		isCached = b.scanNow(wirelessDevice)
 	}
 
 	knownConnections, err := b.Settings.ListConnections()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
-	accessPoints, err := wirelessDevice.GetAccessPoints()
+	accessPoints, err := wirelessDevice.GetAllAccessPoints()
 	if err != nil {
-		return nil, err
+		accessPoints, err = wirelessDevice.GetAccessPoints()
+	}
+	if err != nil {
+		return wifi.NetworksResult{}, err
 	}
 
-	// We use a map with a composite key {ssid, security} to store unique connections.
-	type connKey struct {
-		ssid     string
-		security wifi.SecurityType
+	var knownProfiles []savedProfile
+	for _, knownConn := range knownConnections {
+		profile, ok := parseSavedProfile(knownConn)
+		if !ok {
+			continue
+		}
+		knownProfiles = append(knownProfiles, profile)
 	}
-	uniqueConns := make(map[connKey]wifi.Connection)
-	processedSSIDs := make(map[string]bool)
 
 	activeConnections, err := b.NM.GetPropertyActiveConnections()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
 	var activeConnectionID string
+	var activeConnectionPath dbus.ObjectPath
 	for _, activeConn := range activeConnections {
-		id, err := activeConn.GetPropertyID()
-		if err != nil {
-			continue
-		}
 		typ, err := activeConn.GetPropertyType()
 		if err != nil {
 			continue
 		}
 		if typ == "802-11-wireless" {
-			activeConnectionID = id
+			if id, err := activeConn.GetPropertyID(); err == nil {
+				activeConnectionID = id
+			}
+			if conn, err := activeConn.GetPropertyConnection(); err == nil {
+				activeConnectionPath = conn.GetPath()
+			}
 			break
 		}
 	}
 
+	applyProfile := func(conn *wifi.Network, profile savedProfile) {
+		conn.IsKnown = true
+		conn.LastConnected = profile.lastConnected
+		conn.AutoConnect = profile.autoConnect
+		if activeConnectionPath != "" {
+			conn.IsActive = profile.path == activeConnectionPath
+		} else if activeConnectionID != "" {
+			conn.IsActive = profile.id == activeConnectionID
+		}
+	}
+
+	uniqueConns := make(map[networkKey]wifi.Network)
+	processedProfiles := make(map[dbus.ObjectPath]bool)
 	for _, ap := range accessPoints {
 		ssid, err := ap.GetPropertySSID()
 		if err != nil || ssid == "" {
@@ -220,6 +658,11 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		strength, _ := ap.GetPropertyStrength()
 		hwAddress, _ := ap.GetPropertyHWAddress()
 		frequency, _ := ap.GetPropertyFrequency()
+		flags, _ := ap.GetPropertyFlags()
+		wpaFlags, _ := ap.GetPropertyWPAFlags()
+		rsnFlags, _ := ap.GetPropertyRSNFlags()
+		mode, _ := ap.GetPropertyMode()
+		security, isSecure := securityFromAccessPoint(flags, wpaFlags, rsnFlags)
 
 		wifiAP := wifi.AccessPoint{
 			SSID:      ssid,
@@ -228,48 +671,33 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			Frequency: uint(frequency),
 		}
 
-		if existing, exists := newAccessPoints[ssid]; exists {
+		key := networkKey{
+			ssid:     ssid,
+			security: security,
+			mode:     uint32(mode),
+			flags:    flags,
+			wpaFlags: wpaFlags,
+			rsnFlags: rsnFlags,
+		}
+		profile, known := findCompatibleProfile(knownProfiles, key)
+		if known {
+			newConnections[key] = profile.connection
+			processedProfiles[profile.path] = true
+		}
+		addNetworkKey(newNetworkKeysBySSID, key)
+
+		if existing, exists := newAccessPoints[key]; exists {
 			exStrength, _ := existing.GetPropertyStrength()
-			if strength <= exStrength {
-				continue
+			if strength > exStrength {
+				newAccessPoints[key] = ap
 			}
-		}
-
-		processedSSIDs[ssid] = true
-		newAccessPoints[ssid] = ap
-
-		flags, _ := ap.GetPropertyFlags()
-		wpaFlags, _ := ap.GetPropertyWPAFlags()
-		rsnFlags, _ := ap.GetPropertyRSNFlags()
-		isSecure := (uint32(flags)&uint32(gonetworkmanager.Nm80211APFlagsPrivacy) != 0) || (wpaFlags > 0) || (rsnFlags > 0)
-		var security wifi.SecurityType
-		if wpaFlags > 0 || rsnFlags > 0 {
-			security = wifi.SecurityWPA
-		} else if isSecure {
-			security = wifi.SecurityWEP
 		} else {
-			security = wifi.SecurityOpen
+			newAccessPoints[key] = ap
 		}
 
-		key := connKey{ssid: ssid, security: security}
-
-		// Check if we already have this Connection processed
+		// Check if we already have this network processed.
 		if conn, exists := uniqueConns[key]; exists {
-			// We already have a base connection for this SSID/Security pair.
-			// Just add the AP. AddAccessPoint handles merging logic if needed,
-			// but since we keyed by what Compare checks, we can trust it matches.
-			_ = conn.AddAccessPoint(wifi.Connection{
-				SSID:         ssid,
-				Security:     security,
-				AccessPoints: []wifi.AccessPoint{wifiAP},
-				// Other fields like Active/Known are merged by AddAccessPoint
-				// We need to populate them if this specific AP instance has them "better" or "true"
-				// But IsKnown is per-SSID (mostly), IsActive is per-connection.
-				// Let's populate the temp struct with what we know from this AP context.
-			})
-
-			// Let's reconstruct the temp connection properly to pass to AddAccessPoint
-			tempConn := wifi.Connection{
+			tempConn := wifi.Network{
 				SSID:         ssid,
 				Security:     security,
 				IsSecure:     isSecure,
@@ -277,45 +705,8 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				AccessPoints: []wifi.AccessPoint{wifiAP},
 			}
 
-			var knownConn gonetworkmanager.Connection
-			for _, kc := range knownConnections {
-				s, err := kc.GetSettings()
-				if err != nil {
-					continue
-				}
-				if wireless, ok := s["802-11-wireless"]; ok {
-					if ssidBytes, ok := wireless["ssid"].([]byte); ok {
-						if string(ssidBytes) == ssid {
-							knownConn = kc
-							break
-						}
-					}
-				}
-			}
-
-			if knownConn != nil {
-				s, _ := knownConn.GetSettings()
-				var id string
-				var lastConnected *time.Time
-				if c, ok := s["connection"]; ok {
-					if i, ok := c["id"].(string); ok {
-						id = i
-					}
-					if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
-						t := time.Unix(int64(ts), 0)
-						lastConnected = &t
-					}
-				}
-				autoConnect := true
-				if c, ok := s["connection"]; ok {
-					if ac, ok := c["autoconnect"].(bool); ok {
-						autoConnect = ac
-					}
-				}
-				tempConn.IsKnown = true
-				tempConn.IsActive = activeConnectionID != "" && id == activeConnectionID
-				tempConn.LastConnected = lastConnected
-				tempConn.AutoConnect = autoConnect
+			if known {
+				applyProfile(&tempConn, profile)
 			}
 
 			// Now merge
@@ -324,148 +715,150 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 			continue
 		}
 
-		var connInfo wifi.Connection
-		var knownConn gonetworkmanager.Connection
-		for _, kc := range knownConnections {
-			s, err := kc.GetSettings()
-			if err != nil {
-				continue
-			}
-			if wireless, ok := s["802-11-wireless"]; ok {
-				if ssidBytes, ok := wireless["ssid"].([]byte); ok {
-					if string(ssidBytes) == ssid {
-						knownConn = kc
-						break
-					}
-				}
-			}
+		connInfo := wifi.Network{
+			SSID:         ssid,
+			IsKnown:      false,
+			IsSecure:     isSecure,
+			IsVisible:    true,
+			Security:     security,
+			AutoConnect:  false, // Can't autoconnect to a network we don't know
+			AccessPoints: []wifi.AccessPoint{wifiAP},
 		}
 
-		if knownConn != nil {
-			newConnections[ssid] = knownConn
-			s, _ := knownConn.GetSettings()
-			var id string
-			var lastConnected *time.Time
-			if c, ok := s["connection"]; ok {
-				if i, ok := c["id"].(string); ok {
-					id = i
-				}
-				if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
-					t := time.Unix(int64(ts), 0)
-					lastConnected = &t
-				}
-			}
-			autoConnect := true
-			if c, ok := s["connection"]; ok {
-				if ac, ok := c["autoconnect"].(bool); ok {
-					autoConnect = ac
-				}
-			}
-			connInfo = wifi.Connection{
-				SSID:          ssid,
-				IsActive:      activeConnectionID != "" && id == activeConnectionID,
-				IsKnown:       true,
-				IsSecure:      isSecure,
-				IsVisible:     true,
-				Security:      security,
-				LastConnected: lastConnected,
-				AutoConnect:   autoConnect,
-				AccessPoints:  []wifi.AccessPoint{wifiAP},
-			}
-		} else {
-			connInfo = wifi.Connection{
-				SSID:         ssid,
-				IsKnown:      false,
-				IsSecure:     isSecure,
-				IsVisible:    true,
-				Security:     security,
-				AutoConnect:  false, // Can't autoconnect to a network we don't know
-				AccessPoints: []wifi.AccessPoint{wifiAP},
-			}
+		if known {
+			applyProfile(&connInfo, profile)
 		}
 		uniqueConns[key] = connInfo
 	}
 
 	// Now build the final list from uniqueConns
-	var conns []wifi.Connection
+	var conns []wifi.Network
 	for _, c := range uniqueConns {
 		conns = append(conns, c)
 	}
 
-	for _, knownConn := range knownConnections {
-		s, _ := knownConn.GetSettings()
-		var connType string
-		if ct, ok := s["connection"]["type"]; ok {
-			if t, ok := ct.(string); ok {
-				connType = t
-			}
-		}
-		if connType != "802-11-wireless" {
+	appendedInvisible := make(map[dbus.ObjectPath]bool)
+	for _, profile := range knownProfiles {
+		if processedProfiles[profile.path] || appendedInvisible[profile.path] {
 			continue
 		}
-		var ssid string
-		if wireless, ok := s["802-11-wireless"]; ok {
-			if ssidBytes, ok := wireless["ssid"].([]byte); ok {
-				ssid = string(ssidBytes)
-			}
-		}
-		if ssid == "" {
-			continue
-		}
-
-		if _, processed := processedSSIDs[ssid]; !processed {
-			newConnections[ssid] = knownConn
-			var lastConnected *time.Time
-			if c, ok := s["connection"]; ok {
-				if ts, ok := c["timestamp"].(uint64); ok && ts > 0 {
-					t := time.Unix(int64(ts), 0)
-					lastConnected = &t
-				}
-			}
-			conns = append(conns, wifi.Connection{SSID: ssid, IsKnown: true, LastConnected: lastConnected})
-		}
+		key := networkKey{ssid: profile.ssid, security: profile.security, mode: uint32(profile.mode)}
+		newConnections[key] = profile.connection
+		addNetworkKey(newNetworkKeysBySSID, key)
+		conns = append(conns, wifi.Network{
+			SSID:          profile.ssid,
+			IsKnown:       true,
+			IsHidden:      profile.hidden,
+			Security:      profile.security,
+			LastConnected: profile.lastConnected,
+			AutoConnect:   profile.autoConnect,
+		})
+		appendedInvisible[profile.path] = true
 	}
 
-	b.Connections = newConnections
-	b.AccessPoints = newAccessPoints
+	b.connections = newConnections
+	b.accessPoints = newAccessPoints
+	b.networkKeysBySSID = newNetworkKeysBySSID
 
-	wifi.SortConnections(conns)
-	return conns, nil
+	wifi.SortNetworks(conns)
+	return wifi.NetworksResult{Networks: conns, IsCached: isCached}, nil
 }
 
 func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
-	if b.Connections == nil {
-		b.Connections = make(map[string]gonetworkmanager.Connection)
+	if b.connections == nil {
+		b.connections = make(map[networkKey]gonetworkmanager.Connection)
 	}
 
-	conn, ok := b.Connections[ssid]
-	if ok {
-		return conn, nil
-	}
-
-	if len(b.Connections) == 0 {
-		_, err := b.BuildNetworkList(false)
+	if len(b.connections) == 0 {
+		_, err := b.ListNetworks(wifi.ScanNever)
 		if err != nil {
 			return nil, err
 		}
-		conn, ok = b.Connections[ssid]
-		if ok {
+	}
+
+	for _, key := range b.networkKeysBySSID[ssid] {
+		if conn, ok := b.connections[key]; ok {
 			return conn, nil
 		}
 	}
-
 	return nil, fmt.Errorf("connection not found for %s: %w", ssid, wifi.ErrNotFound)
 }
 
-func (b *Backend) ActivateConnection(ssid string) error {
-	conn, err := b.getConnection(ssid)
-	if err != nil {
-		return err
+func (b *Backend) getAccessPoint(ssid string) (gonetworkmanager.AccessPoint, error) {
+	if b.accessPoints == nil {
+		b.accessPoints = make(map[networkKey]gonetworkmanager.AccessPoint)
 	}
 
-	ap, apOK := b.AccessPoints[ssid]
-	if !apOK {
-		return fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
+	if len(b.accessPoints) == 0 {
+		_, err := b.ListNetworks(wifi.ScanNever)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var best gonetworkmanager.AccessPoint
+	var bestStrength uint8
+	for _, key := range b.networkKeysBySSID[ssid] {
+		ap, ok := b.accessPoints[key]
+		if !ok {
+			continue
+		}
+		strength, _ := ap.GetPropertyStrength()
+		if best == nil || strength > bestStrength {
+			best = ap
+			bestStrength = strength
+		}
+	}
+	if best != nil {
+		return best, nil
+	}
+	return nil, fmt.Errorf("access point not found for %s: %w", ssid, wifi.ErrNotFound)
+}
+
+func (b *Backend) getActivationTarget(ssid string) (gonetworkmanager.Connection, gonetworkmanager.AccessPoint, error) {
+	if len(b.connections) == 0 || len(b.accessPoints) == 0 {
+		_, err := b.ListNetworks(wifi.ScanNever)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	var bestConn gonetworkmanager.Connection
+	var bestAP gonetworkmanager.AccessPoint
+	var bestStrength uint8
+	for _, key := range b.networkKeysBySSID[ssid] {
+		conn, connOK := b.connections[key]
+		ap, apOK := b.accessPoints[key]
+		if connOK && apOK {
+			strength, _ := ap.GetPropertyStrength()
+			if bestAP == nil || strength > bestStrength {
+				bestConn = conn
+				bestAP = ap
+				bestStrength = strength
+			}
+		}
+	}
+	if bestAP != nil {
+		return bestConn, bestAP, nil
+	}
+
+	for _, key := range b.networkKeysBySSID[ssid] {
+		if _, ok := b.accessPoints[key]; ok {
+			return nil, nil, fmt.Errorf("connection not found for compatible access point for %s: %w", ssid, wifi.ErrNotFound)
+		}
+	}
+
+	conn, err := b.getConnection(ssid)
+	if err != nil {
+		return nil, nil, err
+	}
+	return conn, nil, nil
+}
+
+func (b *Backend) ActivateNetwork(ssid string) error {
+	conn, ap, err := b.getActivationTarget(ssid)
+	if err != nil {
+		return err
 	}
 
 	wirelessDevice, err := b.getWirelessDevice()
@@ -473,7 +866,12 @@ func (b *Backend) ActivateConnection(ssid string) error {
 		return err
 	}
 
-	activeConn, err := b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	var activeConn gonetworkmanager.ActiveConnection
+	if ap == nil {
+		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
+	} else {
+		activeConn, err = b.NM.ActivateWirelessConnection(conn, wirelessDevice, ap)
+	}
 	if err != nil {
 		return err
 	}
@@ -556,6 +954,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 	deviceInterface, _ := wirelessDevice.GetPropertyInterface()
+	if isHidden {
+		b.scanHiddenSSID(wirelessDevice, ssid)
+	}
 
 	connection := map[string]map[string]interface{}{
 		"connection": {
@@ -606,11 +1007,11 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 
 	var activeConn gonetworkmanager.ActiveConnection
 	if isHidden {
-		// Use the generic ActivateConnection for hidden networks as there is no specific object.
+		// Use NetworkManager's generic ActivateConnection for hidden networks as there is no specific object.
 		activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
 	} else {
-		ap, ok := b.AccessPoints[ssid]
-		if !ok {
+		ap, apErr := b.getAccessPoint(ssid)
+		if apErr != nil {
 			// It's possible for the access point to disappear between the scan and the join attempt.
 			// In this case, we can try to join without the AP object.
 			activeConn, err = b.NM.ActivateConnection(conn, wirelessDevice, nil)
@@ -732,7 +1133,7 @@ func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
 	}
 }
 
-func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	conn, err := b.getConnection(ssid)
 	if err != nil {
 		return err

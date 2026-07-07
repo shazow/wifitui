@@ -55,6 +55,47 @@ func TestRunListDefault(t *testing.T) {
 	}
 }
 
+func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var buf bytes.Buffer
+
+	backend := cachedBackend{
+		Backend: mockBackend,
+	}
+	if err := runList(&buf, false, false, true, backend); err != nil {
+		t.Fatalf("runList() failed: %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Unencrypted_Honeypot") {
+		t.Errorf("runList() output missing cached network. got=%q", output)
+	}
+	if !strings.Contains(output, "Warning: scan failed; showing cached results") {
+		t.Errorf("runList() output missing scan warning. got=%q", output)
+	}
+}
+
+func TestRunListScanForcesRefresh(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	backend := scanRecordingBackend{
+		Backend: mockBackend,
+	}
+
+	var buf bytes.Buffer
+	if err := runList(&buf, false, false, true, &backend); err != nil {
+		t.Fatalf("runList() failed: %v", err)
+	}
+	if len(backend.listScans) != 1 || backend.listScans[0] != wifi.ScanForce {
+		t.Fatalf("runList(scan=true) used scans %#v, want only ScanForce", backend.listScans)
+	}
+}
+
 func TestRunShow(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {
@@ -103,6 +144,44 @@ func TestRunShow(t *testing.T) {
 	}
 }
 
+func TestRunShowDoesNotRequestScan(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	backend := scanRecordingBackend{
+		Backend: mockBackend,
+	}
+
+	var buf bytes.Buffer
+	if err := runShow(&buf, false, "Password is password", &backend); err != nil {
+		t.Fatalf("runShow() failed: %v", err)
+	}
+	if len(backend.listScans) != 1 || backend.listScans[0] != wifi.ScanNever {
+		t.Fatalf("runShow() used scans %#v, want only ScanNever", backend.listScans)
+	}
+}
+
+type cachedBackend struct {
+	wifi.Backend
+}
+
+func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	result, err := b.Backend.ListNetworks(scan)
+	result.IsCached = true
+	return result, err
+}
+
+type scanRecordingBackend struct {
+	wifi.Backend
+	listScans []wifi.ScanMode
+}
+
+func (b *scanRecordingBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	b.listScans = append(b.listScans, scan)
+	return b.Backend.ListNetworks(scan)
+}
+
 func TestRunListJSON(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {
@@ -114,18 +193,18 @@ func TestRunListJSON(t *testing.T) {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
-	var connections []wifi.Connection
-	if err := json.Unmarshal(buf.Bytes(), &connections); err != nil {
+	var networks []wifi.Network
+	if err := json.Unmarshal(buf.Bytes(), &networks); err != nil {
 		t.Fatalf("runList() output is not valid JSON: %v. got=%q", err, buf.String())
 	}
 
-	if len(connections) == 0 {
+	if len(networks) == 0 {
 		t.Fatalf("runList() output is empty")
 	}
 
 	// Just check for one of the SSIDs
 	found := false
-	for _, c := range connections {
+	for _, c := range networks {
 		if c.SSID == "HideYoKidsHideYoWiFi" {
 			found = true
 			break
@@ -148,12 +227,12 @@ func TestRunShowJSON(t *testing.T) {
 		t.Fatalf("runShow() with found network failed: %v", err)
 	}
 
-	type connectionWithSecret struct {
-		wifi.Connection
+	type networkWithSecret struct {
+		wifi.Network
 		Passphrase string `json:"passphrase,omitempty"`
 	}
 
-	var connWithSecretData connectionWithSecret
+	var connWithSecretData networkWithSecret
 	if err := json.Unmarshal(buf.Bytes(), &connWithSecretData); err != nil {
 		t.Fatalf("runShow() output is not valid JSON: %v. got=%q", err, buf.String())
 	}
@@ -173,7 +252,7 @@ func TestRunShowJSON(t *testing.T) {
 	}
 
 	// Re-initialize the struct to avoid carrying over the passphrase
-	connWithSecretData = connectionWithSecret{}
+	connWithSecretData = networkWithSecret{}
 	if err := json.Unmarshal(buf.Bytes(), &connWithSecretData); err != nil {
 		t.Fatalf("runShow() output is not valid JSON: %v. got=%q", err, buf.String())
 	}
@@ -199,10 +278,11 @@ func TestRunConnect(t *testing.T) {
 	}
 
 	// Check if the network was added
-	networks, err := mockBackend.BuildNetworkList(false)
+	result, err := mockBackend.ListNetworks(wifi.ScanNever)
 	if err != nil {
 		t.Fatalf("failed to get network list: %v", err)
 	}
+	networks := result.Networks
 	found := false
 	for _, n := range networks {
 		if n.SSID == "new-network" {
@@ -221,10 +301,11 @@ func TestRunConnect(t *testing.T) {
 	}
 
 	// Check if the network is active
-	networks, err = mockBackend.BuildNetworkList(false)
+	result, err = mockBackend.ListNetworks(wifi.ScanNever)
 	if err != nil {
 		t.Fatalf("failed to get network list: %v", err)
 	}
+	networks = result.Networks
 	found = false
 	for _, n := range networks {
 		if n.SSID == "Password is password" {
@@ -317,11 +398,11 @@ type flakyBackend struct {
 	scannedSSIDs []string // SSIDs that were scanned
 }
 
-func (f *flakyBackend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
-	if shouldScan {
+func (f *flakyBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	if scan != wifi.ScanNever {
 		f.scannedSSIDs = append(f.scannedSSIDs, "any")
 	}
-	return f.MockBackend.BuildNetworkList(shouldScan)
+	return f.MockBackend.ListNetworks(scan)
 }
 
 func (f *flakyBackend) JoinNetwork(ssid, passphrase string, security wifi.SecurityType, isHidden bool) error {
@@ -551,52 +632,52 @@ func TestParseRetryConfig(t *testing.T) {
 	}
 }
 
-func TestFilterVisibleConnections(t *testing.T) {
-	connections := []wifi.Connection{
+func TestFilterVisibleNetworks(t *testing.T) {
+	networks := []wifi.Network{
 		{SSID: "visible1", IsVisible: true},
 		{SSID: "hidden1", IsVisible: false},
 		{SSID: "visible2", IsVisible: true},
 		{SSID: "hidden2", IsVisible: false},
 	}
 
-	visible := filterVisibleConnections(connections)
+	visible := filterVisibleNetworks(networks)
 	if len(visible) != 2 {
-		t.Fatalf("filterVisibleConnections() returned %d connections, want 2", len(visible))
+		t.Fatalf("filterVisibleNetworks() returned %d networks, want 2", len(visible))
 	}
 	for _, c := range visible {
 		if !c.IsVisible {
-			t.Errorf("filterVisibleConnections() returned non-visible connection %q", c.SSID)
+			t.Errorf("filterVisibleNetworks() returned non-visible network %q", c.SSID)
 		}
 	}
 
 	// Empty input
-	if got := filterVisibleConnections(nil); got != nil {
-		t.Errorf("filterVisibleConnections(nil) = %v, want nil", got)
+	if got := filterVisibleNetworks(nil); got != nil {
+		t.Errorf("filterVisibleNetworks(nil) = %v, want nil", got)
 	}
 }
 
-func TestFindConnectionBySSID(t *testing.T) {
-	connections := []wifi.Connection{
+func TestFindNetworkBySSID(t *testing.T) {
+	networks := []wifi.Network{
 		{SSID: "NetworkA"},
 		{SSID: "NetworkB"},
 		{SSID: "NetworkC"},
 	}
 
-	c, found := findConnectionBySSID(connections, "NetworkB")
+	c, found := findNetworkBySSID(networks, "NetworkB")
 	if !found {
-		t.Fatal("findConnectionBySSID() did not find existing network")
+		t.Fatal("findNetworkBySSID() did not find existing network")
 	}
 	if c.SSID != "NetworkB" {
-		t.Errorf("findConnectionBySSID() returned wrong network: got %q, want %q", c.SSID, "NetworkB")
+		t.Errorf("findNetworkBySSID() returned wrong network: got %q, want %q", c.SSID, "NetworkB")
 	}
 
-	_, found = findConnectionBySSID(connections, "NotThere")
+	_, found = findNetworkBySSID(networks, "NotThere")
 	if found {
-		t.Error("findConnectionBySSID() returned true for missing network")
+		t.Error("findNetworkBySSID() returned true for missing network")
 	}
 
-	_, found = findConnectionBySSID(nil, "NetworkA")
+	_, found = findNetworkBySSID(nil, "NetworkA")
 	if found {
-		t.Error("findConnectionBySSID() returned true for empty slice")
+		t.Error("findNetworkBySSID() returned true for empty slice")
 	}
 }

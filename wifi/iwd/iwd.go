@@ -170,27 +170,27 @@ type orderedNetwork struct {
 	Strength int16
 }
 
-// BuildNetworkList scans (if shouldScan is true) and returns all networks.
-func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
+// ListNetworks returns all networks and optionally requests a scan first.
+func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	enabled, err := b.IsWirelessEnabled()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 	if !enabled {
-		return nil, wifi.ErrWirelessDisabled
+		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
 	}
 
 	conn, err := dbus.SystemBus()
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
 	station, err := getStationDevice(conn)
 	if err != nil {
-		return nil, err
+		return wifi.NetworksResult{}, err
 	}
 
-	if shouldScan {
+	if scan != wifi.ScanNever {
 		// Best effort scan
 		_ = conn.Object(iwdDest, station).Call(iwdStationIface+".Scan", 0)
 	}
@@ -199,11 +199,11 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 	var ordered []orderedNetwork
 	err = conn.Object(iwdDest, station).Call(iwdStationIface+".GetOrderedNetworks", 0).Store(&ordered)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get ordered networks: %w", err)
+		return wifi.NetworksResult{}, fmt.Errorf("failed to get ordered networks: %w", err)
 	}
 
-	var connections []wifi.Connection
-	visibleNetworks := make(map[string]wifi.Connection)
+	var connections []wifi.Network
+	visibleNetworks := make(map[string]wifi.Network)
 
 	for _, net := range ordered {
 		networkObj := conn.Object(iwdDest, net.Path)
@@ -270,7 +270,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				}
 			}
 
-			visibleNetworks[ssid] = wifi.Connection{
+			visibleNetworks[ssid] = wifi.Network{
 				SSID:         ssid,
 				IsActive:     isActive,
 				IsSecure:     security != wifi.SecurityOpen,
@@ -314,7 +314,7 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 				c.AutoConnect = autoConnect
 				visibleNetworks[ssid] = c
 			} else {
-				connections = append(connections, wifi.Connection{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect})
+				connections = append(connections, wifi.Network{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect})
 			}
 		}
 	}
@@ -323,10 +323,10 @@ func (b *Backend) BuildNetworkList(shouldScan bool) ([]wifi.Connection, error) {
 		connections = append(connections, c)
 	}
 
-	return connections, nil
+	return wifi.NetworksResult{Networks: connections}, nil
 }
 
-func (b *Backend) ActivateConnection(ssid string) error {
+func (b *Backend) ActivateNetwork(ssid string) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -417,7 +417,7 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 	return "", fmt.Errorf("getting secrets is not supported by the iwd backend: %w", wifi.ErrNotSupported)
 }
 
-func (b *Backend) UpdateConnection(ssid string, opts wifi.UpdateOptions) error {
+func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	if opts.Password != nil {
 		return fmt.Errorf("updating secrets is not supported by the iwd backend: %w", wifi.ErrNotSupported)
 	}

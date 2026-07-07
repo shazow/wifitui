@@ -5,19 +5,19 @@ import (
 	"time"
 )
 
-func TestSortConnections(t *testing.T) {
+func TestSortNetworks(t *testing.T) {
 	now := time.Now()
 	earlier := now.Add(-1 * time.Hour)
 	earlier2 := now.Add(-2 * time.Hour)
 
 	tests := []struct {
 		name     string
-		input    []Connection
+		input    []Network
 		expected []string // SSIDs in expected order
 	}{
 		{
 			name: "Sort by strength",
-			input: []Connection{
+			input: []Network{
 				{SSID: "Weak", AccessPoints: []AccessPoint{{Strength: 10}}, IsVisible: true},
 				{SSID: "Strong", AccessPoints: []AccessPoint{{Strength: 90}}, IsVisible: true},
 				{SSID: "Medium", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
@@ -26,7 +26,7 @@ func TestSortConnections(t *testing.T) {
 		},
 		{
 			name: "Active first",
-			input: []Connection{
+			input: []Network{
 				{SSID: "Strong", AccessPoints: []AccessPoint{{Strength: 90}}, IsVisible: true},
 				{SSID: "Active", AccessPoints: []AccessPoint{{Strength: 10}}, IsVisible: true, IsActive: true},
 			},
@@ -34,7 +34,7 @@ func TestSortConnections(t *testing.T) {
 		},
 		{
 			name: "Visible before hidden known",
-			input: []Connection{
+			input: []Network{
 				{SSID: "KnownHidden", IsKnown: true, LastConnected: &now},
 				{SSID: "Visible", AccessPoints: []AccessPoint{{Strength: 10}}, IsVisible: true},
 			},
@@ -42,7 +42,7 @@ func TestSortConnections(t *testing.T) {
 		},
 		{
 			name: "Known sorted by LastConnected",
-			input: []Connection{
+			input: []Network{
 				{SSID: "Old", IsKnown: true, LastConnected: &earlier2},
 				{SSID: "New", IsKnown: true, LastConnected: &earlier},
 				{SSID: "Never", IsKnown: true}, // LastConnected is nil
@@ -51,7 +51,7 @@ func TestSortConnections(t *testing.T) {
 		},
 		{
 			name: "Fallback to SSID",
-			input: []Connection{
+			input: []Network{
 				{SSID: "B", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
 				{SSID: "A", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
 			},
@@ -59,7 +59,7 @@ func TestSortConnections(t *testing.T) {
 		},
 		{
 			name: "Complex Mix",
-			input: []Connection{
+			input: []Network{
 				{SSID: "KnownOld", IsKnown: true, LastConnected: &earlier2},
 				{SSID: "Active", IsActive: true, IsVisible: true, AccessPoints: []AccessPoint{{Strength: 60}}},
 				{SSID: "VisibleWeak", IsVisible: true, AccessPoints: []AccessPoint{{Strength: 20}}},
@@ -71,7 +71,7 @@ func TestSortConnections(t *testing.T) {
 		// Testing duplicate SSIDs with different strengths (should just sort by strength, though duplicates shouldn't happen ideally)
 		{
 			name: "Duplicate SSIDs",
-			input: []Connection{
+			input: []Network{
 				{SSID: "MyWifi", AccessPoints: []AccessPoint{{Strength: 30}}, IsVisible: true},
 				{SSID: "MyWifi", AccessPoints: []AccessPoint{{Strength: 80}}, IsVisible: true},
 			},
@@ -82,23 +82,23 @@ func TestSortConnections(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Make a copy of input
-			conns := make([]Connection, len(tt.input))
-			copy(conns, tt.input)
+			networks := make([]Network, len(tt.input))
+			copy(networks, tt.input)
 
-			SortConnections(conns)
+			SortNetworks(networks)
 
-			if len(conns) != len(tt.expected) {
-				t.Fatalf("Expected %d connections, got %d", len(tt.expected), len(conns))
+			if len(networks) != len(tt.expected) {
+				t.Fatalf("Expected %d networks, got %d", len(tt.expected), len(networks))
 			}
 
 			for i, ssid := range tt.expected {
-				if conns[i].SSID != ssid {
-					t.Errorf("Index %d: expected SSID %q, got %q", i, ssid, conns[i].SSID)
+				if networks[i].SSID != ssid {
+					t.Errorf("Index %d: expected SSID %q, got %q", i, ssid, networks[i].SSID)
 				}
 			}
 			// Special check for duplicate test case to ensure order
 			if tt.name == "Duplicate SSIDs" {
-				if conns[0].Strength() != 80 {
+				if networks[0].Strength() != 80 {
 					t.Errorf("Expected strongest duplicate first")
 				}
 			}
@@ -106,9 +106,9 @@ func TestSortConnections(t *testing.T) {
 	}
 }
 
-func TestSortConnectionsStability(t *testing.T) {
+func TestSortNetworksStability(t *testing.T) {
 	// Test stability for items that are equal
-	input := []Connection{
+	input := []Network{
 		{SSID: "A", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
 		{SSID: "B", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
 		{SSID: "A", AccessPoints: []AccessPoint{{Strength: 50}}, IsVisible: true},
@@ -118,12 +118,12 @@ func TestSortConnectionsStability(t *testing.T) {
 	// Actually, wait. SSID "A" < "B". So both As come before B.
 	// Between the two As, stable sort preserves order.
 
-	conns := make([]Connection, len(input))
-	copy(conns, input)
+	networks := make([]Network, len(input))
+	copy(networks, input)
 
-	SortConnections(conns)
+	SortNetworks(networks)
 
-	if conns[0].SSID != "A" || conns[1].SSID != "A" || conns[2].SSID != "B" {
-		t.Errorf("Sort order incorrect: %v", conns)
+	if networks[0].SSID != "A" || networks[1].SSID != "A" || networks[2].SSID != "B" {
+		t.Errorf("Sort order incorrect: %v", networks)
 	}
 }

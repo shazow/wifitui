@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,6 +24,20 @@ type model struct {
 	statusMessage string
 
 	listModel *ListModel
+
+	networkChangeCancel   context.CancelFunc
+	networkRefreshPending bool
+}
+
+// NetworkManager can send several AP/device signals for one scan update.
+// Debounce them so AP property churn triggers one cached refresh instead of
+// repeated D-Bus list reads and redraws.
+const networkChangeDebounce = 150 * time.Millisecond
+
+// TODO: Consider adding a general change-watching interface to wifi.Backend so
+// every backend can expose network-change hints through one TUI code path.
+type networkChangeWatcher interface {
+	WatchNetworkChanges(context.Context) (<-chan struct{}, error)
 }
 
 // NewModel creates the starting state of our application
@@ -43,8 +59,16 @@ func NewModel(b wifi.Backend) (*model, error) {
 }
 
 type radioEnabledMsg struct{}
-type updateConnectionMsg struct {
-	item connectionItem
+type networkWatchStartedMsg struct {
+	changes <-chan struct{}
+	cancel  context.CancelFunc
+}
+type networkChangedMsg struct {
+	changes <-chan struct{}
+}
+type networkDebouncedMsg struct{}
+type updateNetworkMsg struct {
+	item networkItem
 	wifi.UpdateOptions
 }
 
@@ -56,6 +80,7 @@ func (m *model) Init() tea.Cmd {
 		cmds = append(cmds, enterable.OnEnter())
 	}
 
+	cmds = append(cmds, startNetworkChangeWatcher(m.backend))
 	cmds = append(cmds, m.spinner.Tick)
 	return tea.Batch(cmds...)
 }
@@ -76,6 +101,35 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case radioEnabledMsg:
 		cmd := m.stack.Pop() // Pop the disabled view
 		return m, cmd
+	case networkWatchStartedMsg:
+		m.networkChangeCancel = msg.cancel
+		return m, waitForNetworkChange(msg.changes)
+	case networkChangedMsg:
+		cmds = append(cmds, waitForNetworkChange(msg.changes))
+		if !m.networkRefreshPending {
+			m.networkRefreshPending = true
+			cmds = append(cmds, tea.Tick(networkChangeDebounce, func(time.Time) tea.Msg {
+				return networkDebouncedMsg{}
+			}))
+		}
+		return m, tea.Batch(cmds...)
+	case networkDebouncedMsg:
+		m.networkRefreshPending = false
+		if m.loading {
+			m.networkRefreshPending = true
+			return m, tea.Tick(networkChangeDebounce, func(time.Time) tea.Msg {
+				return networkDebouncedMsg{}
+			})
+		}
+		return m, func() tea.Msg {
+			result, err := m.backend.ListNetworks(wifi.ScanNever)
+			if err != nil {
+				return errorMsg{err}
+			}
+			networks := result.Networks
+			wifi.SortNetworks(networks)
+			return networksLoadedMsg(networks)
+		}
 	case errorMsg:
 		m.loading = false
 		m.statusMessage = ""
@@ -99,17 +153,20 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Skip additional scans while we're still loading
 			return m, nil
 		}
-		return m, tea.Batch(
-			func() tea.Msg { return statusMsg{status: "Scanning for networks...", loading: true} },
-			func() tea.Msg {
-				connections, err := m.backend.BuildNetworkList(true)
-				if err != nil {
-					return errorMsg{err}
-				}
-				wifi.SortConnections(connections)
-				return scanFinishedMsg(connections)
-			},
-		)
+		m.statusMessage = "Scanning for networks..."
+		m.loading = true
+		return m, func() tea.Msg {
+			result, err := m.backend.ListNetworks(msg.mode)
+			if err != nil {
+				return errorMsg{err}
+			}
+			networks := result.Networks
+			wifi.SortNetworks(networks)
+			return scanFinishedMsg{
+				networks: networks,
+				isCached: result.IsCached,
+			}
+		}
 	case connectMsg:
 		var batch []tea.Cmd = []tea.Cmd{
 			func() tea.Msg {
@@ -118,19 +175,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.autoConnect != msg.item.AutoConnect {
 			batch = append(batch, func() tea.Msg {
-				err := m.backend.UpdateConnection(msg.item.SSID, wifi.UpdateOptions{AutoConnect: &msg.autoConnect})
+				err := m.backend.UpdateNetwork(msg.item.SSID, wifi.UpdateOptions{AutoConnect: &msg.autoConnect})
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
 				}
-				return connectionSavedMsg{}
+				return networkSavedMsg{}
 			})
 		}
 		batch = append(batch, func() tea.Msg {
-			err := m.backend.ActivateConnection(msg.item.SSID)
+			err := m.backend.ActivateNetwork(msg.item.SSID)
 			if err != nil {
 				return errorMsg{fmt.Errorf("failed to activate connection: %w", err)}
 			}
-			return connectionSavedMsg{} // Re-use this to trigger a refresh
+			return networkSavedMsg{} // Re-use this to trigger a refresh
 		})
 		return m, tea.Batch(batch...)
 	case joinNetworkMsg:
@@ -141,7 +198,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 				}
-				return connectionSavedMsg{}
+				return networkSavedMsg{}
 			},
 		)
 	case loadSecretsMsg:
@@ -155,15 +212,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return secretsLoadedMsg{item: msg.item, secret: secret}
 			},
 		)
-	case updateConnectionMsg:
+	case updateNetworkMsg:
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Saving %q...", msg.item.SSID), loading: true} },
 			func() tea.Msg {
-				err := m.backend.UpdateConnection(msg.item.SSID, msg.UpdateOptions)
+				err := m.backend.UpdateNetwork(msg.item.SSID, msg.UpdateOptions)
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
 				}
-				return connectionSavedMsg{}
+				return networkSavedMsg{}
 			},
 		)
 	case forgetNetworkMsg:
@@ -176,11 +233,14 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to forget connection: %w", err)}
 				}
-				return connectionSavedMsg{forgottenSSID: msg.item.SSID} // Re-use this to trigger a refresh
+				return networkSavedMsg{forgottenSSID: msg.item.SSID} // Re-use this to trigger a refresh
 			},
 		)
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
+			if m.networkChangeCancel != nil {
+				m.networkChangeCancel()
+			}
 			return m, tea.Quit
 		}
 
@@ -218,26 +278,30 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case secretsLoadedMsg:
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
-	case connectionsLoadedMsg:
+	case networksLoadedMsg:
 		// Clear loading status
 		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
 	case scanFinishedMsg:
-		// Clear loading status
-		cmds = append(cmds, func() tea.Msg { return statusMsg{} })
-	case connectionSavedMsg:
+		m.loading = false
+		m.statusMessage = ""
+		if msg.isCached {
+			m.statusMessage = "Warning: scan failed; showing cached results"
+		}
+	case networkSavedMsg:
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: "Saved. Refreshing...", loading: true} },
 			func() tea.Msg { return popViewMsg{} },
 			func() tea.Msg {
-				connections, err := m.backend.BuildNetworkList(false)
+				result, err := m.backend.ListNetworks(wifi.ScanNever)
 				if err != nil {
 					return errorMsg{err}
 				}
+				networks := result.Networks
 				if msg.forgottenSSID != "" {
 					// Remove the forgotten network from the list.
 					// If visible, mark as not known; if not visible, remove entirely.
-					filtered := connections[:0]
-					for _, conn := range connections {
+					filtered := networks[:0]
+					for _, conn := range networks {
 						if conn.SSID == msg.forgottenSSID {
 							if conn.IsVisible {
 								conn.IsKnown = false
@@ -249,10 +313,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							filtered = append(filtered, conn)
 						}
 					}
-					connections = filtered
+					networks = filtered
 				}
-				wifi.SortConnections(connections)
-				return connectionsLoadedMsg(connections)
+				wifi.SortNetworks(networks)
+				return networksLoadedMsg(networks)
 			},
 		)
 
@@ -267,6 +331,39 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmds = append(cmds, spinnerCmd)
 
 	return m, tea.Batch(cmds...)
+}
+
+func startNetworkChangeWatcher(b wifi.Backend) tea.Cmd {
+	watcher, ok := b.(networkChangeWatcher)
+	if !ok {
+		return nil
+	}
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithCancel(context.Background())
+		changes, err := watcher.WatchNetworkChanges(ctx)
+		if err != nil {
+			cancel()
+			return nil
+		}
+		return networkWatchStartedMsg{
+			changes: changes,
+			cancel:  cancel,
+		}
+	}
+}
+
+func waitForNetworkChange(changes <-chan struct{}) tea.Cmd {
+	if changes == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		_, ok := <-changes
+		if !ok {
+			return nil
+		}
+		return networkChangedMsg{changes: changes}
+	}
 }
 
 // View renders the UI based on the current model state
