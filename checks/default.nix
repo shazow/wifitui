@@ -191,4 +191,108 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
       assert not forgotten["IsKnown"], forgotten
     '';
   };
+
+  iwd-hwsim = pkgs.nixosTest {
+    name = "wifitui-iwd-hwsim";
+
+    nodes.machine =
+      { lib, pkgs, ... }:
+      {
+        virtualisation.memorySize = 1024;
+
+        boot.kernelModules = [ "mac80211_hwsim" ];
+        boot.extraModprobeConfig = ''
+          options mac80211_hwsim radios=2
+        '';
+
+        environment.systemPackages = [
+          self.packages.${system}.default
+          pkgs.iwd
+        ];
+
+        networking.firewall.enable = false;
+        networking.useDHCP = false;
+        networking.wireless.iwd = {
+          enable = true;
+          settings = {
+            General.EnableNetworkConfiguration = true;
+            DriverQuirks.UseDefaultInterface = "mac80211_hwsim";
+          };
+        };
+
+      };
+
+    testScript = ''
+      import json
+
+      def list_networks(scan=False, all_networks=False):
+          flags = ["--json"]
+          if all_networks:
+              flags.append("--all")
+          if scan:
+              flags.append("--scan")
+          return json.loads(machine.succeed("NO_COLOR=1 wifitui list " + " ".join(flags))) or []
+
+      def network_by_ssid(networks, ssid):
+          for network in networks:
+              if network["SSID"] == ssid:
+                  return network
+          raise AssertionError(f"missing {ssid}: {networks}")
+
+      def wait_for_visible_ssids(required, forbidden=()):
+          required = set(required)
+          forbidden = set(forbidden)
+          networks = []
+          for _ in range(8):
+              networks = list_networks(scan=True)
+              ssids = {network["SSID"] for network in networks}
+              if required.issubset(ssids) and forbidden.isdisjoint(ssids):
+                  return networks
+              machine.sleep(2)
+          raise AssertionError(f"wanted {required} without {forbidden}: {networks}")
+
+      start_all()
+
+      machine.wait_for_unit("iwd.service")
+      machine.wait_until_succeeds("test -d /sys/class/net/wlan0")
+      machine.wait_until_succeeds("test -d /sys/class/net/wlan1")
+      machine.succeed("rfkill unblock all")
+      machine.succeed("iwctl device wlan0 set-property Mode ap")
+      machine.wait_until_succeeds("iwctl device list | grep wlan1")
+      machine.wait_until_succeeds("iwctl station wlan1 show | grep -E 'State[[:space:]]+(disconnected|connected)'")
+      machine.wait_until_succeeds("iwctl ap list | grep wlan0")
+      machine.succeed("iwctl ap wlan0 start Home_Network supersecret")
+      machine.wait_until_succeeds("iwctl ap wlan0 show | grep -E 'Started|State[[:space:]]+started'")
+
+      networks = wait_for_visible_ssids(["Home_Network"])
+
+      details = machine.succeed("NO_COLOR=1 wifitui show Home_Network")
+      assert "SSID: Home_Network" in details, details
+      assert "Secure: true" in details, details
+      assert "Visible: true" in details, details
+
+      machine.succeed("NO_COLOR=1 wifitui connect --passphrase supersecret --security wpa --retry-for 30s:2s Home_Network")
+      machine.wait_until_succeeds("iwctl station wlan1 show | grep 'Connected network' | grep Home_Network")
+
+      connected = network_by_ssid(list_networks(all_networks=True), "Home_Network")
+      assert connected["IsActive"], connected
+      assert connected["IsKnown"], connected
+
+      rescanned = network_by_ssid(list_networks(scan=True, all_networks=True), "Home_Network")
+      assert rescanned["IsActive"], rescanned
+      assert rescanned["IsKnown"], rescanned
+
+      machine.succeed("iwctl station wlan1 disconnect")
+      machine.wait_until_succeeds("iwctl station wlan1 show | grep -E 'State[[:space:]]+disconnected'")
+      disconnected = network_by_ssid(list_networks(all_networks=True), "Home_Network")
+      assert not disconnected["IsActive"], disconnected
+      assert disconnected["IsKnown"], disconnected
+
+      machine.succeed("iwctl known-networks Home_Network forget")
+      forgotten = network_by_ssid(list_networks(scan=True, all_networks=True), "Home_Network")
+      assert not forgotten["IsActive"], forgotten
+      assert not forgotten["IsKnown"], forgotten
+    '';
+  };
+
 }
