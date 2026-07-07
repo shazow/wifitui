@@ -123,7 +123,7 @@ func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) err
 }
 
 func runShow(w io.Writer, jsonOut bool, ssid string, b wifi.Backend) error {
-	result, err := b.ListNetworks(wifi.ScanAuto)
+	result, err := b.ListNetworks(wifi.ScanNever)
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
 	}

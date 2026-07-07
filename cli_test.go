@@ -126,6 +126,24 @@ func TestRunShow(t *testing.T) {
 	}
 }
 
+func TestRunShowDoesNotRequestScan(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	backend := scanRecordingBackend{
+		Backend: mockBackend,
+	}
+
+	var buf bytes.Buffer
+	if err := runShow(&buf, false, "Password is password", &backend); err != nil {
+		t.Fatalf("runShow() failed: %v", err)
+	}
+	if len(backend.listScans) != 1 || backend.listScans[0] != wifi.ScanNever {
+		t.Fatalf("runShow() used scans %#v, want only ScanNever", backend.listScans)
+	}
+}
+
 type cachedBackend struct {
 	wifi.Backend
 }
@@ -134,6 +152,16 @@ func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, er
 	result, err := b.Backend.ListNetworks(scan)
 	result.IsCached = true
 	return result, err
+}
+
+type scanRecordingBackend struct {
+	wifi.Backend
+	listScans []wifi.ScanMode
+}
+
+func (b *scanRecordingBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	b.listScans = append(b.listScans, scan)
+	return b.Backend.ListNetworks(scan)
 }
 
 func TestRunListJSON(t *testing.T) {
