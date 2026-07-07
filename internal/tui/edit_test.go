@@ -141,6 +141,37 @@ func TestEditModel_ForgetFlow(t *testing.T) {
 	}
 }
 
+func TestEditModel_SaveAutoConnectDoesNotOverwriteUnloadedPassword(t *testing.T) {
+	item := &networkItem{
+		Network: wifi.Network{
+			SSID:        "KnownNet",
+			IsKnown:     true,
+			IsSecure:    true,
+			Security:    wifi.SecurityWPA,
+			AutoConnect: false,
+		},
+	}
+	m := NewEditModel(item)
+	m.autoConnectCheckbox.checked = true
+	m.buttonGroup.selected = 1 // Save
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Save did not return a command")
+	}
+	got := cmd()
+	msg, ok := got.(updateNetworkMsg)
+	if !ok {
+		t.Fatalf("Save returned %T, want updateNetworkMsg", got)
+	}
+	if msg.AutoConnect == nil || !*msg.AutoConnect {
+		t.Fatalf("Save AutoConnect = %v, want true", msg.AutoConnect)
+	}
+	if msg.Password != nil {
+		t.Fatalf("Save Password = %#v, want nil for unloaded password field", *msg.Password)
+	}
+}
+
 func TestSecretLoadingLoop(t *testing.T) {
 	// Create a mock backend that fails to get secrets with ErrMissingPermission
 	b, err := mock.New()

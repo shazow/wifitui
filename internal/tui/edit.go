@@ -159,12 +159,15 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 				return func() tea.Msg {
 					newPassword := m.passwordAdapter.Model.Value()
 					autoConnect := m.autoConnectCheckbox.Checked()
+					opts := wifi.UpdateOptions{
+						AutoConnect: &autoConnect,
+					}
+					if newPassword != "" {
+						opts.Password = &newPassword
+					}
 					return updateNetworkMsg{
-						item: m.selectedItem,
-						UpdateOptions: wifi.UpdateOptions{
-							Password:    &newPassword,
-							AutoConnect: &autoConnect,
-						},
+						item:          m.selectedItem,
+						UpdateOptions: opts,
 					}
 				}
 			case 2: // Forget
