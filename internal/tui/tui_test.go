@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -76,7 +77,7 @@ func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
 	if !strings.Contains(view, "Unencrypted_Honeypot") {
 		t.Errorf("View does not contain cached network after scan warning in\n%s", view)
 	}
-	if !strings.Contains(view, "Warning: scan failed; showing cached results") {
+	if !strings.Contains(view, "Scan failed: scan not allowed") {
 		t.Errorf("View does not contain scan warning in\n%s", view)
 	}
 	if strings.Contains(view, "Error:") {
@@ -292,7 +293,7 @@ type cachedBackend struct {
 
 func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	result, err := b.Backend.ListNetworks(scan)
-	result.IsCached = true
+	result.ScanError = errors.New("scan not allowed")
 	return result, err
 }
 

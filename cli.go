@@ -115,8 +115,8 @@ func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) err
 	for _, c := range networks {
 		fmt.Fprintf(w, "%s\t%s\n", c.SSID, formatNetwork(c))
 	}
-	if scan && result.IsCached {
-		fmt.Fprintln(w, "Warning: scan failed; showing cached results")
+	if result.ScanError != nil {
+		fmt.Fprintf(w, "Scan failed: %v\n", result.ScanError)
 	}
 
 	return nil

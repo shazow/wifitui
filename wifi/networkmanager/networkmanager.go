@@ -42,7 +42,7 @@ type Backend struct {
 	scanFunc     func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error
 	scanInterval time.Duration
 	lastScan     time.Time
-	scanCached   bool
+	scanError    error
 	scanMu       sync.Mutex
 	scanDone     chan struct{}
 }
@@ -357,15 +357,15 @@ func isNetworkChangeSignal(sig *dbus.Signal, devicePath dbus.ObjectPath) bool {
 	}
 }
 
-func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) bool {
+func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) error {
 	return b.scan(device, false)
 }
 
-func (b *Backend) scanNow(device gonetworkmanager.DeviceWireless) bool {
+func (b *Backend) scanNow(device gonetworkmanager.DeviceWireless) error {
 	return b.scan(device, true)
 }
 
-func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) bool {
+func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) error {
 	interval := scanInterval
 	if b.scanInterval > 0 {
 		interval = b.scanInterval
@@ -384,9 +384,9 @@ func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) bool 
 			runScan = true
 		}
 	} else {
-		cached := b.scanCached
+		scanErr := b.scanError
 		b.scanMu.Unlock()
-		return cached
+		return scanErr
 	}
 	b.scanMu.Unlock()
 
@@ -394,19 +394,19 @@ func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) bool 
 		err := b.scanAndWait(device)
 		b.scanMu.Lock()
 		b.lastScan = time.Now()
-		b.scanCached = err != nil
+		b.scanError = err
 		close(done)
 		b.scanDone = nil
-		cached := b.scanCached
+		scanErr := b.scanError
 		b.scanMu.Unlock()
-		return cached
+		return scanErr
 	} else if done != nil {
 		<-done
 	}
 
 	b.scanMu.Lock()
 	defer b.scanMu.Unlock()
-	return b.scanCached
+	return b.scanError
 }
 
 func securityFromAccessPoint(flags, wpaFlags, rsnFlags uint32) (wifi.SecurityType, bool) {
@@ -599,12 +599,12 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		return wifi.NetworksResult{}, err
 	}
 
-	isCached := false
+	var scanErr error
 	switch scan {
 	case wifi.ScanAuto:
-		isCached = b.scanIfStale(wirelessDevice)
+		scanErr = b.scanIfStale(wirelessDevice)
 	case wifi.ScanForce:
-		isCached = b.scanNow(wirelessDevice)
+		scanErr = b.scanNow(wirelessDevice)
 	}
 
 	knownConnections, err := b.Settings.ListConnections()
@@ -777,7 +777,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	b.networkKeysBySSID = newNetworkKeysBySSID
 
 	wifi.SortNetworks(conns)
-	return wifi.NetworksResult{Networks: conns, IsCached: isCached}, nil
+	return wifi.NetworksResult{Networks: conns, ScanError: scanErr}, nil
 }
 
 func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {

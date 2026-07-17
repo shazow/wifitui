@@ -318,8 +318,8 @@ func TestListNetworks_ReturnsCachedListWhenScanFails(t *testing.T) {
 	if connections[0].SSID != "Cafe" {
 		t.Fatalf("ListNetworks(ScanAuto) returned SSID %q, want Cafe", connections[0].SSID)
 	}
-	if !result.IsCached {
-		t.Fatal("ListNetworks(ScanAuto) did not mark cached results after scan failure")
+	if result.ScanError == nil || result.ScanError.Error() != "scan not allowed" {
+		t.Fatalf("ListNetworks(ScanAuto) returned scan error %v, want scan not allowed", result.ScanError)
 	}
 	if b.lastScan.IsZero() {
 		t.Fatal("ListNetworks(ScanAuto) did not record lastScan after a scan failure")
@@ -333,7 +333,7 @@ func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
 		},
 	}
 	b := newTestBackend(device, nil)
-	b.scanCached = true
+	b.scanError = errors.New("previous scan failed")
 	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		return nil
 	}
@@ -342,8 +342,8 @@ func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListNetworks(ScanAuto) returned error: %v", err)
 	}
-	if result.IsCached {
-		t.Fatal("ListNetworks(ScanAuto) marked cached results after successful scan")
+	if result.ScanError != nil {
+		t.Fatalf("ListNetworks(ScanAuto) retained scan error after successful scan: %v", result.ScanError)
 	}
 }
 

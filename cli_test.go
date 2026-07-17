@@ -73,7 +73,7 @@ func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 	if !strings.Contains(output, "Unencrypted_Honeypot") {
 		t.Errorf("runList() output missing cached network. got=%q", output)
 	}
-	if !strings.Contains(output, "Warning: scan failed; showing cached results") {
+	if !strings.Contains(output, "Scan failed: scan not allowed") {
 		t.Errorf("runList() output missing scan warning. got=%q", output)
 	}
 }
@@ -168,7 +168,7 @@ type cachedBackend struct {
 
 func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	result, err := b.Backend.ListNetworks(scan)
-	result.IsCached = true
+	result.ScanError = errors.New("scan not allowed")
 	return result, err
 }
 

@@ -164,7 +164,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			wifi.SortNetworks(networks)
 			return scanFinishedMsg{
 				networks: networks,
-				isCached: result.IsCached,
+				scanErr:  result.ScanError,
 			}
 		}
 	case connectMsg:
@@ -284,8 +284,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanFinishedMsg:
 		m.loading = false
 		m.statusMessage = ""
-		if msg.isCached {
-			m.statusMessage = "Warning: scan failed; showing cached results"
+		if msg.scanErr != nil {
+			m.statusMessage = fmt.Sprintf("Scan failed: %v", msg.scanErr)
 		}
 	case networkSavedMsg:
 		return m, tea.Batch(
