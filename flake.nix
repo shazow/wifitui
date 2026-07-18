@@ -42,7 +42,7 @@
         devShells.default = pkgs.mkShell {
           buildInputs = [
             pkgs.go
-            pkgs.golint
+            pkgs.go-tools
           ];
         };
       }

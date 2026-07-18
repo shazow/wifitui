@@ -6,7 +6,7 @@ LDFLAGS = -X main.Version=$(VERSION) -extldflags "-static"
 # CoreWLAN requires cgo and Apple's dynamically linked system frameworks.
 DARWIN_LDFLAGS = -X main.Version=$(VERSION)
 
-.PHONY: all build build-static build-darwin
+.PHONY: all build build-static build-darwin run
 
 all: build
 
@@ -18,12 +18,10 @@ build-static:
 build-darwin:
 	CGO_ENABLED=1 GOOS=darwin go build -o $(BINARY) -ldflags "$(DARWIN_LDFLAGS)" .
 
-$(BINARY): build
-
 clean:
 	rm $(BINARY)
 
-run: $(BINARY)
+run:
 	go run .
 
 mock:
