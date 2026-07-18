@@ -318,11 +318,81 @@ func TestListNetworks_ReturnsCachedListWhenScanFails(t *testing.T) {
 	if connections[0].SSID != "Cafe" {
 		t.Fatalf("ListNetworks(ScanAuto) returned SSID %q, want Cafe", connections[0].SSID)
 	}
-	if result.ScanError == nil || result.ScanError.Error() != "scan not allowed" {
-		t.Fatalf("ListNetworks(ScanAuto) returned scan error %v, want scan not allowed", result.ScanError)
+	if result.ScanError == nil {
+		t.Fatal("ListNetworks(ScanAuto) did not return the non-fatal scan error")
+	}
+	var scanFailure *wifi.ScanFailure
+	if !errors.As(result.ScanError, &scanFailure) {
+		t.Fatalf("ListNetworks(ScanAuto) returned scan error %T, want *wifi.ScanFailure", result.ScanError)
+	}
+	if scanFailure.Backend != "NetworkManager" || scanFailure.Stage != wifi.ScanStageRequest || scanFailure.Device != "wlan0" {
+		t.Fatalf("ListNetworks(ScanAuto) returned scan failure %#v", scanFailure)
+	}
+	if got, want := result.ScanError.Error(), "NetworkManager request on wlan0: scan not allowed"; got != want {
+		t.Fatalf("ListNetworks(ScanAuto) scan error = %q, want %q", got, want)
 	}
 	if b.lastScan.IsZero() {
 		t.Fatal("ListNetworks(ScanAuto) did not record lastScan after a scan failure")
+	}
+}
+
+func TestListNetworks_ClassifiesUnavailableDeviceScanFailure(t *testing.T) {
+	device := &mockDeviceWireless{
+		managed: true,
+		state:   gonetworkmanager.NmDeviceStateUnavailable,
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
+		},
+	}
+	b := newTestBackend(device, nil)
+	// Simulate a device that became unavailable after it was selected and cached.
+	b.Device = device
+	rawErr := dbus.Error{
+		Name: "org.freedesktop.NetworkManager.Device.NotAllowed",
+		Body: []any{"Scanning not allowed while unavailable"},
+	}
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		return rawErr
+	}
+
+	result, err := b.ListNetworks(wifi.ScanForce)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanForce) returned fatal error: %v", err)
+	}
+	if !errors.Is(result.ScanError, wifi.ErrScanDeviceUnavailable) {
+		t.Fatalf("scan error %v does not classify the unavailable device", result.ScanError)
+	}
+	var scanFailure *wifi.ScanFailure
+	if !errors.As(result.ScanError, &scanFailure) {
+		t.Fatalf("scan error %T does not retain ScanFailure", result.ScanError)
+	}
+	if scanFailure.Code != rawErr.Name {
+		t.Fatalf("ScanFailure.Code = %q, want %q", scanFailure.Code, rawErr.Name)
+	}
+	var gotDBusError dbus.Error
+	if !errors.As(result.ScanError, &gotDBusError) {
+		t.Fatalf("scan error %v does not retain the D-Bus error", result.ScanError)
+	}
+}
+
+func TestListNetworks_ClassifiesDeniedScanPermission(t *testing.T) {
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
+		},
+	}
+	b := newTestBackend(device, nil)
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		return dbus.Error{Name: "org.freedesktop.NetworkManager.Device.NotAllowed", Body: []any{"Not authorized"}}
+	}
+	b.scanPermissionFunc = func() (string, error) { return "no", nil }
+
+	result, err := b.ListNetworks(wifi.ScanForce)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanForce) returned fatal error: %v", err)
+	}
+	if !errors.Is(result.ScanError, wifi.ErrScanPermissionDenied) {
+		t.Fatalf("scan error %v does not classify the denied permission", result.ScanError)
 	}
 }
 
