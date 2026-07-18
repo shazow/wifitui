@@ -23,6 +23,7 @@
           src = ./.;
           # Updated by `make vendorHash`
           vendorHash = "sha256-2smXAK3mRweg0yKDerKgu3fcT3ulDjRSbbkMCSe+nVs=";
+          env.CGO_ENABLED = if pkgs.stdenv.isDarwin then "1" else "0";
           ldflags = [
             "-s"
             "-w"

@@ -1,14 +1,22 @@
 BINARY = wifitui
 
 VERSION := $(shell git describe --tags --dirty --always 2> /dev/null || echo "dev")
-LDFLAGS = -X main.Version=$(VERSION)
+# Portable builds disable cgo and retain the static external-link preference.
+LDFLAGS = -X main.Version=$(VERSION) -extldflags "-static"
+# CoreWLAN requires cgo and Apple's dynamically linked system frameworks.
+DARWIN_LDFLAGS = -X main.Version=$(VERSION)
 
-.PHONY: all build
+.PHONY: all build build-static build-darwin
 
 all: build
 
-build:
-	go build -o $(BINARY) -ldflags "$(LDFLAGS)" .
+build: build-static
+
+build-static:
+	CGO_ENABLED=0 go build -o $(BINARY) -ldflags "$(LDFLAGS)" .
+
+build-darwin:
+	CGO_ENABLED=1 GOOS=darwin go build -o $(BINARY) -ldflags "$(DARWIN_LDFLAGS)" .
 
 $(BINARY): build
 

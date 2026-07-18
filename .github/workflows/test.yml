@@ -29,9 +29,7 @@ jobs:
           CGO_ENABLED: '1'
         run: go test -test.timeout 30s ./...
       - name: Build with CoreWLAN
-        env:
-          CGO_ENABLED: '1'
-        run: make build
+        run: make build-darwin
       - name: Verify native CoreWLAN linkage
         run: |
           file ./wifitui | grep -q 'x86_64'
@@ -41,10 +39,8 @@ jobs:
           grep -q '/Foundation.framework/' <<< "$linked_libraries"
       - name: Cross-build for Apple Silicon
         env:
-          CGO_ENABLED: '1'
           GOARCH: arm64
-          GOOS: darwin
-        run: go build -o "$RUNNER_TEMP/wifitui-arm64" .
+        run: make build-darwin BINARY="$RUNNER_TEMP/wifitui-arm64"
       - name: Verify Apple Silicon CoreWLAN linkage
         run: |
           file "$RUNNER_TEMP/wifitui-arm64" | grep -q 'arm64'
