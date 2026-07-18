@@ -16,3 +16,55 @@ jobs:
           go-version: '1.25'
       - name: Run tests
         run: go test -test.timeout 30s ./...
+
+  darwin:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Run tests with cgo
+        env:
+          CGO_ENABLED: '1'
+        run: go test -test.timeout 30s ./...
+      - name: Build with CoreWLAN
+        env:
+          CGO_ENABLED: '1'
+        run: make build
+      - name: Verify native CoreWLAN linkage
+        run: |
+          file ./wifitui | grep -q 'x86_64'
+          linked_libraries="$(otool -L ./wifitui)"
+          echo "$linked_libraries"
+          grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
+          grep -q '/Foundation.framework/' <<< "$linked_libraries"
+      - name: Cross-build for Apple Silicon
+        env:
+          CGO_ENABLED: '1'
+          GOARCH: arm64
+          GOOS: darwin
+        run: go build -o "$RUNNER_TEMP/wifitui-arm64" .
+      - name: Verify Apple Silicon CoreWLAN linkage
+        run: |
+          file "$RUNNER_TEMP/wifitui-arm64" | grep -q 'arm64'
+          linked_libraries="$(otool -L "$RUNNER_TEMP/wifitui-arm64")"
+          echo "$linked_libraries"
+          grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
+          grep -q '/Foundation.framework/' <<< "$linked_libraries"
+      - name: Build release snapshot
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: v2.17.0
+          args: release --snapshot --clean --skip=publish --skip=sign
+      - uses: DeterminateSystems/nix-installer-action@main
+      - name: Build the native Darwin flake package
+        run: |
+          native_system="$(nix eval --impure --raw --expr builtins.currentSystem)"
+          test "$native_system" = x86_64-darwin
+          package_path="$(nix build ".#packages.${native_system}.default" --no-link --print-out-paths -L)"
+          linked_libraries="$(otool -L "$package_path/bin/wifitui")"
+          echo "$linked_libraries"
+          grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
+          grep -q '/Foundation.framework/' <<< "$linked_libraries"
