@@ -18,7 +18,7 @@ jobs:
         run: go test -test.timeout 30s ./...
 
   darwin:
-    runs-on: macos-15-intel
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -32,19 +32,19 @@ jobs:
         run: make build-darwin
       - name: Verify native CoreWLAN linkage
         run: |
-          file ./wifitui | grep -q 'x86_64'
+          file ./wifitui | grep -q 'arm64'
           linked_libraries="$(otool -L ./wifitui)"
           echo "$linked_libraries"
           grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
           grep -q '/Foundation.framework/' <<< "$linked_libraries"
-      - name: Cross-build for Apple Silicon
+      - name: Cross-build for Intel
         env:
-          GOARCH: arm64
-        run: make build-darwin BINARY="$RUNNER_TEMP/wifitui-arm64"
-      - name: Verify Apple Silicon CoreWLAN linkage
+          GOARCH: amd64
+        run: make build-darwin BINARY="$RUNNER_TEMP/wifitui-amd64"
+      - name: Verify Intel CoreWLAN linkage
         run: |
-          file "$RUNNER_TEMP/wifitui-arm64" | grep -q 'arm64'
-          linked_libraries="$(otool -L "$RUNNER_TEMP/wifitui-arm64")"
+          file "$RUNNER_TEMP/wifitui-amd64" | grep -q 'x86_64'
+          linked_libraries="$(otool -L "$RUNNER_TEMP/wifitui-amd64")"
           echo "$linked_libraries"
           grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
           grep -q '/Foundation.framework/' <<< "$linked_libraries"
@@ -58,9 +58,33 @@ jobs:
       - name: Build the native Darwin flake package
         run: |
           native_system="$(nix eval --impure --raw --expr builtins.currentSystem)"
-          test "$native_system" = x86_64-darwin
+          test "$native_system" = aarch64-darwin
           package_path="$(nix build ".#packages.${native_system}.default" --no-link --print-out-paths -L)"
           linked_libraries="$(otool -L "$package_path/bin/wifitui")"
           echo "$linked_libraries"
           grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
           grep -q '/Foundation.framework/' <<< "$linked_libraries"
+
+  darwin-latest:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Run tests with cgo
+        env:
+          CGO_ENABLED: '1'
+        run: go test -test.timeout 30s ./...
+      - name: Build with CoreWLAN
+        run: make build-darwin
+      - name: Verify native CoreWLAN build
+        run: |
+          test "$(uname -m)" = arm64
+          file ./wifitui | grep -q 'arm64'
+          linked_libraries="$(otool -L ./wifitui)"
+          echo "$linked_libraries"
+          grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
+          grep -q '/Foundation.framework/' <<< "$linked_libraries"
+          ./wifitui --version
