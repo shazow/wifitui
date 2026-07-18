@@ -109,7 +109,9 @@ func runList(w io.Writer, errW io.Writer, jsonOut bool, all bool, scan bool, b w
 	}
 
 	if result.ScanError != nil {
-		fmt.Fprintf(errW, "Scan failed: %s\n", helpers.FormatScanFailure(result.ScanError))
+		if _, err := fmt.Fprintf(errW, "Scan failed: %s\n", helpers.FormatScanFailure(result.ScanError)); err != nil {
+			return fmt.Errorf("failed to write scan diagnostic: %w", err)
+		}
 	}
 
 	if jsonOut {

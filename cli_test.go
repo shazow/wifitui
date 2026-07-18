@@ -83,6 +83,20 @@ func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 	}
 }
 
+func TestRunListReturnsScanWarningWriteError(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	wantErr := errors.New("write failed")
+	backend := cachedBackend{Backend: mockBackend}
+
+	err = runList(io.Discard, errorWriter{err: wantErr}, false, false, true, backend)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("runList() error = %v, want an error wrapping %v", err, wantErr)
+	}
+}
+
 func TestRunListScanForcesRefresh(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {
@@ -173,8 +187,17 @@ type cachedBackend struct {
 
 func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	result, err := b.Backend.ListNetworks(scan)
+	result.IsCached = true
 	result.ScanError = errors.New("scan not allowed")
 	return result, err
+}
+
+type errorWriter struct {
+	err error
+}
+
+func (w errorWriter) Write([]byte) (int, error) {
+	return 0, w.err
 }
 
 type scanRecordingBackend struct {
