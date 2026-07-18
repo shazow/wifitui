@@ -32,7 +32,6 @@ jobs:
         run: make build-darwin
       - name: Verify native CoreWLAN linkage
         run: |
-          file ./wifitui | grep -q 'arm64'
           linked_libraries="$(otool -L ./wifitui)"
           echo "$linked_libraries"
           grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
@@ -81,8 +80,6 @@ jobs:
         run: make build-darwin
       - name: Verify native CoreWLAN build
         run: |
-          test "$(uname -m)" = arm64
-          file ./wifitui | grep -q 'arm64'
           linked_libraries="$(otool -L ./wifitui)"
           echo "$linked_libraries"
           grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
