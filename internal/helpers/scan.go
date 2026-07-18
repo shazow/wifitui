@@ -31,3 +31,16 @@ func FormatScanFailure(err error) string {
 		return err.Error()
 	}
 }
+
+// FormatScanDiagnostic returns a complete user-facing scan diagnostic. The
+// cached flag supports backends that implement the deprecated IsCached result
+// field but cannot provide a failure cause.
+func FormatScanDiagnostic(err error, cached bool) string {
+	if err != nil {
+		return "Scan failed: " + FormatScanFailure(err)
+	}
+	if cached {
+		return "Scan failed: showing cached results; backend did not provide a failure reason"
+	}
+	return ""
+}

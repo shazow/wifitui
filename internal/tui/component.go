@@ -63,6 +63,7 @@ type (
 	scanFinishedMsg   struct {
 		networks []wifi.Network
 		scanErr  error
+		isCached bool
 	}
 	secretsLoadedMsg struct {
 		item   networkItem

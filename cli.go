@@ -108,8 +108,8 @@ func runList(w io.Writer, errW io.Writer, jsonOut bool, all bool, scan bool, b w
 		networks = filterVisibleNetworks(networks)
 	}
 
-	if result.ScanError != nil {
-		if _, err := fmt.Fprintf(errW, "Scan failed: %s\n", helpers.FormatScanFailure(result.ScanError)); err != nil {
+	if diagnostic := helpers.FormatScanDiagnostic(result.ScanError, result.IsCached); diagnostic != "" {
+		if _, err := fmt.Fprintln(errW, diagnostic); err != nil {
 			return fmt.Errorf("failed to write scan diagnostic: %w", err)
 		}
 	}

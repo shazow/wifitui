@@ -110,6 +110,25 @@ func TestTuiModel_ScanWarningFormatsUnavailableDevice(t *testing.T) {
 	}
 }
 
+func TestTuiModel_LegacyCachedResultShowsWarning(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	m, err := NewModel(backend)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+
+	updatedModel, _ := m.Update(scanFinishedMsg{isCached: true})
+	m = updatedModel.(*model)
+
+	want := "Scan failed: showing cached results; backend did not provide a failure reason"
+	if view := m.View(); !strings.Contains(view, want) {
+		t.Fatalf("View does not contain legacy cached-result warning in\n%s", view)
+	}
+}
+
 func TestTuiModel_ManualScanForcesRefresh(t *testing.T) {
 	backend, err := mock.New()
 	if err != nil {

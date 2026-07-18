@@ -48,3 +48,32 @@ func TestFormatScanFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatScanDiagnostic(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		cached bool
+		want   string
+	}{
+		{
+			name: "detailed failure takes precedence",
+			err:  errors.New("scan not allowed"),
+			want: "Scan failed: scan not allowed",
+		},
+		{
+			name:   "legacy cached result",
+			cached: true,
+			want:   "Scan failed: showing cached results; backend did not provide a failure reason",
+		},
+		{name: "successful result"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FormatScanDiagnostic(tt.err, tt.cached); got != tt.want {
+				t.Fatalf("FormatScanDiagnostic() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

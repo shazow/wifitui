@@ -83,6 +83,21 @@ func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 	}
 }
 
+func TestRunListShowsLegacyCachedWarning(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var diagnostics bytes.Buffer
+
+	if err := runList(io.Discard, &diagnostics, false, false, true, legacyCachedBackend{Backend: mockBackend}); err != nil {
+		t.Fatalf("runList() failed: %v", err)
+	}
+	if want := "Scan failed: showing cached results; backend did not provide a failure reason"; !strings.Contains(diagnostics.String(), want) {
+		t.Fatalf("runList() stderr = %q, want %q", diagnostics.String(), want)
+	}
+}
+
 func TestRunListReturnsScanWarningWriteError(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {
@@ -189,6 +204,16 @@ func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, er
 	result, err := b.Backend.ListNetworks(scan)
 	result.IsCached = true
 	result.ScanError = errors.New("scan not allowed")
+	return result, err
+}
+
+type legacyCachedBackend struct {
+	wifi.Backend
+}
+
+func (b legacyCachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	result, err := b.Backend.ListNetworks(scan)
+	result.IsCached = true
 	return result, err
 }
 
