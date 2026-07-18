@@ -3,6 +3,7 @@ package darwin
 import (
 	"bufio"
 	"fmt"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,11 +11,181 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
+// runWithOutput wraps exec.Cmd to capture stderr and preserve its execution error.
+func runWithOutput(command *exec.Cmd) ([]byte, error) {
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	out, err := command.Output()
+	if err != nil {
+		return out, fmt.Errorf("failed to run command: %s: %w: %s", command.String(), err, stderr.String())
+	}
+	return out, nil
+}
+
+// runOnly wraps exec.Cmd for commands where stdout is not used.
+func runOnly(command *exec.Cmd) error {
+	var stderr strings.Builder
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("failed to run command: %s: %w: %s", command.String(), err, stderr.String())
+	}
+	return nil
+}
+
 type scannedNetwork struct {
 	ssid     string
 	security wifi.SecurityType
 	rssi     int
 	isActive bool
+}
+
+type outputRunner func(name string, args ...string) ([]byte, error)
+
+var currentNetworkRE = regexp.MustCompile(`Current Wi-Fi Network: (.+)`)
+
+// listNetworks contains the command orchestration separately from the
+// Darwin-specific exec implementation so its behavior can be tested on any OS.
+func listNetworks(run outputRunner, device string, scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	out, err := run("networksetup", "-getairportpower", device)
+	if err != nil {
+		return wifi.NetworksResult{}, fmt.Errorf("failed to get wireless power: %w", err)
+	}
+	if !strings.Contains(string(out), ": On") {
+		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
+	}
+
+	// The association query is best effort: preferred networks and profiler
+	// results are still useful without it. If fallback is also needed, preserve
+	// both failures in ScanError because the missing association degrades it.
+	currentOut, currentErr := run("networksetup", "-getairportnetwork", device)
+	currentSSID := ""
+	if currentErr == nil {
+		matches := currentNetworkRE.FindStringSubmatch(string(currentOut))
+		if len(matches) > 1 {
+			currentSSID = strings.TrimSpace(matches[1])
+		}
+	}
+
+	preferredOut, err := run("networksetup", "-listpreferredwirelessnetworks", device)
+	if err != nil {
+		return wifi.NetworksResult{}, fmt.Errorf("failed to list preferred networks: %w: %w", wifi.ErrOperationFailed, err)
+	}
+	knownSSIDs := parsePreferredNetworks(string(preferredOut))
+
+	if scan == wifi.ScanNever {
+		return wifi.NetworksResult{Networks: fallbackNetworks(knownSSIDs, currentSSID)}, nil
+	}
+
+	// TODO: Use CoreWLAN for a true scan and retain its last successful snapshot.
+	// system_profiler cannot distinguish ScanAuto from ScanForce and does not
+	// guarantee that collecting its report initiates a new wireless scan.
+	profilerOut, err := run("system_profiler", "SPAirPortDataType")
+	if err != nil {
+		cause := err
+		if currentErr != nil {
+			cause = fmt.Errorf("system report failed: %w; current network query also failed: %w", err, currentErr)
+		}
+		return wifi.NetworksResult{
+			Networks: fallbackNetworks(knownSSIDs, currentSSID),
+			IsCached: true,
+			ScanError: &wifi.ScanFailure{
+				Backend: "macOS",
+				Stage:   wifi.ScanStageRequest,
+				Device:  device,
+				Cause:   cause,
+			},
+		}, nil
+	}
+
+	return wifi.NetworksResult{Networks: aggregateNetworks(
+		parseSystemProfilerOutput(string(profilerOut)), knownSSIDs, currentSSID,
+	)}, nil
+}
+
+func parsePreferredNetworks(output string) map[string]bool {
+	knownSSIDs := make(map[string]bool)
+	scanner := bufio.NewScanner(strings.NewReader(output))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" && !strings.HasPrefix(line, "Preferred") {
+			knownSSIDs[line] = true
+		}
+	}
+	return knownSSIDs
+}
+
+func fallbackNetworks(knownSSIDs map[string]bool, currentSSID string) []wifi.Network {
+	networksBySSID := make(map[string]wifi.Network, len(knownSSIDs)+1)
+	for ssid := range knownSSIDs {
+		networksBySSID[ssid] = wifi.Network{
+			SSID:        ssid,
+			IsKnown:     true,
+			AutoConnect: true,
+		}
+	}
+	if currentSSID != "" {
+		current := networksBySSID[currentSSID]
+		current.SSID = currentSSID
+		current.IsActive = true
+		current.IsVisible = true
+		networksBySSID[currentSSID] = current
+	}
+	return sortedNetworks(networksBySSID)
+}
+
+func aggregateNetworks(scanned []scannedNetwork, knownSSIDs map[string]bool, currentSSID string) []wifi.Network {
+	networksBySSID := make(map[string]wifi.Network, len(scanned)+len(knownSSIDs)+1)
+	for _, network := range scanned {
+		known := knownSSIDs[network.ssid]
+		active := network.isActive || network.ssid == currentSSID
+		accessPoint := wifi.AccessPoint{Strength: rssiToStrength(network.rssi)}
+		if existing, ok := networksBySSID[network.ssid]; ok {
+			existing.AccessPoints = append(existing.AccessPoints, accessPoint)
+			existing.IsActive = existing.IsActive || active
+			networksBySSID[network.ssid] = existing
+			continue
+		}
+		networksBySSID[network.ssid] = wifi.Network{
+			SSID:         network.ssid,
+			IsActive:     active,
+			IsKnown:      known,
+			IsVisible:    true,
+			AccessPoints: []wifi.AccessPoint{accessPoint},
+			IsSecure:     network.security != wifi.SecurityOpen,
+			Security:     network.security,
+			AutoConnect:  known,
+		}
+	}
+
+	if currentSSID != "" {
+		current := networksBySSID[currentSSID]
+		current.SSID = currentSSID
+		current.IsActive = true
+		current.IsVisible = true
+		current.IsKnown = knownSSIDs[currentSSID]
+		current.AutoConnect = current.IsKnown
+		networksBySSID[currentSSID] = current
+	}
+
+	for ssid := range knownSSIDs {
+		if _, ok := networksBySSID[ssid]; !ok {
+			networksBySSID[ssid] = wifi.Network{
+				SSID:        ssid,
+				IsKnown:     true,
+				AutoConnect: true,
+			}
+		}
+	}
+	return sortedNetworks(networksBySSID)
+}
+
+func sortedNetworks(networksBySSID map[string]wifi.Network) []wifi.Network {
+	networks := make([]wifi.Network, 0, len(networksBySSID))
+	for _, network := range networksBySSID {
+		networks = append(networks, network)
+	}
+	wifi.SortNetworks(networks)
+	return networks
 }
 
 // parseSystemProfilerOutput parses the output of `system_profiler SPAirPortDataType`
