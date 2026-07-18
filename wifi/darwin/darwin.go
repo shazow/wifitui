@@ -10,11 +10,6 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
-// Backend implements the wifi.Backend interface for macOS.
-type Backend struct {
-	WifiInterface string
-}
-
 // New creates a new darwin.Backend.
 func New() (wifi.Backend, error) {
 	// Find the Wi-Fi interface name (e.g., en0)
@@ -30,13 +25,6 @@ func New() (wifi.Backend, error) {
 	}
 
 	return &Backend{WifiInterface: device}, nil
-}
-
-// ListNetworks returns all networks.
-func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
-	return listNetworks(func(name string, args ...string) ([]byte, error) {
-		return runWithOutput(exec.Command(name, args...))
-	}, b.WifiInterface, scan)
 }
 
 // ActivateNetwork activates a known network.
