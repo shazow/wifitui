@@ -326,7 +326,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		connections = append(connections, c)
 	}
 
-	return wifi.NetworksResult{Networks: connections, IsCached: scanErr != nil, ScanError: scanErr}, nil
+	return wifi.NetworksResult{Networks: connections, ScanError: scanErr}, nil
 }
 
 func scanAndWait(conn *dbus.Conn, station dbus.ObjectPath) error {

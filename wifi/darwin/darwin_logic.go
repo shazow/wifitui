@@ -219,7 +219,6 @@ func parsePreferredNetworks(output string) map[string]bool {
 func (b *Backend) scanFallback(cached []wifi.Network, knownSSIDs map[string]bool, currentSSID string, stage wifi.ScanStage, cause error) wifi.NetworksResult {
 	return wifi.NetworksResult{
 		Networks: mergeNetworks(cached, knownSSIDs, currentSSID),
-		IsCached: true,
 		ScanError: &wifi.ScanFailure{
 			Backend: "macOS",
 			Stage:   stage,

@@ -64,7 +64,7 @@ func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 	var buf bytes.Buffer
 	var errBuf bytes.Buffer
 
-	backend := cachedBackend{
+	backend := scanFailureBackend{
 		Backend: mockBackend,
 	}
 	if err := runList(&buf, &errBuf, false, false, true, backend); err != nil {
@@ -83,28 +83,13 @@ func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 	}
 }
 
-func TestRunListShowsLegacyCachedWarning(t *testing.T) {
-	mockBackend, err := mock.New()
-	if err != nil {
-		t.Fatalf("failed to create mock backend: %v", err)
-	}
-	var diagnostics bytes.Buffer
-
-	if err := runList(io.Discard, &diagnostics, false, false, true, legacyCachedBackend{Backend: mockBackend}); err != nil {
-		t.Fatalf("runList() failed: %v", err)
-	}
-	if want := "Scan failed: showing cached results; backend did not provide a failure reason"; !strings.Contains(diagnostics.String(), want) {
-		t.Fatalf("runList() stderr = %q, want %q", diagnostics.String(), want)
-	}
-}
-
 func TestRunListReturnsScanWarningWriteError(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {
 		t.Fatalf("failed to create mock backend: %v", err)
 	}
 	wantErr := errors.New("write failed")
-	backend := cachedBackend{Backend: mockBackend}
+	backend := scanFailureBackend{Backend: mockBackend}
 
 	err = runList(io.Discard, errorWriter{err: wantErr}, false, false, true, backend)
 	if !errors.Is(err, wantErr) {
@@ -196,24 +181,13 @@ func TestRunShowDoesNotRequestScan(t *testing.T) {
 	}
 }
 
-type cachedBackend struct {
+type scanFailureBackend struct {
 	wifi.Backend
 }
 
-func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+func (b scanFailureBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	result, err := b.Backend.ListNetworks(scan)
-	result.IsCached = true
 	result.ScanError = errors.New("scan not allowed")
-	return result, err
-}
-
-type legacyCachedBackend struct {
-	wifi.Backend
-}
-
-func (b legacyCachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
-	result, err := b.Backend.ListNetworks(scan)
-	result.IsCached = true
 	return result, err
 }
 
@@ -319,7 +293,7 @@ func TestRunListJSONReportsScanFailureOnStderr(t *testing.T) {
 	var output bytes.Buffer
 	var diagnostics bytes.Buffer
 
-	err = runList(&output, &diagnostics, true, true, true, cachedBackend{Backend: mockBackend})
+	err = runList(&output, &diagnostics, true, true, true, scanFailureBackend{Backend: mockBackend})
 	if err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}

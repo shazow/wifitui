@@ -100,11 +100,6 @@ const (
 // NetworksResult contains the networks returned by a list operation.
 type NetworksResult struct {
 	Networks []Network
-	// IsCached reports whether Networks contains fallback data after a requested
-	// scan failed.
-	//
-	// Deprecated: inspect ScanError instead.
-	IsCached bool
 	// ScanError is non-nil when a requested scan failed and Networks contains
 	// fallback data instead.
 	ScanError error

@@ -331,9 +331,6 @@ func TestListNetworks_ReturnsCachedListWhenScanFails(t *testing.T) {
 	if got, want := result.ScanError.Error(), "NetworkManager request on wlan0: scan not allowed"; got != want {
 		t.Fatalf("ListNetworks(ScanAuto) scan error = %q, want %q", got, want)
 	}
-	if !result.IsCached {
-		t.Fatal("ListNetworks(ScanAuto) did not mark fallback networks cached")
-	}
 	if b.lastScanAttempt.IsZero() {
 		t.Fatal("ListNetworks(ScanAuto) did not record lastScanAttempt after a scan failure")
 	}
@@ -399,7 +396,7 @@ func TestListNetworks_ClassifiesDeniedScanPermission(t *testing.T) {
 	}
 }
 
-func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
+func TestListNetworks_ClearsScanErrorWhenScanSucceeds(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
@@ -419,8 +416,8 @@ func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first ListNetworks(ScanForce) returned error: %v", err)
 	}
-	if first.ScanError == nil || !first.IsCached {
-		t.Fatalf("first ListNetworks(ScanForce) = %#v, want cached scan failure", first)
+	if first.ScanError == nil {
+		t.Fatalf("first ListNetworks(ScanForce) = %#v, want scan failure", first)
 	}
 
 	result, err := b.ListNetworks(wifi.ScanForce)
@@ -429,9 +426,6 @@ func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
 	}
 	if result.ScanError != nil {
 		t.Fatalf("second ListNetworks(ScanForce) retained scan error after successful scan: %v", result.ScanError)
-	}
-	if result.IsCached {
-		t.Fatal("second ListNetworks(ScanForce) marked successful results cached")
 	}
 }
 

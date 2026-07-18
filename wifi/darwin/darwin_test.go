@@ -96,9 +96,6 @@ func TestListNetworksScanNeverSkipsScan(t *testing.T) {
 	if result.ScanError != nil {
 		t.Fatalf("ScanNever returned a scan error: %v", result.ScanError)
 	}
-	if result.IsCached {
-		t.Fatal("ScanNever marked the current network list as cached")
-	}
 	if runner.unexpected {
 		t.Fatal("ScanNever invoked an unexpected command")
 	}
@@ -139,7 +136,7 @@ func TestListNetworksScanModesRunScanner(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ListNetworks returned an error: %v", err)
 			}
-			if result.ScanError != nil || result.IsCached {
+			if result.ScanError != nil {
 				t.Fatalf("successful report returned scan fallback metadata: %#v", result)
 			}
 			if scanCalls != 1 {
@@ -166,9 +163,6 @@ func TestListNetworksScanFailureReturnsVisibleCurrentNetwork(t *testing.T) {
 	result, err := backend.ListNetworks(wifi.ScanForce)
 	if err != nil {
 		t.Fatalf("listNetworks returned a fatal error: %v", err)
-	}
-	if !result.IsCached {
-		t.Fatal("scan fallback did not set IsCached")
 	}
 	if !errors.Is(result.ScanError, scanErr) {
 		t.Fatalf("ScanError = %v, want wrapped CoreWLAN error", result.ScanError)
@@ -266,7 +260,7 @@ func TestListNetworksFailedScanUsesRetainedSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed scan returned fatal error: %v", err)
 	}
-	if result.ScanError == nil || !result.IsCached {
+	if result.ScanError == nil {
 		t.Fatalf("failed scan metadata = %#v", result)
 	}
 	if cafe, ok := networkBySSID(result.Networks, "Cafe"); !ok || !cafe.IsVisible {
@@ -316,7 +310,7 @@ func TestListNetworksEmptyScanClearsVisibleSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListNetworks returned fatal error: %v", err)
 	}
-	if result.ScanError != nil || result.IsCached {
+	if result.ScanError != nil {
 		t.Fatalf("empty successful scan returned fallback metadata: %#v", result)
 	}
 	if _, ok := networkBySSID(result.Networks, "Stale Cafe"); ok {

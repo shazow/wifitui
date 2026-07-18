@@ -56,7 +56,7 @@ func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
 	mockBackend := backend.(*mock.MockBackend)
 	mockBackend.ActionSleep = 0
 
-	m, err := NewModel(cachedBackend{
+	m, err := NewModel(scanFailureBackend{
 		Backend: backend,
 	})
 	if err != nil {
@@ -107,25 +107,6 @@ func TestTuiModel_ScanWarningFormatsUnavailableDevice(t *testing.T) {
 
 	if view := m.View(); !strings.Contains(view, "Scan failed: wlan0 is unavailable") {
 		t.Fatalf("View does not contain formatted unavailable-device failure in\n%s", view)
-	}
-}
-
-func TestTuiModel_LegacyCachedResultShowsWarning(t *testing.T) {
-	backend, err := mock.New()
-	if err != nil {
-		t.Fatalf("mock.New() failed: %v", err)
-	}
-	m, err := NewModel(backend)
-	if err != nil {
-		t.Fatalf("NewModel failed: %v", err)
-	}
-
-	updatedModel, _ := m.Update(scanFinishedMsg{isCached: true})
-	m = updatedModel.(*model)
-
-	want := "Scan failed: showing cached results; backend did not provide a failure reason"
-	if view := m.View(); !strings.Contains(view, want) {
-		t.Fatalf("View does not contain legacy cached-result warning in\n%s", view)
 	}
 }
 
@@ -331,11 +312,11 @@ func TestTuiModel_EnableRadioSwitchesView(t *testing.T) {
 	}
 }
 
-type cachedBackend struct {
+type scanFailureBackend struct {
 	wifi.Backend
 }
 
-func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+func (b scanFailureBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	result, err := b.Backend.ListNetworks(scan)
 	result.ScanError = errors.New("scan not allowed")
 	return result, err

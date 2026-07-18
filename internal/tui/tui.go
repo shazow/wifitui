@@ -166,7 +166,6 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return scanFinishedMsg{
 				networks: networks,
 				scanErr:  result.ScanError,
-				isCached: result.IsCached,
 			}
 		}
 	case connectMsg:
@@ -286,7 +285,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case scanFinishedMsg:
 		m.loading = false
 		m.statusMessage = ""
-		m.statusMessage = helpers.FormatScanDiagnostic(msg.scanErr, msg.isCached)
+		if msg.scanErr != nil {
+			m.statusMessage = fmt.Sprintf("Scan failed: %s", helpers.FormatScanFailure(msg.scanErr))
+		}
 	case networkSavedMsg:
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: "Saved. Refreshing...", loading: true} },

@@ -917,7 +917,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	b.networkKeysBySSID = newNetworkKeysBySSID
 
 	wifi.SortNetworks(conns)
-	return wifi.NetworksResult{Networks: conns, IsCached: scanErr != nil, ScanError: scanErr}, nil
+	return wifi.NetworksResult{Networks: conns, ScanError: scanErr}, nil
 }
 
 func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
