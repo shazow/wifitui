@@ -1,15 +1,16 @@
 BINARY = wifitui
 
-SRCS = %.go
 VERSION := $(shell git describe --tags --dirty --always 2> /dev/null || echo "dev")
-LDFLAGS = -X main.Version=$(VERSION) -extldflags "-static"
+LDFLAGS = -X main.Version=$(VERSION)
 
-all: $(BINARY)
+.PHONY: all build
 
-$(BINARY): *.go
-	go build -ldflags "$(LDFLAGS)" .
+all: build
 
-build: $(BINARY)
+build:
+	go build -o $(BINARY) -ldflags "$(LDFLAGS)" .
+
+$(BINARY): build
 
 clean:
 	rm $(BINARY)
