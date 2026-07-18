@@ -45,11 +45,18 @@ type Backend struct {
 	scanFunc func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error
 	// scanPermissionFunc is overridden by tests to avoid a real D-Bus call.
 	scanPermissionFunc func() (string, error)
-	scanInterval       time.Duration
-	lastScan           time.Time
-	scanError          error
-	scanMu             sync.Mutex
-	scanDone           chan struct{}
+	// testHookScanWait is overridden by tests to observe scan coordination.
+	testHookScanWait func()
+	scanInterval     time.Duration
+	lastScanAttempt  time.Time
+	scanMu           sync.Mutex
+	scanInFlight     *scanOperation
+}
+
+type scanOperation struct {
+	key  string
+	done chan struct{}
+	err  error
 }
 
 type networkKey struct {
@@ -373,7 +380,7 @@ func (b *Backend) scanHiddenSSID(device gonetworkmanager.DeviceWireless, ssid st
 	if ssid == "" {
 		return nil
 	}
-	return b.scanAndWaitWithOptions(device, hiddenSSIDScanOptions(ssid))
+	return b.scanWithOptions(device, true, "ssid:"+ssid, hiddenSSIDScanOptions(ssid))
 }
 
 // WatchNetworkChanges returns a channel that receives a value when NetworkManager
@@ -487,47 +494,59 @@ func (b *Backend) scanNow(device gonetworkmanager.DeviceWireless) error {
 }
 
 func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) error {
+	return b.scanWithOptions(device, force, "", nil)
+}
+
+// scanWithOptions serializes scan requests so a LastScan update from an older
+// request cannot satisfy a later request with different options. Requests with
+// the same key share the in-flight result; requests with different keys wait
+// and then establish their own LastScan baseline in scanAndWaitWithOptions.
+func (b *Backend) scanWithOptions(device gonetworkmanager.DeviceWireless, force bool, key string, options map[string]dbus.Variant) error {
 	interval := scanInterval
 	if b.scanInterval > 0 {
 		interval = b.scanInterval
 	}
 
-	var done chan struct{}
-	runScan := false
-
-	b.scanMu.Lock()
-	if force || b.lastScan.IsZero() || time.Since(b.lastScan) >= interval {
-		if b.scanDone != nil {
-			done = b.scanDone
-		} else {
-			done = make(chan struct{})
-			b.scanDone = done
-			runScan = true
-		}
-	} else {
-		scanErr := b.scanError
-		b.scanMu.Unlock()
-		return scanErr
-	}
-	b.scanMu.Unlock()
-
-	if runScan {
-		err := b.scanAndWait(device)
+	for {
 		b.scanMu.Lock()
-		b.lastScan = time.Now()
-		b.scanError = err
-		close(done)
-		b.scanDone = nil
-		scanErr := b.scanError
-		b.scanMu.Unlock()
-		return scanErr
-	} else if done != nil {
-		<-done
-	}
+		if current := b.scanInFlight; current != nil {
+			sameRequest := current.key == key
+			b.scanMu.Unlock()
+			if b.testHookScanWait != nil {
+				b.testHookScanWait()
+			}
+			<-current.done
+			if sameRequest {
+				return current.err
+			}
+			continue
+		}
 
-	b.scanMu.Lock()
-	defer b.scanMu.Unlock()
-	return b.scanError
+		// Only ordinary automatic scans use the retry interval. A skipped call
+		// did not attempt or join the previous scan, so it must not inherit that
+		// scan's error.
+		if key == "" && !force && !b.lastScanAttempt.IsZero() && time.Since(b.lastScanAttempt) < interval {
+			b.scanMu.Unlock()
+			return nil
+		}
+
+		operation := &scanOperation{
+			key:  key,
+			done: make(chan struct{}),
+		}
+		b.scanInFlight = operation
+		b.scanMu.Unlock()
+
+		operation.err = b.scanAndWaitWithOptions(device, options)
+		b.scanMu.Lock()
+		if key == "" {
+			b.lastScanAttempt = time.Now()
+		}
+		close(operation.done)
+		b.scanInFlight = nil
+		b.scanMu.Unlock()
+		return operation.err
+	}
 }
 
 func securityFromAccessPoint(flags, wpaFlags, rsnFlags uint32) (wifi.SecurityType, bool) {
@@ -898,7 +917,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	b.networkKeysBySSID = newNetworkKeysBySSID
 
 	wifi.SortNetworks(conns)
-	return wifi.NetworksResult{Networks: conns, ScanError: scanErr}, nil
+	return wifi.NetworksResult{Networks: conns, IsCached: scanErr != nil, ScanError: scanErr}, nil
 }
 
 func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
