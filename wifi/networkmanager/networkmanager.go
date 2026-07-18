@@ -221,6 +221,10 @@ func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless,
 				cause := fmt.Errorf("%w: D-Bus signal channel closed", wifi.ErrScanProtocol)
 				return newScanFailure(device, wifi.ScanStageCompletion, cause)
 			}
+			if sig == nil {
+				cause := fmt.Errorf("%w: received an empty D-Bus signal", wifi.ErrScanProtocol)
+				return newScanFailure(device, wifi.ScanStageCompletion, cause)
+			}
 			// Signal body for PropertiesChanged:
 			// interface_name (string)
 			// changed_properties (map[string]dbus.Variant)
@@ -244,6 +248,9 @@ func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless,
 			if !ok {
 				cause := fmt.Errorf("%w: LastScan has type %T", wifi.ErrScanProtocol, variant.Value())
 				return newScanFailure(device, wifi.ScanStageCompletion, cause)
+			}
+			if value < 0 {
+				continue
 			}
 			var nextScan time.Duration
 			if value > 0 {
@@ -362,11 +369,11 @@ func hiddenSSIDScanOptions(ssid string) map[string]dbus.Variant {
 	}
 }
 
-func (b *Backend) scanHiddenSSID(device gonetworkmanager.DeviceWireless, ssid string) {
+func (b *Backend) scanHiddenSSID(device gonetworkmanager.DeviceWireless, ssid string) error {
 	if ssid == "" {
-		return
+		return nil
 	}
-	_ = b.scanAndWaitWithOptions(device, hiddenSSIDScanOptions(ssid))
+	return b.scanAndWaitWithOptions(device, hiddenSSIDScanOptions(ssid))
 }
 
 // WatchNetworkChanges returns a channel that receives a value when NetworkManager
@@ -1119,8 +1126,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 	deviceInterface, _ := wirelessDevice.GetPropertyInterface()
+	var hiddenScanErr error
 	if isHidden {
-		b.scanHiddenSSID(wirelessDevice, ssid)
+		hiddenScanErr = b.scanHiddenSSID(wirelessDevice, ssid)
 	}
 
 	connection := map[string]map[string]interface{}{
@@ -1185,10 +1193,16 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		}
 	}
 	if err != nil {
+		if hiddenScanErr != nil {
+			return fmt.Errorf("failed to activate hidden network after targeted scan failure: %w; scan failure: %w", err, hiddenScanErr)
+		}
 		return err
 	}
 
 	if err := waitForActiveConnection(activeConn); err != nil {
+		if hiddenScanErr != nil {
+			return fmt.Errorf("hidden network activation failed after targeted scan failure: %w; scan failure: %w", err, hiddenScanErr)
+		}
 		return err
 	}
 

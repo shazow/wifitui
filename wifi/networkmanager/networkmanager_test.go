@@ -999,6 +999,37 @@ func TestJoinNetwork_HiddenScanFailureDoesNotAbortActivation(t *testing.T) {
 	}
 }
 
+func TestJoinNetwork_HiddenActivationFailureIncludesScanFailure(t *testing.T) {
+	device := &mockDeviceWireless{}
+	activationErr := errors.New("activation rejected")
+
+	b := newTestBackend(device, nil)
+	b.Settings = &mockSettings{}
+	b.NM = &mockNM{
+		getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
+			return []gonetworkmanager.Device{device}, nil
+		},
+		activateConnectionFunc: func(gonetworkmanager.Connection, gonetworkmanager.Device, *dbus.Object) (gonetworkmanager.ActiveConnection, error) {
+			return nil, activationErr
+		},
+	}
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		return errors.New("targeted scan rejected")
+	}
+
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
+	if err == nil {
+		t.Fatal("JoinNetwork(hidden) returned nil after activation failure")
+	}
+	if !errors.Is(err, activationErr) {
+		t.Fatalf("JoinNetwork(hidden) error %v does not retain activation error", err)
+	}
+	var scanFailure *wifi.ScanFailure
+	if !errors.As(err, &scanFailure) {
+		t.Fatalf("JoinNetwork(hidden) error %v does not retain targeted scan failure", err)
+	}
+}
+
 func TestIsNetworkChangeSignal(t *testing.T) {
 	devicePath := dbus.ObjectPath("/org/freedesktop/NetworkManager/Devices/1")
 	tests := []struct {
@@ -1109,6 +1140,11 @@ func TestIsUnavailableDBusError(t *testing.T) {
 		{
 			name: "name has no owner",
 			err:  testError("org.freedesktop.DBus.Error.NameHasNoOwner: Could not get owner"),
+			want: true,
+		},
+		{
+			name: "typed dbus error",
+			err:  dbus.Error{Name: "org.freedesktop.DBus.Error.ServiceUnknown", Body: []any{"not running"}},
 			want: true,
 		},
 		{

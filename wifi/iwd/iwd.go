@@ -3,6 +3,7 @@
 package iwd
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -190,9 +191,12 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		return wifi.NetworksResult{}, err
 	}
 
+	var scanErr error
 	if scan != wifi.ScanNever {
-		// Best effort scan
-		_ = conn.Object(iwdDest, station).Call(iwdStationIface+".Scan", 0)
+		scanErr = conn.Object(iwdDest, station).Call(iwdStationIface+".Scan", 0).Store()
+		if scanErr != nil {
+			scanErr = newScanFailure(scanErr)
+		}
 	}
 
 	// GetOrderedNetworks returns a(on): array of (object_path, signal_strength_in_centidBm)
@@ -323,7 +327,28 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		connections = append(connections, c)
 	}
 
-	return wifi.NetworksResult{Networks: connections}, nil
+	return wifi.NetworksResult{Networks: connections, ScanError: scanErr}, nil
+}
+
+func newScanFailure(cause error) *wifi.ScanFailure {
+	return &wifi.ScanFailure{
+		Backend: "iwd",
+		Stage:   wifi.ScanStageRequest,
+		Code:    dbusErrorName(cause),
+		Cause:   cause,
+	}
+}
+
+func dbusErrorName(err error) string {
+	var value dbus.Error
+	if errors.As(err, &value) {
+		return value.Name
+	}
+	var pointer *dbus.Error
+	if errors.As(err, &pointer) && pointer != nil {
+		return pointer.Name
+	}
+	return ""
 }
 
 func (b *Backend) ActivateNetwork(ssid string) error {

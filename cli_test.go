@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,7 @@ func TestRunListAll(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Test with all=true (should list invisible known networks)
-	if err := runList(&buf, false, true, false, mockBackend); err != nil {
+	if err := runList(&buf, io.Discard, false, true, false, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
@@ -42,7 +43,7 @@ func TestRunListDefault(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Default behavior (all=false)
-	if err := runList(&buf, false, false, false, mockBackend); err != nil {
+	if err := runList(&buf, io.Discard, false, false, false, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
@@ -61,11 +62,12 @@ func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 		t.Fatalf("failed to create mock backend: %v", err)
 	}
 	var buf bytes.Buffer
+	var errBuf bytes.Buffer
 
 	backend := cachedBackend{
 		Backend: mockBackend,
 	}
-	if err := runList(&buf, false, false, true, backend); err != nil {
+	if err := runList(&buf, &errBuf, false, false, true, backend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
@@ -73,8 +75,11 @@ func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 	if !strings.Contains(output, "Unencrypted_Honeypot") {
 		t.Errorf("runList() output missing cached network. got=%q", output)
 	}
-	if !strings.Contains(output, "Scan failed: scan not allowed") {
-		t.Errorf("runList() output missing scan warning. got=%q", output)
+	if strings.Contains(output, "Scan failed:") {
+		t.Errorf("runList() mixed scan warning into stdout. got=%q", output)
+	}
+	if !strings.Contains(errBuf.String(), "Scan failed: scan not allowed") {
+		t.Errorf("runList() stderr missing scan warning. got=%q", errBuf.String())
 	}
 }
 
@@ -88,7 +93,7 @@ func TestRunListScanForcesRefresh(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runList(&buf, false, false, true, &backend); err != nil {
+	if err := runList(&buf, io.Discard, false, false, true, &backend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 	if len(backend.listScans) != 1 || backend.listScans[0] != wifi.ScanForce {
@@ -177,6 +182,49 @@ type scanRecordingBackend struct {
 	listScans []wifi.ScanMode
 }
 
+type scanAndConnectFailureBackend struct {
+	wifi.Backend
+	scanErr       error
+	activationErr error
+}
+
+func (b scanAndConnectFailureBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+	result, err := b.Backend.ListNetworks(scan)
+	result.ScanError = b.scanErr
+	return result, err
+}
+
+func (b scanAndConnectFailureBackend) ActivateNetwork(string) error {
+	return b.activationErr
+}
+
+func TestAttemptConnectIncludesScanFailureWhenActivationFails(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	scanErr := &wifi.ScanFailure{
+		Backend: "NetworkManager",
+		Stage:   wifi.ScanStageRequest,
+		Cause:   errors.New("scan rejected"),
+	}
+	activationErr := errors.New("activation rejected")
+	backend := scanAndConnectFailureBackend{
+		Backend:       mockBackend,
+		scanErr:       scanErr,
+		activationErr: activationErr,
+	}
+
+	err = attemptConnect("Cafe", "", wifi.SecurityWPA, false, true, backend)
+	if !errors.Is(err, activationErr) {
+		t.Fatalf("attemptConnect() error %v does not retain activation failure", err)
+	}
+	var gotScanFailure *wifi.ScanFailure
+	if !errors.As(err, &gotScanFailure) {
+		t.Fatalf("attemptConnect() error %v does not retain scan failure", err)
+	}
+}
+
 func (b *scanRecordingBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	b.listScans = append(b.listScans, scan)
 	return b.Backend.ListNetworks(scan)
@@ -189,7 +237,7 @@ func TestRunListJSON(t *testing.T) {
 	}
 	var buf bytes.Buffer
 
-	if err := runList(&buf, true, true, false, mockBackend); err != nil {
+	if err := runList(&buf, io.Discard, true, true, false, mockBackend); err != nil {
 		t.Fatalf("runList() failed: %v", err)
 	}
 
@@ -212,6 +260,28 @@ func TestRunListJSON(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("runList() JSON output missing expected network. got=%q", buf.String())
+	}
+}
+
+func TestRunListJSONReportsScanFailureOnStderr(t *testing.T) {
+	mockBackend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	var output bytes.Buffer
+	var diagnostics bytes.Buffer
+
+	err = runList(&output, &diagnostics, true, true, true, cachedBackend{Backend: mockBackend})
+	if err != nil {
+		t.Fatalf("runList() failed: %v", err)
+	}
+
+	var networks []wifi.Network
+	if err := json.Unmarshal(output.Bytes(), &networks); err != nil {
+		t.Fatalf("runList() output is not valid JSON: %v. got=%q", err, output.String())
+	}
+	if !strings.Contains(diagnostics.String(), "Scan failed: scan not allowed") {
+		t.Fatalf("runList() stderr missing scan failure. got=%q", diagnostics.String())
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/shazow/wifitui/internal/helpers"
 	"github.com/shazow/wifitui/wifi"
 )
 
@@ -285,7 +286,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.statusMessage = ""
 		if msg.scanErr != nil {
-			m.statusMessage = fmt.Sprintf("Scan failed: %v", msg.scanErr)
+			m.statusMessage = fmt.Sprintf("Scan failed: %s", helpers.FormatScanFailure(msg.scanErr))
 		}
 	case networkSavedMsg:
 		return m, tea.Batch(

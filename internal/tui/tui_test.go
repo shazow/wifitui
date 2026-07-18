@@ -85,6 +85,31 @@ func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
 	}
 }
 
+func TestTuiModel_ScanWarningFormatsUnavailableDevice(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	m, err := NewModel(backend)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+
+	updatedModel, _ := m.Update(scanFinishedMsg{
+		scanErr: &wifi.ScanFailure{
+			Backend: "NetworkManager",
+			Stage:   wifi.ScanStageRequest,
+			Device:  "wlan0",
+			Cause:   wifi.ErrScanDeviceUnavailable,
+		},
+	})
+	m = updatedModel.(*model)
+
+	if view := m.View(); !strings.Contains(view, "Scan failed: wlan0 is unavailable") {
+		t.Fatalf("View does not contain formatted unavailable-device failure in\n%s", view)
+	}
+}
+
 func TestTuiModel_ManualScanForcesRefresh(t *testing.T) {
 	backend, err := mock.New()
 	if err != nil {

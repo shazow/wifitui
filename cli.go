@@ -93,7 +93,7 @@ func writeNetworkDetails(w io.Writer, c wifi.Network, secret string) error {
 	return writeErr
 }
 
-func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) error {
+func runList(w io.Writer, errW io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) error {
 	scanMode := wifi.ScanNever
 	if scan {
 		scanMode = wifi.ScanForce
@@ -108,6 +108,10 @@ func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) err
 		networks = filterVisibleNetworks(networks)
 	}
 
+	if result.ScanError != nil {
+		fmt.Fprintf(errW, "Scan failed: %s\n", helpers.FormatScanFailure(result.ScanError))
+	}
+
 	if jsonOut {
 		return writeJSON(w, networks)
 	}
@@ -115,10 +119,6 @@ func runList(w io.Writer, jsonOut bool, all bool, scan bool, b wifi.Backend) err
 	for _, c := range networks {
 		fmt.Fprintf(w, "%s\t%s\n", c.SSID, formatNetwork(c))
 	}
-	if result.ScanError != nil {
-		fmt.Fprintf(w, "Scan failed: %v\n", result.ScanError)
-	}
-
 	return nil
 }
 
@@ -164,15 +164,21 @@ func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, 
 	if shouldScan {
 		scan = wifi.ScanAuto
 	}
-	if _, err := b.ListNetworks(scan); err != nil {
+	result, err := b.ListNetworks(scan)
+	if err != nil {
 		return fmt.Errorf("failed to load networks: %w", err)
 	}
 
+	var connectErr error
 	if passphrase != "" || isHidden {
-		return b.JoinNetwork(ssid, passphrase, security, isHidden)
+		connectErr = b.JoinNetwork(ssid, passphrase, security, isHidden)
+	} else {
+		connectErr = b.ActivateNetwork(ssid)
 	}
-
-	return b.ActivateNetwork(ssid)
+	if connectErr != nil && result.ScanError != nil {
+		return fmt.Errorf("connection failed after scan failure: %w; scan failure: %w", connectErr, result.ScanError)
+	}
+	return connectErr
 }
 
 // RetryConfig defines the configuration for connection retries.

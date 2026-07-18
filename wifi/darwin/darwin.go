@@ -45,7 +45,7 @@ func New() (wifi.Backend, error) {
 	cmd := exec.Command("networksetup", "-listallhardwareports")
 	out, err := runWithOutput(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list hardware ports: %w", wifi.ErrOperationFailed)
+		return nil, fmt.Errorf("failed to list hardware ports: %w: %w", wifi.ErrOperationFailed, err)
 	}
 
 	device, err := findWifiDevice(string(out))
@@ -82,7 +82,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	cmd = exec.Command("networksetup", "-listpreferredwirelessnetworks", b.WifiInterface)
 	out, err = runWithOutput(cmd)
 	if err != nil {
-		return wifi.NetworksResult{}, fmt.Errorf("failed to list preferred networks: %w: %s", wifi.ErrOperationFailed, err)
+		return wifi.NetworksResult{}, fmt.Errorf("failed to list preferred networks: %w: %w", wifi.ErrOperationFailed, err)
 	}
 	knownSSIDs := make(map[string]bool)
 	scanner := bufio.NewScanner(strings.NewReader(string(out)))
@@ -97,7 +97,25 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	cmd = exec.Command("system_profiler", "SPAirPortDataType")
 	out, err = runWithOutput(cmd)
 	if err != nil {
-		return wifi.NetworksResult{}, fmt.Errorf("failed to scan for networks: %w", wifi.ErrOperationFailed)
+		var conns []wifi.Network
+		for ssid := range knownSSIDs {
+			conns = append(conns, wifi.Network{
+				SSID:        ssid,
+				IsActive:    ssid == currentSSID,
+				IsKnown:     true,
+				AutoConnect: true,
+			})
+		}
+		wifi.SortNetworks(conns)
+		return wifi.NetworksResult{
+			Networks: conns,
+			ScanError: &wifi.ScanFailure{
+				Backend: "macOS",
+				Stage:   wifi.ScanStageRequest,
+				Device:  b.WifiInterface,
+				Cause:   err,
+			},
+		}, nil
 	}
 
 	scannedNetworks := parseSystemProfilerOutput(string(out))
