@@ -134,7 +134,7 @@ func (c *TuiCommand) Execute(args []string) error {
 
 // Execute is the handler for the "list" subcommand
 func (c *ListCommand) Execute(args []string) error {
-	return runList(os.Stdout, c.JSON, c.All, c.Scan, b)
+	return runList(os.Stdout, os.Stderr, c.JSON, c.All, c.Scan, b)
 }
 
 // Execute is the handler for the "show" subcommand

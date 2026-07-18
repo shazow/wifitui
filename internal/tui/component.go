@@ -62,7 +62,7 @@ type (
 	networksLoadedMsg []wifi.Network // Sent when networks are fetched
 	scanFinishedMsg   struct {
 		networks []wifi.Network
-		isCached bool
+		scanErr  error
 	}
 	secretsLoadedMsg struct {
 		item   networkItem

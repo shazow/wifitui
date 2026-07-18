@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -55,7 +56,7 @@ func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
 	mockBackend := backend.(*mock.MockBackend)
 	mockBackend.ActionSleep = 0
 
-	m, err := NewModel(cachedBackend{
+	m, err := NewModel(scanFailureBackend{
 		Backend: backend,
 	})
 	if err != nil {
@@ -76,11 +77,36 @@ func TestTuiModel_ScanWarningKeepsListVisible(t *testing.T) {
 	if !strings.Contains(view, "Unencrypted_Honeypot") {
 		t.Errorf("View does not contain cached network after scan warning in\n%s", view)
 	}
-	if !strings.Contains(view, "Warning: scan failed; showing cached results") {
+	if !strings.Contains(view, "Scan failed: scan not allowed") {
 		t.Errorf("View does not contain scan warning in\n%s", view)
 	}
 	if strings.Contains(view, "Error:") {
 		t.Errorf("View should not show the fatal error screen for scan warning in\n%s", view)
+	}
+}
+
+func TestTuiModel_ScanWarningFormatsUnavailableDevice(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	m, err := NewModel(backend)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+
+	updatedModel, _ := m.Update(scanFinishedMsg{
+		scanErr: &wifi.ScanFailure{
+			Backend: "NetworkManager",
+			Stage:   wifi.ScanStageRequest,
+			Device:  "wlan0",
+			Cause:   wifi.ErrScanDeviceUnavailable,
+		},
+	})
+	m = updatedModel.(*model)
+
+	if view := m.View(); !strings.Contains(view, "Scan failed: wlan0 is unavailable") {
+		t.Fatalf("View does not contain formatted unavailable-device failure in\n%s", view)
 	}
 }
 
@@ -286,13 +312,13 @@ func TestTuiModel_EnableRadioSwitchesView(t *testing.T) {
 	}
 }
 
-type cachedBackend struct {
+type scanFailureBackend struct {
 	wifi.Backend
 }
 
-func (b cachedBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
+func (b scanFailureBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	result, err := b.Backend.ListNetworks(scan)
-	result.IsCached = true
+	result.ScanError = errors.New("scan not allowed")
 	return result, err
 }
 

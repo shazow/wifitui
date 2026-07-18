@@ -318,32 +318,114 @@ func TestListNetworks_ReturnsCachedListWhenScanFails(t *testing.T) {
 	if connections[0].SSID != "Cafe" {
 		t.Fatalf("ListNetworks(ScanAuto) returned SSID %q, want Cafe", connections[0].SSID)
 	}
-	if !result.IsCached {
-		t.Fatal("ListNetworks(ScanAuto) did not mark cached results after scan failure")
+	if result.ScanError == nil {
+		t.Fatal("ListNetworks(ScanAuto) did not return the non-fatal scan error")
 	}
-	if b.lastScan.IsZero() {
-		t.Fatal("ListNetworks(ScanAuto) did not record lastScan after a scan failure")
+	var scanFailure *wifi.ScanFailure
+	if !errors.As(result.ScanError, &scanFailure) {
+		t.Fatalf("ListNetworks(ScanAuto) returned scan error %T, want *wifi.ScanFailure", result.ScanError)
+	}
+	if scanFailure.Backend != "NetworkManager" || scanFailure.Stage != wifi.ScanStageRequest || scanFailure.Device != "wlan0" {
+		t.Fatalf("ListNetworks(ScanAuto) returned scan failure %#v", scanFailure)
+	}
+	if got, want := result.ScanError.Error(), "NetworkManager request on wlan0: scan not allowed"; got != want {
+		t.Fatalf("ListNetworks(ScanAuto) scan error = %q, want %q", got, want)
+	}
+	if b.lastScanAttempt.IsZero() {
+		t.Fatal("ListNetworks(ScanAuto) did not record lastScanAttempt after a scan failure")
 	}
 }
 
-func TestListNetworks_ClearsCachedWhenScanSucceeds(t *testing.T) {
+func TestListNetworks_ClassifiesUnavailableDeviceScanFailure(t *testing.T) {
+	device := &mockDeviceWireless{
+		managed: true,
+		state:   gonetworkmanager.NmDeviceStateUnavailable,
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
+		},
+	}
+	b := newTestBackend(device, nil)
+	// Simulate a device that became unavailable after it was selected and cached.
+	b.Device = device
+	rawErr := dbus.Error{
+		Name: "org.freedesktop.NetworkManager.Device.NotAllowed",
+		Body: []any{"Scanning not allowed while unavailable"},
+	}
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		return rawErr
+	}
+
+	result, err := b.ListNetworks(wifi.ScanForce)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanForce) returned fatal error: %v", err)
+	}
+	if !errors.Is(result.ScanError, wifi.ErrScanDeviceUnavailable) {
+		t.Fatalf("scan error %v does not classify the unavailable device", result.ScanError)
+	}
+	var scanFailure *wifi.ScanFailure
+	if !errors.As(result.ScanError, &scanFailure) {
+		t.Fatalf("scan error %T does not retain ScanFailure", result.ScanError)
+	}
+	if scanFailure.Code != rawErr.Name {
+		t.Fatalf("ScanFailure.Code = %q, want %q", scanFailure.Code, rawErr.Name)
+	}
+	var gotDBusError dbus.Error
+	if !errors.As(result.ScanError, &gotDBusError) {
+		t.Fatalf("scan error %v does not retain the D-Bus error", result.ScanError)
+	}
+}
+
+func TestListNetworks_ClassifiesDeniedScanPermission(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
 		},
 	}
 	b := newTestBackend(device, nil)
-	b.scanCached = true
 	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		return dbus.Error{Name: "org.freedesktop.NetworkManager.Device.NotAllowed", Body: []any{"Not authorized"}}
+	}
+	b.scanPermissionFunc = func() (string, error) { return "no", nil }
+
+	result, err := b.ListNetworks(wifi.ScanForce)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanForce) returned fatal error: %v", err)
+	}
+	if !errors.Is(result.ScanError, wifi.ErrScanPermissionDenied) {
+		t.Fatalf("scan error %v does not classify the denied permission", result.ScanError)
+	}
+}
+
+func TestListNetworks_ClearsScanErrorWhenScanSucceeds(t *testing.T) {
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 67),
+		},
+	}
+	b := newTestBackend(device, nil)
+	var scanCalls int
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		scanCalls++
+		if scanCalls == 1 {
+			return errors.New("previous scan failed")
+		}
 		return nil
 	}
 
-	result, err := b.ListNetworks(wifi.ScanAuto)
+	first, err := b.ListNetworks(wifi.ScanForce)
 	if err != nil {
-		t.Fatalf("ListNetworks(ScanAuto) returned error: %v", err)
+		t.Fatalf("first ListNetworks(ScanForce) returned error: %v", err)
 	}
-	if result.IsCached {
-		t.Fatal("ListNetworks(ScanAuto) marked cached results after successful scan")
+	if first.ScanError == nil {
+		t.Fatalf("first ListNetworks(ScanForce) = %#v, want scan failure", first)
+	}
+
+	result, err := b.ListNetworks(wifi.ScanForce)
+	if err != nil {
+		t.Fatalf("second ListNetworks(ScanForce) returned error: %v", err)
+	}
+	if result.ScanError != nil {
+		t.Fatalf("second ListNetworks(ScanForce) retained scan error after successful scan: %v", result.ScanError)
 	}
 }
 
@@ -354,7 +436,7 @@ func TestListNetworks_SkipsScanWhenLastScanFresh(t *testing.T) {
 		},
 	}
 	b := newTestBackend(device, nil)
-	b.lastScan = time.Now().Add(-10 * time.Second)
+	b.lastScanAttempt = time.Now().Add(-10 * time.Second)
 	b.scanInterval = 30 * time.Second
 	scanCalled := false
 	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
@@ -382,7 +464,7 @@ func TestListNetworks_ForceScanWhenLastScanFresh(t *testing.T) {
 		},
 	}
 	b := newTestBackend(device, nil)
-	b.lastScan = time.Now().Add(-10 * time.Second)
+	b.lastScanAttempt = time.Now().Add(-10 * time.Second)
 	b.scanInterval = 30 * time.Second
 	scanCalled := false
 	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
@@ -422,8 +504,8 @@ func TestListNetworks_RequestsScanWhenLastScanUnset(t *testing.T) {
 	if !scanCalled {
 		t.Fatal("ListNetworks(ScanAuto) skipped scan even though LastScan was unset")
 	}
-	if b.lastScan.IsZero() {
-		t.Fatal("ListNetworks(ScanAuto) did not record lastScan after requesting a scan")
+	if b.lastScanAttempt.IsZero() {
+		t.Fatal("ListNetworks(ScanAuto) did not record lastScanAttempt after requesting a scan")
 	}
 }
 
@@ -432,19 +514,23 @@ func TestScanIfStale_CoalescesConcurrentScans(t *testing.T) {
 	b := newTestBackend(device, nil)
 
 	var scanCalls atomic.Int32
-	enteredScan := make(chan struct{}, 2)
+	enteredScan := make(chan struct{}, 1)
 	releaseScan := make(chan struct{})
+	waiting := make(chan struct{}, 1)
+	scanFailure := errors.New("scan failed")
 	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
 		scanCalls.Add(1)
 		enteredScan <- struct{}{}
 		<-releaseScan
-		return nil
+		return scanFailure
 	}
+	b.testHookScanWait = func() { waiting <- struct{}{} }
 
 	var wg sync.WaitGroup
+	errs := make(chan error, 2)
 	scan := func() {
 		defer wg.Done()
-		b.scanIfStale(device)
+		errs <- b.scanIfStale(device)
 	}
 
 	wg.Add(1)
@@ -453,19 +539,20 @@ func TestScanIfStale_CoalescesConcurrentScans(t *testing.T) {
 
 	wg.Add(1)
 	go scan()
-
-	select {
-	case <-enteredScan:
-	case <-time.After(20 * time.Millisecond):
-	}
+	<-waiting
 	close(releaseScan)
 	wg.Wait()
 	if got := scanCalls.Load(); got != 1 {
 		t.Fatalf("scanIfStale made %d scan attempts, want 1", got)
 	}
+	for range 2 {
+		if err := <-errs; !errors.Is(err, scanFailure) {
+			t.Fatalf("coalesced scan error = %v, want %v", err, scanFailure)
+		}
+	}
 }
 
-func TestListNetworks_DefersRetryAfterScanFailure(t *testing.T) {
+func TestListNetworks_AutonomousResultsDoNotRepeatScanFailure(t *testing.T) {
 	device := &mockDeviceWireless{
 		accessPoints: []gonetworkmanager.AccessPoint{
 			newMockAccessPoint("Deferred", "00:00:00:00:00:05", 64),
@@ -480,15 +567,89 @@ func TestListNetworks_DefersRetryAfterScanFailure(t *testing.T) {
 		return errors.New("scan not allowed")
 	}
 
-	for range 2 {
-		_, err := b.ListNetworks(wifi.ScanAuto)
-		if err != nil {
-			t.Fatalf("ListNetworks(ScanAuto) returned error: %v", err)
-		}
+	first, err := b.ListNetworks(wifi.ScanAuto)
+	if err != nil {
+		t.Fatalf("first ListNetworks(ScanAuto) returned error: %v", err)
+	}
+	if first.ScanError == nil {
+		t.Fatal("first ListNetworks(ScanAuto) did not return scan failure")
+	}
+
+	// NetworkManager may refresh its access points autonomously while the
+	// client's retry backoff is still active.
+	device.accessPoints = []gonetworkmanager.AccessPoint{
+		newMockAccessPoint("Autonomous", "00:00:00:00:00:06", 72),
+	}
+	second, err := b.ListNetworks(wifi.ScanAuto)
+	if err != nil {
+		t.Fatalf("second ListNetworks(ScanAuto) returned error: %v", err)
+	}
+	if second.ScanError != nil {
+		t.Fatalf("backoff-only ListNetworks(ScanAuto) repeated stale scan failure: %v", second.ScanError)
+	}
+	if len(second.Networks) != 1 || second.Networks[0].SSID != "Autonomous" {
+		t.Fatalf("second ListNetworks(ScanAuto) returned %#v, want autonomous results", second.Networks)
 	}
 
 	if got := scanCalls.Load(); got != 1 {
 		t.Fatalf("ListNetworks(ScanAuto) made %d scan attempts, want 1", got)
+	}
+}
+
+func TestScanHiddenSSID_WaitsForDifferentInFlightScan(t *testing.T) {
+	device := &mockDeviceWireless{}
+	b := newTestBackend(device, nil)
+
+	type scanCall struct {
+		options map[string]dbus.Variant
+		release chan struct{}
+	}
+	calls := make(chan scanCall, 2)
+	waiting := make(chan struct{}, 1)
+	b.scanFunc = func(_ gonetworkmanager.DeviceWireless, options map[string]dbus.Variant) error {
+		call := scanCall{options: options, release: make(chan struct{})}
+		calls <- call
+		<-call.release
+		return nil
+	}
+	b.testHookScanWait = func() { waiting <- struct{}{} }
+
+	normalDone := make(chan error, 1)
+	go func() { normalDone <- b.scanNow(device) }()
+	normal := <-calls
+	if len(normal.options) != 0 {
+		t.Fatalf("normal scan options = %#v, want none", normal.options)
+	}
+
+	hiddenDone := make(chan error, 1)
+	go func() { hiddenDone <- b.scanHiddenSSID(device, "HiddenNet") }()
+	<-waiting
+	select {
+	case call := <-calls:
+		close(call.release)
+		t.Fatal("targeted scan started before the in-flight normal scan completed")
+	default:
+	}
+
+	close(normal.release)
+	if err := <-normalDone; err != nil {
+		t.Fatalf("normal scan returned error: %v", err)
+	}
+
+	targeted := <-calls
+	variant, ok := targeted.options["ssids"]
+	if !ok {
+		close(targeted.release)
+		t.Fatal("targeted scan did not include ssids option")
+	}
+	ssids, ok := variant.Value().([][]byte)
+	if !ok || len(ssids) != 1 || string(ssids[0]) != "HiddenNet" {
+		close(targeted.release)
+		t.Fatalf("targeted scan ssids = %#v, want HiddenNet", variant.Value())
+	}
+	close(targeted.release)
+	if err := <-hiddenDone; err != nil {
+		t.Fatalf("targeted scan returned error: %v", err)
 	}
 }
 
@@ -929,6 +1090,37 @@ func TestJoinNetwork_HiddenScanFailureDoesNotAbortActivation(t *testing.T) {
 	}
 }
 
+func TestJoinNetwork_HiddenActivationFailureIncludesScanFailure(t *testing.T) {
+	device := &mockDeviceWireless{}
+	activationErr := errors.New("activation rejected")
+
+	b := newTestBackend(device, nil)
+	b.Settings = &mockSettings{}
+	b.NM = &mockNM{
+		getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
+			return []gonetworkmanager.Device{device}, nil
+		},
+		activateConnectionFunc: func(gonetworkmanager.Connection, gonetworkmanager.Device, *dbus.Object) (gonetworkmanager.ActiveConnection, error) {
+			return nil, activationErr
+		},
+	}
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		return errors.New("targeted scan rejected")
+	}
+
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
+	if err == nil {
+		t.Fatal("JoinNetwork(hidden) returned nil after activation failure")
+	}
+	if !errors.Is(err, activationErr) {
+		t.Fatalf("JoinNetwork(hidden) error %v does not retain activation error", err)
+	}
+	var scanFailure *wifi.ScanFailure
+	if !errors.As(err, &scanFailure) {
+		t.Fatalf("JoinNetwork(hidden) error %v does not retain targeted scan failure", err)
+	}
+}
+
 func TestIsNetworkChangeSignal(t *testing.T) {
 	devicePath := dbus.ObjectPath("/org/freedesktop/NetworkManager/Devices/1")
 	tests := []struct {
@@ -1039,6 +1231,11 @@ func TestIsUnavailableDBusError(t *testing.T) {
 		{
 			name: "name has no owner",
 			err:  testError("org.freedesktop.DBus.Error.NameHasNoOwner: Could not get owner"),
+			want: true,
+		},
+		{
+			name: "typed dbus error",
+			err:  dbus.Error{Name: "org.freedesktop.DBus.Error.ServiceUnknown", Body: []any{"not running"}},
 			want: true,
 		},
 		{

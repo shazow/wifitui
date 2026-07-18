@@ -3,41 +3,12 @@
 package darwin
 
 import (
-	"bufio"
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strings"
 
 	"github.com/shazow/wifitui/wifi"
 )
-
-// runWithOutput wraps exec.Command to capture stderr and wrap errors.
-func runWithOutput(c *exec.Cmd) ([]byte, error) {
-	var stderr strings.Builder
-	c.Stderr = &stderr
-	out, err := c.Output()
-	if err != nil {
-		return out, fmt.Errorf("failed to run command: %s: %w: %s", c.String(), err, stderr.String())
-	}
-	return out, nil
-}
-
-// runOnly wraps exec.Command for commands where we don't care about stdout.
-func runOnly(c *exec.Cmd) error {
-	var stderr strings.Builder
-	c.Stderr = &stderr
-	err := c.Run()
-	if err != nil {
-		return fmt.Errorf("failed to run command: %s: %w: %s", c.String(), err, stderr.String())
-	}
-	return nil
-}
-
-// Backend implements the wifi.Backend interface for macOS.
-type Backend struct {
-	WifiInterface string
-}
 
 // New creates a new darwin.Backend.
 func New() (wifi.Backend, error) {
@@ -45,7 +16,7 @@ func New() (wifi.Backend, error) {
 	cmd := exec.Command("networksetup", "-listallhardwareports")
 	out, err := runWithOutput(cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list hardware ports: %w", wifi.ErrOperationFailed)
+		return nil, fmt.Errorf("failed to list hardware ports: %w: %w", wifi.ErrOperationFailed, err)
 	}
 
 	device, err := findWifiDevice(string(out))
@@ -54,101 +25,6 @@ func New() (wifi.Backend, error) {
 	}
 
 	return &Backend{WifiInterface: device}, nil
-}
-
-// ListNetworks returns all networks.
-func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
-	enabled, err := b.IsWirelessEnabled()
-	if err != nil {
-		return wifi.NetworksResult{}, err
-	}
-	if !enabled {
-		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
-	}
-
-	// Get current network
-	cmd := exec.Command("networksetup", "-getairportnetwork", b.WifiInterface)
-	out, err := runWithOutput(cmd)
-	var currentSSID string
-	if err == nil {
-		re := regexp.MustCompile(`Current Wi-Fi Network: (.+)`)
-		matches := re.FindStringSubmatch(string(out))
-		if len(matches) > 1 {
-			currentSSID = strings.TrimSpace(matches[1])
-		}
-	}
-
-	// Get known networks
-	cmd = exec.Command("networksetup", "-listpreferredwirelessnetworks", b.WifiInterface)
-	out, err = runWithOutput(cmd)
-	if err != nil {
-		return wifi.NetworksResult{}, fmt.Errorf("failed to list preferred networks: %w: %s", wifi.ErrOperationFailed, err)
-	}
-	knownSSIDs := make(map[string]bool)
-	scanner := bufio.NewScanner(strings.NewReader(string(out)))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line != "" && !strings.HasPrefix(line, "Preferred") {
-			knownSSIDs[line] = true
-		}
-	}
-
-	// Scan for visible networks using system_profiler (airport command is deprecated)
-	cmd = exec.Command("system_profiler", "SPAirPortDataType")
-	out, err = runWithOutput(cmd)
-	if err != nil {
-		return wifi.NetworksResult{}, fmt.Errorf("failed to scan for networks: %w", wifi.ErrOperationFailed)
-	}
-
-	scannedNetworks := parseSystemProfilerOutput(string(out))
-
-	// Aggregate networks by SSID
-	aggregatedConns := make(map[string]wifi.Network)
-
-	for _, net := range scannedNetworks {
-		isKnown := knownSSIDs[net.ssid]
-		isActive := net.isActive || net.ssid == currentSSID
-
-		ap := wifi.AccessPoint{Strength: rssiToStrength(net.rssi)}
-
-		if conn, exists := aggregatedConns[net.ssid]; exists {
-			conn.AccessPoints = append(conn.AccessPoints, ap)
-			// Merge flags if necessary (e.g. if one BSSID is active, the whole SSID is active)
-			if isActive {
-				conn.IsActive = true
-			}
-			aggregatedConns[net.ssid] = conn
-		} else {
-			aggregatedConns[net.ssid] = wifi.Network{
-				SSID:         net.ssid,
-				IsActive:     isActive,
-				IsKnown:      isKnown,
-				IsVisible:    true,
-				AccessPoints: []wifi.AccessPoint{ap},
-				IsSecure:     net.security != wifi.SecurityOpen,
-				Security:     net.security,
-				AutoConnect:  isKnown,
-			}
-		}
-	}
-
-	var conns []wifi.Network
-	for _, conn := range aggregatedConns {
-		conns = append(conns, conn)
-	}
-
-	// Add known networks that are not visible
-	for ssid := range knownSSIDs {
-		if _, exists := aggregatedConns[ssid]; !exists {
-			conns = append(conns, wifi.Network{
-				SSID:        ssid,
-				IsKnown:     true,
-				AutoConnect: true,
-			})
-		}
-	}
-
-	return wifi.NetworksResult{Networks: conns}, nil
 }
 
 // ActivateNetwork activates a known network.

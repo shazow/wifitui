@@ -3,6 +3,7 @@
 package iwd
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,8 +11,10 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
-const connectionTimeout = 30 * time.Second
+const scanCompletionTimeout = 30 * time.Second
 const propertyChangeTimeout = 5 * time.Second
+
+const dbusPropertiesIface = "org.freedesktop.DBus.Properties"
 
 // IWD constants
 const (
@@ -190,9 +193,9 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		return wifi.NetworksResult{}, err
 	}
 
+	var scanErr error
 	if scan != wifi.ScanNever {
-		// Best effort scan
-		_ = conn.Object(iwdDest, station).Call(iwdStationIface+".Scan", 0)
+		scanErr = scanAndWait(conn, station)
 	}
 
 	// GetOrderedNetworks returns a(on): array of (object_path, signal_strength_in_centidBm)
@@ -323,7 +326,117 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		connections = append(connections, c)
 	}
 
-	return wifi.NetworksResult{Networks: connections}, nil
+	return wifi.NetworksResult{Networks: connections, ScanError: scanErr}, nil
+}
+
+func scanAndWait(conn *dbus.Conn, station dbus.ObjectPath) error {
+	signals := make(chan *dbus.Signal, 10)
+	conn.Signal(signals)
+	defer conn.RemoveSignal(signals)
+
+	matchOptions := []dbus.MatchOption{
+		dbus.WithMatchObjectPath(station),
+		dbus.WithMatchInterface(dbusPropertiesIface),
+		dbus.WithMatchMember("PropertiesChanged"),
+		dbus.WithMatchArg(0, iwdStationIface),
+	}
+	if err := conn.AddMatchSignal(matchOptions...); err != nil {
+		return newScanFailure(wifi.ScanStageSetup, fmt.Errorf("subscribe to scan completion: %w", err))
+	}
+	defer conn.RemoveMatchSignal(matchOptions...)
+
+	if err := conn.Object(iwdDest, station).Call(iwdStationIface+".Scan", 0).Err; err != nil {
+		return newScanFailure(wifi.ScanStageRequest, err)
+	}
+
+	return waitForScanCompletion(signals, station, scanCompletionTimeout)
+}
+
+func waitForScanCompletion(signals <-chan *dbus.Signal, station dbus.ObjectPath, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	scanningStarted := false
+	for {
+		select {
+		case signal, ok := <-signals:
+			if !ok {
+				cause := fmt.Errorf("%w: D-Bus signal channel closed", wifi.ErrScanProtocol)
+				return newScanFailure(wifi.ScanStageCompletion, cause)
+			}
+
+			scanning, matched, err := scanStateChange(signal, station)
+			if err != nil {
+				return newScanFailure(wifi.ScanStageCompletion, err)
+			}
+			if !matched {
+				continue
+			}
+			if scanning {
+				scanningStarted = true
+				continue
+			}
+			if scanningStarted {
+				return nil
+			}
+		case <-timer.C:
+			cause := fmt.Errorf("%w after %s waiting for Scanning to complete", wifi.ErrScanTimeout, timeout)
+			return newScanFailure(wifi.ScanStageCompletion, cause)
+		}
+	}
+}
+
+func scanStateChange(signal *dbus.Signal, station dbus.ObjectPath) (scanning, matched bool, err error) {
+	if signal == nil {
+		return false, false, fmt.Errorf("%w: received an empty D-Bus signal", wifi.ErrScanProtocol)
+	}
+	if signal.Name != dbusPropertiesIface+".PropertiesChanged" || signal.Path != station {
+		return false, false, nil
+	}
+	if len(signal.Body) < 2 {
+		return false, false, fmt.Errorf("%w: PropertiesChanged has %d body fields", wifi.ErrScanProtocol, len(signal.Body))
+	}
+	iface, ok := signal.Body[0].(string)
+	if !ok {
+		return false, false, fmt.Errorf("%w: PropertiesChanged interface has type %T", wifi.ErrScanProtocol, signal.Body[0])
+	}
+	if iface != iwdStationIface {
+		return false, false, nil
+	}
+	changed, ok := signal.Body[1].(map[string]dbus.Variant)
+	if !ok {
+		return false, false, fmt.Errorf("%w: PropertiesChanged values have type %T", wifi.ErrScanProtocol, signal.Body[1])
+	}
+	value, ok := changed["Scanning"]
+	if !ok {
+		return false, false, nil
+	}
+	scanning, ok = value.Value().(bool)
+	if !ok {
+		return false, false, fmt.Errorf("%w: Scanning has type %T", wifi.ErrScanProtocol, value.Value())
+	}
+	return scanning, true, nil
+}
+
+func newScanFailure(stage wifi.ScanStage, cause error) *wifi.ScanFailure {
+	return &wifi.ScanFailure{
+		Backend: "iwd",
+		Stage:   stage,
+		Code:    dbusErrorName(cause),
+		Cause:   cause,
+	}
+}
+
+func dbusErrorName(err error) string {
+	var value dbus.Error
+	if errors.As(err, &value) {
+		return value.Name
+	}
+	var pointer *dbus.Error
+	if errors.As(err, &pointer) && pointer != nil {
+		return pointer.Name
+	}
+	return ""
 }
 
 func (b *Backend) ActivateNetwork(ssid string) error {

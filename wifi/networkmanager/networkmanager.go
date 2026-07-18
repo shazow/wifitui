@@ -4,6 +4,7 @@ package networkmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/user"
 	"strings"
@@ -21,6 +22,8 @@ const (
 	pollingInterval   = time.Second
 	scanTimeout       = 30 * time.Second
 	scanInterval      = 30 * time.Second
+	diagnosticTimeout = 2 * time.Second
+	nmScanPermission  = "org.freedesktop.NetworkManager.wifi.scan"
 )
 
 const (
@@ -39,12 +42,21 @@ type Backend struct {
 	accessPoints      map[networkKey]gonetworkmanager.AccessPoint
 	networkKeysBySSID map[string][]networkKey
 
-	scanFunc     func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error
-	scanInterval time.Duration
-	lastScan     time.Time
-	scanCached   bool
-	scanMu       sync.Mutex
-	scanDone     chan struct{}
+	scanFunc func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error
+	// scanPermissionFunc is overridden by tests to avoid a real D-Bus call.
+	scanPermissionFunc func() (string, error)
+	// testHookScanWait is overridden by tests to observe scan coordination.
+	testHookScanWait func()
+	scanInterval     time.Duration
+	lastScanAttempt  time.Time
+	scanMu           sync.Mutex
+	scanInFlight     *scanOperation
+}
+
+type scanOperation struct {
+	key  string
+	done chan struct{}
+	err  error
 }
 
 type networkKey struct {
@@ -103,10 +115,26 @@ func isUnavailableDBusError(err error) bool {
 	if err == nil {
 		return false
 	}
+	if name := dbusErrorName(err); name != "" {
+		return name == "org.freedesktop.DBus.Error.ServiceUnknown" ||
+			name == "org.freedesktop.DBus.Error.NameHasNoOwner"
+	}
 	msg := err.Error()
 	return strings.Contains(msg, "org.freedesktop.DBus.Error.ServiceUnknown") ||
 		strings.Contains(msg, "org.freedesktop.DBus.Error.NameHasNoOwner") ||
 		strings.Contains(msg, "The name is not activatable")
+}
+
+func dbusErrorName(err error) string {
+	var value dbus.Error
+	if errors.As(err, &value) {
+		return value.Name
+	}
+	var pointer *dbus.Error
+	if errors.As(err, &pointer) && pointer != nil {
+		return pointer.Name
+	}
+	return ""
 }
 
 func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
@@ -150,7 +178,10 @@ func (b *Backend) scanAndWait(device gonetworkmanager.DeviceWireless) error {
 
 func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless, options map[string]dbus.Variant) error {
 	if b.scanFunc != nil {
-		return b.scanFunc(device, options)
+		if err := b.scanFunc(device, options); err != nil {
+			return b.scanRequestFailure(device, err)
+		}
+		return nil
 	}
 
 	var baseline time.Duration
@@ -160,7 +191,7 @@ func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless,
 
 	conn, err := dbus.SystemBus()
 	if err != nil {
-		return fmt.Errorf("failed to connect to dbus: %w", err)
+		return newScanFailure(device, wifi.ScanStageSetup, fmt.Errorf("connect to system D-Bus: %w", err))
 	}
 
 	path := device.GetPath()
@@ -169,7 +200,7 @@ func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless,
 	// We need to add the match rule to receiving signals matching this rule.
 	call := conn.BusObject().Call("org.freedesktop.DBus.AddMatch", 0, rule)
 	if call.Err != nil {
-		return fmt.Errorf("failed to add match rule: %w", call.Err)
+		return newScanFailure(device, wifi.ScanStageSetup, fmt.Errorf("subscribe to scan completion: %w", call.Err))
 	}
 	defer conn.BusObject().Call("org.freedesktop.DBus.RemoveMatch", 0, rule)
 
@@ -183,7 +214,7 @@ func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless,
 	// Alternatively we can try to autodetect intervals that are too frequent by seeing how often scanTimeout is getting triggered, but this is not ideal.
 	err = b.requestScan(device, options)
 	if err != nil {
-		return err
+		return b.scanRequestFailure(device, err)
 	}
 
 	// Wait for the signal
@@ -192,7 +223,15 @@ func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless,
 
 	for {
 		select {
-		case sig := <-c:
+		case sig, ok := <-c:
+			if !ok {
+				cause := fmt.Errorf("%w: D-Bus signal channel closed", wifi.ErrScanProtocol)
+				return newScanFailure(device, wifi.ScanStageCompletion, cause)
+			}
+			if sig == nil {
+				cause := fmt.Errorf("%w: received an empty D-Bus signal", wifi.ErrScanProtocol)
+				return newScanFailure(device, wifi.ScanStageCompletion, cause)
+			}
 			// Signal body for PropertiesChanged:
 			// interface_name (string)
 			// changed_properties (map[string]dbus.Variant)
@@ -214,7 +253,11 @@ func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless,
 			}
 			value, ok := variant.Value().(int64)
 			if !ok {
-				return nil
+				cause := fmt.Errorf("%w: LastScan has type %T", wifi.ErrScanProtocol, variant.Value())
+				return newScanFailure(device, wifi.ScanStageCompletion, cause)
+			}
+			if value < 0 {
+				continue
 			}
 			var nextScan time.Duration
 			if value > 0 {
@@ -224,9 +267,94 @@ func (b *Backend) scanAndWaitWithOptions(device gonetworkmanager.DeviceWireless,
 				return nil
 			}
 		case <-timer.C:
-			return fmt.Errorf("scan timed out")
+			cause := fmt.Errorf("%w after %s waiting for LastScan to change", wifi.ErrScanTimeout, scanTimeout)
+			return newScanFailure(device, wifi.ScanStageCompletion, cause)
 		}
 	}
+}
+
+func newScanFailure(device gonetworkmanager.DeviceWireless, stage wifi.ScanStage, cause error) *wifi.ScanFailure {
+	deviceInterface, _ := device.GetPropertyInterface()
+	return &wifi.ScanFailure{
+		Backend: "NetworkManager",
+		Stage:   stage,
+		Device:  deviceInterface,
+		Code:    dbusErrorName(cause),
+		Cause:   cause,
+	}
+}
+
+func (b *Backend) scanRequestFailure(device gonetworkmanager.DeviceWireless, cause error) error {
+	deviceInterface, _ := device.GetPropertyInterface()
+	if isUnavailableDBusError(cause) {
+		cause = fmt.Errorf("%w: %w", wifi.ErrNotAvailable, cause)
+		return &wifi.ScanFailure{
+			Backend: "NetworkManager",
+			Stage:   wifi.ScanStageRequest,
+			Device:  deviceInterface,
+			Code:    dbusErrorName(cause),
+			Cause:   cause,
+		}
+	}
+
+	managed, managedErr := device.GetPropertyManaged()
+	state, stateErr := device.GetPropertyState()
+
+	if managedErr == nil && !managed {
+		cause = fmt.Errorf("%w (%s is unmanaged): %w", wifi.ErrScanDeviceUnavailable, deviceInterface, cause)
+	} else if stateErr == nil && (state == gonetworkmanager.NmDeviceStateUnmanaged || state == gonetworkmanager.NmDeviceStateUnavailable) {
+		cause = fmt.Errorf("%w (%s is %s): %w", wifi.ErrScanDeviceUnavailable, deviceInterface, scanDeviceStateName(state), cause)
+	} else if name := dbusErrorName(cause); name != "" {
+		permission, permissionErr := b.getScanPermission()
+		switch {
+		case permissionErr == nil && permission == "no":
+			cause = fmt.Errorf("%w: %w", wifi.ErrScanPermissionDenied, cause)
+		case permissionErr == nil && permission == "auth":
+			cause = fmt.Errorf("%w: %w", wifi.ErrScanAuthRequired, cause)
+		case strings.HasSuffix(name, ".AccessDenied") || strings.HasSuffix(name, ".PermissionDenied"):
+			cause = fmt.Errorf("%w: %w", wifi.ErrScanPermissionDenied, cause)
+		}
+	}
+
+	return &wifi.ScanFailure{
+		Backend: "NetworkManager",
+		Stage:   wifi.ScanStageRequest,
+		Device:  deviceInterface,
+		Code:    dbusErrorName(cause),
+		Cause:   cause,
+	}
+}
+
+func scanDeviceStateName(state gonetworkmanager.NmDeviceState) string {
+	switch state {
+	case gonetworkmanager.NmDeviceStateUnmanaged:
+		return "unmanaged"
+	case gonetworkmanager.NmDeviceStateUnavailable:
+		return "unavailable"
+	default:
+		return state.String()
+	}
+}
+
+func (b *Backend) getScanPermission() (string, error) {
+	if b.scanPermissionFunc != nil {
+		return b.scanPermissionFunc()
+	}
+
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return "", err
+	}
+	var permissions map[string]string
+	ctx, cancel := context.WithTimeout(context.Background(), diagnosticTimeout)
+	defer cancel()
+	err = conn.Object(gonetworkmanager.NetworkManagerInterface, gonetworkmanager.NetworkManagerObjectPath).
+		CallWithContext(ctx, gonetworkmanager.NetworkManagerGetPermissions, 0).
+		Store(&permissions)
+	if err != nil {
+		return "", err
+	}
+	return permissions[nmScanPermission], nil
 }
 
 func (b *Backend) requestScan(device gonetworkmanager.DeviceWireless, options map[string]dbus.Variant) error {
@@ -248,11 +376,11 @@ func hiddenSSIDScanOptions(ssid string) map[string]dbus.Variant {
 	}
 }
 
-func (b *Backend) scanHiddenSSID(device gonetworkmanager.DeviceWireless, ssid string) {
+func (b *Backend) scanHiddenSSID(device gonetworkmanager.DeviceWireless, ssid string) error {
 	if ssid == "" {
-		return
+		return nil
 	}
-	_ = b.scanAndWaitWithOptions(device, hiddenSSIDScanOptions(ssid))
+	return b.scanWithOptions(device, true, "ssid:"+ssid, hiddenSSIDScanOptions(ssid))
 }
 
 // WatchNetworkChanges returns a channel that receives a value when NetworkManager
@@ -357,56 +485,68 @@ func isNetworkChangeSignal(sig *dbus.Signal, devicePath dbus.ObjectPath) bool {
 	}
 }
 
-func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) bool {
+func (b *Backend) scanIfStale(device gonetworkmanager.DeviceWireless) error {
 	return b.scan(device, false)
 }
 
-func (b *Backend) scanNow(device gonetworkmanager.DeviceWireless) bool {
+func (b *Backend) scanNow(device gonetworkmanager.DeviceWireless) error {
 	return b.scan(device, true)
 }
 
-func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) bool {
+func (b *Backend) scan(device gonetworkmanager.DeviceWireless, force bool) error {
+	return b.scanWithOptions(device, force, "", nil)
+}
+
+// scanWithOptions serializes scan requests so a LastScan update from an older
+// request cannot satisfy a later request with different options. Requests with
+// the same key share the in-flight result; requests with different keys wait
+// and then establish their own LastScan baseline in scanAndWaitWithOptions.
+func (b *Backend) scanWithOptions(device gonetworkmanager.DeviceWireless, force bool, key string, options map[string]dbus.Variant) error {
 	interval := scanInterval
 	if b.scanInterval > 0 {
 		interval = b.scanInterval
 	}
 
-	var done chan struct{}
-	runScan := false
-
-	b.scanMu.Lock()
-	if force || b.lastScan.IsZero() || time.Since(b.lastScan) >= interval {
-		if b.scanDone != nil {
-			done = b.scanDone
-		} else {
-			done = make(chan struct{})
-			b.scanDone = done
-			runScan = true
-		}
-	} else {
-		cached := b.scanCached
-		b.scanMu.Unlock()
-		return cached
-	}
-	b.scanMu.Unlock()
-
-	if runScan {
-		err := b.scanAndWait(device)
+	for {
 		b.scanMu.Lock()
-		b.lastScan = time.Now()
-		b.scanCached = err != nil
-		close(done)
-		b.scanDone = nil
-		cached := b.scanCached
-		b.scanMu.Unlock()
-		return cached
-	} else if done != nil {
-		<-done
-	}
+		if current := b.scanInFlight; current != nil {
+			sameRequest := current.key == key
+			b.scanMu.Unlock()
+			if b.testHookScanWait != nil {
+				b.testHookScanWait()
+			}
+			<-current.done
+			if sameRequest {
+				return current.err
+			}
+			continue
+		}
 
-	b.scanMu.Lock()
-	defer b.scanMu.Unlock()
-	return b.scanCached
+		// Only ordinary automatic scans use the retry interval. A skipped call
+		// did not attempt or join the previous scan, so it must not inherit that
+		// scan's error.
+		if key == "" && !force && !b.lastScanAttempt.IsZero() && time.Since(b.lastScanAttempt) < interval {
+			b.scanMu.Unlock()
+			return nil
+		}
+
+		operation := &scanOperation{
+			key:  key,
+			done: make(chan struct{}),
+		}
+		b.scanInFlight = operation
+		b.scanMu.Unlock()
+
+		operation.err = b.scanAndWaitWithOptions(device, options)
+		b.scanMu.Lock()
+		if key == "" {
+			b.lastScanAttempt = time.Now()
+		}
+		close(operation.done)
+		b.scanInFlight = nil
+		b.scanMu.Unlock()
+		return operation.err
+	}
 }
 
 func securityFromAccessPoint(flags, wpaFlags, rsnFlags uint32) (wifi.SecurityType, bool) {
@@ -599,12 +739,12 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		return wifi.NetworksResult{}, err
 	}
 
-	isCached := false
+	var scanErr error
 	switch scan {
 	case wifi.ScanAuto:
-		isCached = b.scanIfStale(wirelessDevice)
+		scanErr = b.scanIfStale(wirelessDevice)
 	case wifi.ScanForce:
-		isCached = b.scanNow(wirelessDevice)
+		scanErr = b.scanNow(wirelessDevice)
 	}
 
 	knownConnections, err := b.Settings.ListConnections()
@@ -777,7 +917,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 	b.networkKeysBySSID = newNetworkKeysBySSID
 
 	wifi.SortNetworks(conns)
-	return wifi.NetworksResult{Networks: conns, IsCached: isCached}, nil
+	return wifi.NetworksResult{Networks: conns, ScanError: scanErr}, nil
 }
 
 func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
@@ -1005,8 +1145,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return err
 	}
 	deviceInterface, _ := wirelessDevice.GetPropertyInterface()
+	var hiddenScanErr error
 	if isHidden {
-		b.scanHiddenSSID(wirelessDevice, ssid)
+		hiddenScanErr = b.scanHiddenSSID(wirelessDevice, ssid)
 	}
 
 	connection := map[string]map[string]interface{}{
@@ -1071,10 +1212,16 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		}
 	}
 	if err != nil {
+		if hiddenScanErr != nil {
+			return fmt.Errorf("failed to activate hidden network after targeted scan failure: %w; scan failure: %w", err, hiddenScanErr)
+		}
 		return err
 	}
 
 	if err := waitForActiveConnection(activeConn); err != nil {
+		if hiddenScanErr != nil {
+			return fmt.Errorf("hidden network activation failed after targeted scan failure: %w; scan failure: %w", err, hiddenScanErr)
+		}
 		return err
 	}
 

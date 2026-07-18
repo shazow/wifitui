@@ -97,11 +97,12 @@ const (
 	ScanForce
 )
 
-// NetworksResult contains the networks returned by a list operation and
-// whether they came from a cached fallback after a requested scan failed.
+// NetworksResult contains the networks returned by a list operation.
 type NetworksResult struct {
 	Networks []Network
-	IsCached bool
+	// ScanError is non-nil when a requested scan failed and Networks contains
+	// fallback data instead.
+	ScanError error
 }
 
 // Backend defines the interface for managing Wi-Fi networks.
