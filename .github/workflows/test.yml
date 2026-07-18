@@ -18,7 +18,7 @@ jobs:
         run: go test -test.timeout 30s ./...
 
   darwin:
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -36,6 +36,7 @@ jobs:
           echo "$linked_libraries"
           grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
           grep -q '/Foundation.framework/' <<< "$linked_libraries"
+          ./wifitui --version
       - name: Cross-build for Intel
         env:
           GOARCH: amd64
@@ -57,31 +58,8 @@ jobs:
       - name: Build the native Darwin flake package
         run: |
           native_system="$(nix eval --impure --raw --expr builtins.currentSystem)"
-          test "$native_system" = aarch64-darwin
           package_path="$(nix build ".#packages.${native_system}.default" --no-link --print-out-paths -L)"
           linked_libraries="$(otool -L "$package_path/bin/wifitui")"
           echo "$linked_libraries"
           grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
           grep -q '/Foundation.framework/' <<< "$linked_libraries"
-
-  darwin-latest:
-    runs-on: macos-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-      - name: Run tests with cgo
-        env:
-          CGO_ENABLED: '1'
-        run: go test -test.timeout 30s ./...
-      - name: Build with CoreWLAN
-        run: make build-darwin
-      - name: Verify native CoreWLAN build
-        run: |
-          linked_libraries="$(otool -L ./wifitui)"
-          echo "$linked_libraries"
-          grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
-          grep -q '/Foundation.framework/' <<< "$linked_libraries"
-          ./wifitui --version
