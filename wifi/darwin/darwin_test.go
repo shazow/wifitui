@@ -78,6 +78,110 @@ func baseCommandResults() map[string]commandResult {
 	}
 }
 
+func TestParseSystemProfilerOutputForFallback(t *testing.T) {
+	output := `Wi-Fi:
+      Interfaces:
+        en0:
+          Status: Connected
+          Current Network Information:
+            MyHomeNetwork:
+              Security: WPA2 Personal
+              Signal / Noise: -55 dBm / -95 dBm
+          Other Local Wi-Fi Networks:
+            OpenCafe:
+              Security: Open
+              Signal / Noise: -75 dBm / -90 dBm
+        awdl0:
+          MAC Address: 00:11:22:33:44:55`
+
+	networks := parseSystemProfilerOutput(output)
+	if len(networks) != 2 {
+		t.Fatalf("parsed %d networks, want 2: %#v", len(networks), networks)
+	}
+	home := networks[0]
+	if home.ssid != "MyHomeNetwork" || !home.isActive || home.rssi != -55 || home.security != wifi.SecurityWPA {
+		t.Fatalf("current network = %#v, want active WPA MyHomeNetwork at -55 dBm", home)
+	}
+	cafe := networks[1]
+	if cafe.ssid != "OpenCafe" || cafe.isActive || cafe.rssi != -75 || cafe.security != wifi.SecurityOpen {
+		t.Fatalf("other network = %#v, want inactive open OpenCafe at -75 dBm", cafe)
+	}
+}
+
+func TestParseSystemProfilerOutputAcceptsSSIDContentAndSecurityVariants(t *testing.T) {
+	output := `Wi-Fi:
+      Interfaces:
+        en0:
+          Other Local Wi-Fi Networks:
+            awdlCafe:
+              Security: Open
+              Signal / Noise: -61 dBm / -90 dBm
+            Cafe: Guest:
+              Security: WPA2 Personal
+              Signal / Noise: -62 dBm / -90 dBm
+            Twin:
+              Security: Open
+              Signal / Noise: -70 dBm / -90 dBm
+            Twin:
+              Security: WPA3 Personal
+              Signal / Noise: -50 dBm / -90 dBm
+            Mystery:
+              Security: Future Quantum
+              Signal / Noise: -80 dBm / -90 dBm
+        awdl0:
+          MAC Address: 00:11:22:33:44:55`
+
+	networks := parseSystemProfilerOutput(output)
+	if len(networks) != 5 {
+		t.Fatalf("parsed %d networks, want all 5 records: %#v", len(networks), networks)
+	}
+	if networks[0].ssid != "awdlCafe" || networks[1].ssid != "Cafe: Guest" {
+		t.Fatalf("SSID content was treated as syntax: %#v", networks)
+	}
+	if networks[2].ssid != "Twin" || networks[2].security != wifi.SecurityOpen ||
+		networks[3].ssid != "Twin" || networks[3].security != wifi.SecurityWPA {
+		t.Fatalf("security variants were collapsed or misclassified: %#v", networks)
+	}
+	if networks[4].security != wifi.SecurityUnknown {
+		t.Fatalf("unknown security = %v, want SecurityUnknown", networks[4].security)
+	}
+}
+
+func TestParseSystemProfilerOutputTreatsSectionLabelsAsSSIDContentAtNetworkIndent(t *testing.T) {
+	output := `Wi-Fi:
+      Interfaces:
+        en0:
+          Other Local Wi-Fi Networks:
+            Current Network Information:
+              Security: Open
+            Other Local Wi-Fi Networks:
+              Security: WPA2 Personal
+            FollowingNetwork:
+              Security: Open
+        awdl0:
+          MAC Address: 00:11:22:33:44:55`
+
+	networks := parseSystemProfilerOutput(output)
+	if len(networks) != 3 {
+		t.Fatalf("parsed %d networks, want section-like SSIDs plus following network: %#v", len(networks), networks)
+	}
+	if networks[0].ssid != "Current Network Information" || networks[0].isActive ||
+		networks[1].ssid != "Other Local Wi-Fi Networks" || networks[1].isActive ||
+		networks[2].ssid != "FollowingNetwork" || networks[2].isActive {
+		t.Fatalf("section-like SSIDs changed parser state: %#v", networks)
+	}
+}
+
+func TestVisibleNetworksPreservesActiveAcrossDuplicateVariant(t *testing.T) {
+	networks := visibleNetworks([]scannedNetwork{
+		{ssid: "Home", security: wifi.SecurityWPA, rssi: -70},
+		{ssid: "Home", security: wifi.SecurityWPA, rssi: -50, isActive: true},
+	})
+	if len(networks) != 1 || !networks[0].IsActive || len(networks[0].AccessPoints) != 2 {
+		t.Fatalf("duplicate active variant = %#v, want one active network with two access points", networks)
+	}
+}
+
 func TestListNetworksScanNeverSkipsScan(t *testing.T) {
 	runner := &fakeOutputRunner{t: t, results: baseCommandResults()}
 	backend := &Backend{
@@ -176,6 +280,68 @@ func TestListNetworksScanFailureReturnsVisibleCurrentNetwork(t *testing.T) {
 	}
 	if len(result.Networks) != 2 || result.Networks[0].SSID != "Guest" || !result.Networks[0].IsVisible {
 		t.Fatalf("fallback networks = %#v, want visible current Guest first", result.Networks)
+	}
+}
+
+func TestListNetworksPermissionFailureFallsBackToSystemProfiler(t *testing.T) {
+	results := baseCommandResults()
+	results["networksetup -getairportnetwork en0"] = commandResult{err: errors.New("association unavailable")}
+	runner := &fakeOutputRunner{t: t, results: results}
+	fallbackCalls := 0
+	backend := &Backend{
+		WifiInterface: "en0",
+		runOutput:     runner.run,
+		scanNetworks: func(string) ([]scannedNetwork, error) {
+			return nil, fmt.Errorf("SSIDs unavailable: %w", wifi.ErrScanPermissionDenied)
+		},
+		fallbackScanNetworks: func(device string) ([]scannedNetwork, error) {
+			fallbackCalls++
+			if device != "en0" {
+				t.Fatalf("fallback device = %q, want en0", device)
+			}
+			return []scannedNetwork{{
+				ssid: "Guest", security: wifi.SecurityWPA, rssi: -55, isActive: true,
+			}}, nil
+		},
+	}
+
+	result, err := backend.ListNetworks(wifi.ScanForce)
+	if err != nil {
+		t.Fatalf("ListNetworks returned an error: %v", err)
+	}
+	if result.ScanError != nil {
+		t.Fatalf("successful system_profiler fallback returned a scan error: %v", result.ScanError)
+	}
+	if fallbackCalls != 1 {
+		t.Fatalf("fallback scan calls = %d, want 1", fallbackCalls)
+	}
+	guest, ok := networkBySSID(result.Networks, "Guest")
+	if !ok || !guest.IsVisible || !guest.IsActive || guest.Strength() != 90 {
+		t.Fatalf("fallback Guest = %#v, %t; want visible active network at 90%%", guest, ok)
+	}
+}
+
+func TestListNetworksPermissionFallbackFailurePreservesBothErrors(t *testing.T) {
+	coreErr := fmt.Errorf("SSIDs unavailable: %w", wifi.ErrScanPermissionDenied)
+	fallbackErr := errors.New("system_profiler failed")
+	runner := &fakeOutputRunner{t: t, results: baseCommandResults()}
+	backend := &Backend{
+		WifiInterface: "en0",
+		runOutput:     runner.run,
+		scanNetworks: func(string) ([]scannedNetwork, error) {
+			return nil, coreErr
+		},
+		fallbackScanNetworks: func(string) ([]scannedNetwork, error) {
+			return nil, fallbackErr
+		},
+	}
+
+	result, err := backend.ListNetworks(wifi.ScanForce)
+	if err != nil {
+		t.Fatalf("ListNetworks returned a fatal error: %v", err)
+	}
+	if !errors.Is(result.ScanError, wifi.ErrScanPermissionDenied) || !errors.Is(result.ScanError, fallbackErr) {
+		t.Fatalf("ScanError = %v, want both CoreWLAN permission and system_profiler errors", result.ScanError)
 	}
 }
 

@@ -40,6 +40,7 @@ type scannedNetwork struct {
 	security  wifi.SecurityType
 	rssi      int
 	frequency uint
+	isActive  bool
 }
 
 type coreWLANNetwork struct {
@@ -123,8 +124,9 @@ type networkScanner func(device string) ([]scannedNetwork, error)
 type Backend struct {
 	WifiInterface string
 
-	runOutput    outputRunner
-	scanNetworks networkScanner
+	runOutput            outputRunner
+	scanNetworks         networkScanner
+	fallbackScanNetworks networkScanner
 
 	cacheMu     sync.RWMutex
 	lastVisible []wifi.Network
@@ -176,6 +178,20 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		scanner = scanVisibleNetworks
 	}
 	scanned, err := scanner(b.WifiInterface)
+	if err != nil && errors.Is(err, wifi.ErrScanPermissionDenied) {
+		coreWLANErr := err
+		fallbackScanner := b.fallbackScanNetworks
+		if fallbackScanner == nil {
+			fallbackScanner = scanSystemProfilerNetworks
+		}
+		var fallbackErr error
+		scanned, fallbackErr = fallbackScanner(b.WifiInterface)
+		if fallbackErr != nil {
+			err = errors.Join(coreWLANErr, fmt.Errorf("system_profiler fallback failed: %w", fallbackErr))
+		} else {
+			err = nil
+		}
+	}
 	if err != nil {
 		cause := err
 		stage := wifi.ScanStageRequest
@@ -243,11 +259,13 @@ func visibleNetworks(scanned []scannedNetwork) []wifi.Network {
 		key := darwinNetworkKey{ssid: network.ssid, security: network.security}
 		if existing, ok := networksByKey[key]; ok {
 			existing.AccessPoints = append(existing.AccessPoints, accessPoint)
+			existing.IsActive = existing.IsActive || network.isActive
 			networksByKey[key] = existing
 			continue
 		}
 		networksByKey[key] = wifi.Network{
 			SSID:         network.ssid,
+			IsActive:     network.isActive,
 			IsVisible:    true,
 			AccessPoints: []wifi.AccessPoint{accessPoint},
 			IsSecure:     network.security != wifi.SecurityOpen,
@@ -270,7 +288,7 @@ func mergeNetworks(visible []wifi.Network, knownSSIDs map[string]bool, currentSS
 		// Do not apply that metadata to an arbitrary security variant when the
 		// scan found more than one; doing so could mark an open evil twin known.
 		unambiguous := variantCount[network.SSID] == 1
-		network.IsActive = unambiguous && network.SSID == currentSSID
+		network.IsActive = network.IsActive || (unambiguous && network.SSID == currentSSID)
 		network.IsKnown = unambiguous && knownSSIDs[network.SSID]
 		network.AutoConnect = network.IsKnown
 		key := darwinNetworkKey{ssid: network.SSID, security: network.Security}
