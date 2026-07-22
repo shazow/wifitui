@@ -6,7 +6,7 @@
 Primary = ["#FFA500", "#FFA500"] # Orange
 
 # Subtle color, used for less important text.
-Subtle = ["#BDBDBD", "#919191"] # Gray
+Subtle = ["#BDBDBD", "#B0B0B0"] # Gray
 
 # Success color, used for active connections.
 Success = ["#388E3C", "#81C784"] # Green
@@ -18,10 +18,10 @@ Error = ["#D32F2F", "#E57373"] # Red
 Normal = ["#212121", "#EEEEEE"] # Black/White
 
 # Disabled color, used for hidden or out-of-range networks.
-Disabled = ["#E0E0E0", "#626262"] # Lighter/Darker Gray
+Disabled = ["#E0E0E0", "#808080"] # Lighter/Gray
 
 # Border color for UI elements.
-Border = ["#BDBDBD", "#616161"] # Gray
+Border = ["#BDBDBD", "#808080"] # Gray
 
 # Signal color is a gradient from SignalHigh to SignalLow.
 SignalHigh = ["#00B300", "#00FF00"]
