@@ -2,7 +2,6 @@ package darwin
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -40,78 +39,7 @@ type scannedNetwork struct {
 	security  wifi.SecurityType
 	rssi      int
 	frequency uint
-}
-
-type coreWLANNetwork struct {
-	SSID      string `json:"ssid"`
-	BSSID     string `json:"bssid"`
-	Security  string `json:"security"`
-	RSSI      int    `json:"rssi"`
-	Frequency uint   `json:"frequency"`
-}
-
-const (
-	coreWLANStatusSuccess = iota
-	coreWLANStatusDeviceUnavailable
-	coreWLANStatusFailed
-	coreWLANStatusProtocol
-	coreWLANStatusPermissionDenied
-	coreWLANStatusTimeout
-	coreWLANStatusUnsupported
-)
-
-func coreWLANStatusError(status int, message string) error {
-	classification := error(nil)
-	switch status {
-	case coreWLANStatusDeviceUnavailable:
-		classification = wifi.ErrScanDeviceUnavailable
-	case coreWLANStatusProtocol:
-		classification = wifi.ErrScanProtocol
-	case coreWLANStatusPermissionDenied:
-		classification = wifi.ErrScanPermissionDenied
-	case coreWLANStatusTimeout:
-		classification = wifi.ErrScanTimeout
-	case coreWLANStatusUnsupported:
-		classification = wifi.ErrNotSupported
-	}
-	if classification == nil {
-		return errors.New(message)
-	}
-	return fmt.Errorf("%s: %w", message, classification)
-}
-
-func decodeCoreWLANScan(output []byte) ([]scannedNetwork, error) {
-	var decoded []coreWLANNetwork
-	if err := json.Unmarshal(output, &decoded); err != nil {
-		return nil, fmt.Errorf("%w: decode CoreWLAN results: %w", wifi.ErrScanProtocol, err)
-	}
-
-	networks := make([]scannedNetwork, 0, len(decoded))
-	for _, network := range decoded {
-		if network.SSID == "" {
-			continue
-		}
-		security := wifi.SecurityUnknown
-		switch network.Security {
-		case "open":
-			security = wifi.SecurityOpen
-		case "wep":
-			security = wifi.SecurityWEP
-		case "wpa":
-			security = wifi.SecurityWPA
-		}
-		networks = append(networks, scannedNetwork{
-			ssid:      network.SSID,
-			bssid:     network.BSSID,
-			security:  security,
-			rssi:      network.RSSI,
-			frequency: network.Frequency,
-		})
-	}
-	if len(decoded) > 0 && len(networks) == 0 {
-		return nil, fmt.Errorf("%w: CoreWLAN returned networks without an SSID", wifi.ErrScanProtocol)
-	}
-	return networks, nil
+	isActive  bool
 }
 
 type outputRunner func(name string, args ...string) ([]byte, error)
@@ -173,7 +101,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 
 	scanner := b.scanNetworks
 	if scanner == nil {
-		scanner = scanVisibleNetworks
+		scanner = scanSystemProfilerNetworks
 	}
 	scanned, err := scanner(b.WifiInterface)
 	if err != nil {
@@ -243,11 +171,13 @@ func visibleNetworks(scanned []scannedNetwork) []wifi.Network {
 		key := darwinNetworkKey{ssid: network.ssid, security: network.security}
 		if existing, ok := networksByKey[key]; ok {
 			existing.AccessPoints = append(existing.AccessPoints, accessPoint)
+			existing.IsActive = existing.IsActive || network.isActive
 			networksByKey[key] = existing
 			continue
 		}
 		networksByKey[key] = wifi.Network{
 			SSID:         network.ssid,
+			IsActive:     network.isActive,
 			IsVisible:    true,
 			AccessPoints: []wifi.AccessPoint{accessPoint},
 			IsSecure:     network.security != wifi.SecurityOpen,
@@ -270,7 +200,7 @@ func mergeNetworks(visible []wifi.Network, knownSSIDs map[string]bool, currentSS
 		// Do not apply that metadata to an arbitrary security variant when the
 		// scan found more than one; doing so could mark an open evil twin known.
 		unambiguous := variantCount[network.SSID] == 1
-		network.IsActive = unambiguous && network.SSID == currentSSID
+		network.IsActive = network.IsActive || (unambiguous && network.SSID == currentSSID)
 		network.IsKnown = unambiguous && knownSSIDs[network.SSID]
 		network.AutoConnect = network.IsKnown
 		key := darwinNetworkKey{ssid: network.SSID, security: network.Security}

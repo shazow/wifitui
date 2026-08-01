@@ -1,6 +1,6 @@
 //go:build darwin && !cgo
 
-package darwin
+package darwincorewlan
 
 import (
 	"fmt"
