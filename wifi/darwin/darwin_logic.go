@@ -2,7 +2,6 @@ package darwin
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
@@ -43,78 +42,6 @@ type scannedNetwork struct {
 	isActive  bool
 }
 
-type coreWLANNetwork struct {
-	SSID      string `json:"ssid"`
-	BSSID     string `json:"bssid"`
-	Security  string `json:"security"`
-	RSSI      int    `json:"rssi"`
-	Frequency uint   `json:"frequency"`
-}
-
-const (
-	coreWLANStatusSuccess = iota
-	coreWLANStatusDeviceUnavailable
-	coreWLANStatusFailed
-	coreWLANStatusProtocol
-	coreWLANStatusPermissionDenied
-	coreWLANStatusTimeout
-	coreWLANStatusUnsupported
-)
-
-func coreWLANStatusError(status int, message string) error {
-	classification := error(nil)
-	switch status {
-	case coreWLANStatusDeviceUnavailable:
-		classification = wifi.ErrScanDeviceUnavailable
-	case coreWLANStatusProtocol:
-		classification = wifi.ErrScanProtocol
-	case coreWLANStatusPermissionDenied:
-		classification = wifi.ErrScanPermissionDenied
-	case coreWLANStatusTimeout:
-		classification = wifi.ErrScanTimeout
-	case coreWLANStatusUnsupported:
-		classification = wifi.ErrNotSupported
-	}
-	if classification == nil {
-		return errors.New(message)
-	}
-	return fmt.Errorf("%s: %w", message, classification)
-}
-
-func decodeCoreWLANScan(output []byte) ([]scannedNetwork, error) {
-	var decoded []coreWLANNetwork
-	if err := json.Unmarshal(output, &decoded); err != nil {
-		return nil, fmt.Errorf("%w: decode CoreWLAN results: %w", wifi.ErrScanProtocol, err)
-	}
-
-	networks := make([]scannedNetwork, 0, len(decoded))
-	for _, network := range decoded {
-		if network.SSID == "" {
-			continue
-		}
-		security := wifi.SecurityUnknown
-		switch network.Security {
-		case "open":
-			security = wifi.SecurityOpen
-		case "wep":
-			security = wifi.SecurityWEP
-		case "wpa":
-			security = wifi.SecurityWPA
-		}
-		networks = append(networks, scannedNetwork{
-			ssid:      network.SSID,
-			bssid:     network.BSSID,
-			security:  security,
-			rssi:      network.RSSI,
-			frequency: network.Frequency,
-		})
-	}
-	if len(decoded) > 0 && len(networks) == 0 {
-		return nil, fmt.Errorf("%w: CoreWLAN returned networks without an SSID", wifi.ErrScanProtocol)
-	}
-	return networks, nil
-}
-
 type outputRunner func(name string, args ...string) ([]byte, error)
 type networkScanner func(device string) ([]scannedNetwork, error)
 
@@ -124,9 +51,8 @@ type networkScanner func(device string) ([]scannedNetwork, error)
 type Backend struct {
 	WifiInterface string
 
-	runOutput            outputRunner
-	scanNetworks         networkScanner
-	fallbackScanNetworks networkScanner
+	runOutput    outputRunner
+	scanNetworks networkScanner
 
 	cacheMu     sync.RWMutex
 	lastVisible []wifi.Network
@@ -175,23 +101,9 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 
 	scanner := b.scanNetworks
 	if scanner == nil {
-		scanner = scanVisibleNetworks
+		scanner = scanSystemProfilerNetworks
 	}
 	scanned, err := scanner(b.WifiInterface)
-	if err != nil && errors.Is(err, wifi.ErrScanPermissionDenied) {
-		coreWLANErr := err
-		fallbackScanner := b.fallbackScanNetworks
-		if fallbackScanner == nil {
-			fallbackScanner = scanSystemProfilerNetworks
-		}
-		var fallbackErr error
-		scanned, fallbackErr = fallbackScanner(b.WifiInterface)
-		if fallbackErr != nil {
-			err = errors.Join(coreWLANErr, fmt.Errorf("system_profiler fallback failed: %w", fallbackErr))
-		} else {
-			err = nil
-		}
-	}
 	if err != nil {
 		cause := err
 		stage := wifi.ScanStageRequest

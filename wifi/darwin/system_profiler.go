@@ -11,11 +11,12 @@ import (
 	"github.com/shazow/wifitui/wifi"
 )
 
-// scanSystemProfilerNetworks is a compatibility fallback for macOS processes
-// that cannot read SSIDs through CoreWLAN because Location Services has not
-// authorized the calling binary. system_profiler is slower, but its Apple-
-// managed process can still provide the same visible-network snapshot used by
-// wifitui before the native CoreWLAN scanner was introduced.
+// scanSystemProfilerNetworks reports visible networks via system_profiler.
+// The collection runs inside an Apple platform binary, so it keeps working for
+// processes that lack the Location Services authorization CoreWLAN requires to
+// expose SSIDs. It is slow (several seconds) and its report offers no BSSID or
+// frequency data; the work-in-progress darwincorewlan backend exists to
+// eventually replace it for authorized callers.
 func scanSystemProfilerNetworks(_ string) ([]scannedNetwork, error) {
 	out, err := runWithOutput(exec.Command("system_profiler", "SPAirPortDataType"))
 	if err != nil {
@@ -25,8 +26,7 @@ func scanSystemProfilerNetworks(_ string) ([]scannedNetwork, error) {
 }
 
 // parseSystemProfilerOutput extracts current and nearby networks from the
-// human-readable SPAirPortDataType report. It intentionally remains isolated
-// to the permission fallback; CoreWLAN is still authoritative when available.
+// human-readable SPAirPortDataType report.
 func parseSystemProfilerOutput(output string) []scannedNetwork {
 	var networks []scannedNetwork
 	scanner := bufio.NewScanner(strings.NewReader(output))

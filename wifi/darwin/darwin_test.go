@@ -1,7 +1,6 @@
 package darwin
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -254,7 +253,7 @@ func TestListNetworksScanModesRunScanner(t *testing.T) {
 }
 
 func TestListNetworksScanFailureReturnsVisibleCurrentNetwork(t *testing.T) {
-	scanErr := errors.New("CoreWLAN failed")
+	scanErr := errors.New("scan failed")
 	runner := &fakeOutputRunner{t: t, results: baseCommandResults()}
 	backend := &Backend{
 		WifiInterface: "en0",
@@ -269,7 +268,7 @@ func TestListNetworksScanFailureReturnsVisibleCurrentNetwork(t *testing.T) {
 		t.Fatalf("listNetworks returned a fatal error: %v", err)
 	}
 	if !errors.Is(result.ScanError, scanErr) {
-		t.Fatalf("ScanError = %v, want wrapped CoreWLAN error", result.ScanError)
+		t.Fatalf("ScanError = %v, want wrapped scanner error", result.ScanError)
 	}
 	var failure *wifi.ScanFailure
 	if !errors.As(result.ScanError, &failure) {
@@ -283,71 +282,9 @@ func TestListNetworksScanFailureReturnsVisibleCurrentNetwork(t *testing.T) {
 	}
 }
 
-func TestListNetworksPermissionFailureFallsBackToSystemProfiler(t *testing.T) {
-	results := baseCommandResults()
-	results["networksetup -getairportnetwork en0"] = commandResult{err: errors.New("association unavailable")}
-	runner := &fakeOutputRunner{t: t, results: results}
-	fallbackCalls := 0
-	backend := &Backend{
-		WifiInterface: "en0",
-		runOutput:     runner.run,
-		scanNetworks: func(string) ([]scannedNetwork, error) {
-			return nil, fmt.Errorf("SSIDs unavailable: %w", wifi.ErrScanPermissionDenied)
-		},
-		fallbackScanNetworks: func(device string) ([]scannedNetwork, error) {
-			fallbackCalls++
-			if device != "en0" {
-				t.Fatalf("fallback device = %q, want en0", device)
-			}
-			return []scannedNetwork{{
-				ssid: "Guest", security: wifi.SecurityWPA, rssi: -55, isActive: true,
-			}}, nil
-		},
-	}
-
-	result, err := backend.ListNetworks(wifi.ScanForce)
-	if err != nil {
-		t.Fatalf("ListNetworks returned an error: %v", err)
-	}
-	if result.ScanError != nil {
-		t.Fatalf("successful system_profiler fallback returned a scan error: %v", result.ScanError)
-	}
-	if fallbackCalls != 1 {
-		t.Fatalf("fallback scan calls = %d, want 1", fallbackCalls)
-	}
-	guest, ok := networkBySSID(result.Networks, "Guest")
-	if !ok || !guest.IsVisible || !guest.IsActive || guest.Strength() != 90 {
-		t.Fatalf("fallback Guest = %#v, %t; want visible active network at 90%%", guest, ok)
-	}
-}
-
-func TestListNetworksPermissionFallbackFailurePreservesBothErrors(t *testing.T) {
-	coreErr := fmt.Errorf("SSIDs unavailable: %w", wifi.ErrScanPermissionDenied)
-	fallbackErr := errors.New("system_profiler failed")
-	runner := &fakeOutputRunner{t: t, results: baseCommandResults()}
-	backend := &Backend{
-		WifiInterface: "en0",
-		runOutput:     runner.run,
-		scanNetworks: func(string) ([]scannedNetwork, error) {
-			return nil, coreErr
-		},
-		fallbackScanNetworks: func(string) ([]scannedNetwork, error) {
-			return nil, fallbackErr
-		},
-	}
-
-	result, err := backend.ListNetworks(wifi.ScanForce)
-	if err != nil {
-		t.Fatalf("ListNetworks returned a fatal error: %v", err)
-	}
-	if !errors.Is(result.ScanError, wifi.ErrScanPermissionDenied) || !errors.Is(result.ScanError, fallbackErr) {
-		t.Fatalf("ScanError = %v, want both CoreWLAN permission and system_profiler errors", result.ScanError)
-	}
-}
-
 func TestListNetworksScanAndCurrentNetworkFailuresArePreserved(t *testing.T) {
 	currentErr := errors.New("current network failed")
-	scanErr := errors.New("CoreWLAN failed")
+	scanErr := errors.New("scan failed")
 	results := baseCommandResults()
 	results["networksetup -getairportnetwork en0"] = commandResult{err: currentErr}
 	runner := &fakeOutputRunner{t: t, results: results}
@@ -558,65 +495,6 @@ func TestMergeNetworksDoesNotTrustAmbiguousSSIDMetadata(t *testing.T) {
 	for _, network := range networks {
 		if network.IsKnown || network.IsActive || network.AutoConnect {
 			t.Fatalf("ambiguous security variant received SSID-only metadata: %#v", network)
-		}
-	}
-}
-
-func TestDecodeCoreWLANScan(t *testing.T) {
-	output := []byte(`[
-		{"ssid":"Cafe","bssid":"00:11:22:33:44:55","security":"open","rssi":-65,"frequency":2412},
-		{"ssid":"Home","bssid":"00:11:22:33:44:66","security":"wpa","rssi":-50,"frequency":5180}
-	]`)
-	networks, err := decodeCoreWLANScan(output)
-	if err != nil {
-		t.Fatalf("decodeCoreWLANScan returned error: %v", err)
-	}
-	if len(networks) != 2 || networks[0].ssid != "Cafe" || networks[0].security != wifi.SecurityOpen || networks[1].frequency != 5180 {
-		t.Fatalf("decodeCoreWLANScan = %#v", networks)
-	}
-}
-
-func TestDecodeCoreWLANScanAllowsEmptyResults(t *testing.T) {
-	networks, err := decodeCoreWLANScan([]byte("[]"))
-	if err != nil || len(networks) != 0 {
-		t.Fatalf("decodeCoreWLANScan(empty set) = %#v, %v; want empty success", networks, err)
-	}
-}
-
-func TestDecodeCoreWLANScanRejectsUnusableResults(t *testing.T) {
-	for _, output := range []string{"", `[{"ssid":""}]`, "not json"} {
-		t.Run(output, func(t *testing.T) {
-			_, err := decodeCoreWLANScan([]byte(output))
-			if !errors.Is(err, wifi.ErrScanProtocol) {
-				t.Fatalf("decodeCoreWLANScan(%q) = %v, want ErrScanProtocol", output, err)
-			}
-		})
-	}
-}
-
-func TestDecodeCoreWLANScanPreservesJSONError(t *testing.T) {
-	_, err := decodeCoreWLANScan([]byte("["))
-	var syntaxErr *json.SyntaxError
-	if !errors.As(err, &syntaxErr) {
-		t.Fatalf("decodeCoreWLANScan error = %v, want wrapped *json.SyntaxError", err)
-	}
-}
-
-func TestCoreWLANStatusErrorClassifiesKnownFailures(t *testing.T) {
-	tests := []struct {
-		status int
-		want   error
-	}{
-		{coreWLANStatusDeviceUnavailable, wifi.ErrScanDeviceUnavailable},
-		{coreWLANStatusProtocol, wifi.ErrScanProtocol},
-		{coreWLANStatusPermissionDenied, wifi.ErrScanPermissionDenied},
-		{coreWLANStatusTimeout, wifi.ErrScanTimeout},
-		{coreWLANStatusUnsupported, wifi.ErrNotSupported},
-	}
-	for _, test := range tests {
-		err := coreWLANStatusError(test.status, "native detail")
-		if !errors.Is(err, test.want) || !strings.Contains(err.Error(), "native detail") {
-			t.Fatalf("coreWLANStatusError(%d) = %v, want native detail wrapping %v", test.status, err, test.want)
 		}
 	}
 }
