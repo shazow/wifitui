@@ -12,6 +12,149 @@ import (
 	"github.com/shazow/wifitui/wifi/mock"
 )
 
+func TestTuiModel_CachedNetworksPrefillsEmptyList(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	m, err := NewModel(backend)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+
+	// Set a size for the model, otherwise the list component won't have enough space to render.
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updatedModel.(*model)
+
+	// The cached snapshot arrives before the scan.
+	updatedModel, _ = m.Update(cachedNetworksMsg{
+		{SSID: "CachedNet", IsVisible: true},
+	})
+	m = updatedModel.(*model)
+
+	view := m.View()
+	if !strings.Contains(view, "CachedNet") {
+		t.Errorf("View does not contain prefilled cached network in\n%s", view)
+	}
+	if got := len(m.listModel.list.Items()); got != 1 {
+		t.Fatalf("list has %d items, want 1 prefilled item", got)
+	}
+}
+
+func TestTuiModel_ScanReplacesCachedPrefill(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	m, err := NewModel(backend)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updatedModel.(*model)
+
+	updatedModel, _ = m.Update(cachedNetworksMsg{
+		{SSID: "CachedNet", IsVisible: true},
+	})
+	m = updatedModel.(*model)
+
+	// The scan result replaces the cached snapshot.
+	updatedModel, _ = m.Update(scanFinishedMsg{networks: []wifi.Network{
+		{SSID: "CachedNet", IsVisible: true, AccessPoints: []wifi.AccessPoint{{Strength: 90}}},
+		{SSID: "OtherNet", IsVisible: true},
+	}})
+	m = updatedModel.(*model)
+
+	if got := len(m.listModel.list.Items()); got != 2 {
+		t.Fatalf("list has %d items, want 2 from scan result", got)
+	}
+	view := m.View()
+	if !strings.Contains(view, "CachedNet") || !strings.Contains(view, "OtherNet") {
+		t.Errorf("View does not contain scan results in\n%s", view)
+	}
+}
+
+func TestTuiModel_CachedPrefillDoesNotClobberLoadedList(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	m, err := NewModel(backend)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updatedModel.(*model)
+
+	// A refresh lands before the cached prefill result.
+	updatedModel, _ = m.Update(scanFinishedMsg{networks: []wifi.Network{{SSID: "ScannedNet", IsVisible: true}}})
+	m = updatedModel.(*model)
+	updatedModel, _ = m.Update(cachedNetworksMsg{
+		{SSID: "CachedNet", IsVisible: true},
+	})
+	m = updatedModel.(*model)
+
+	if got := len(m.listModel.list.Items()); got != 1 {
+		t.Fatalf("list has %d items, want 1 scan result", got)
+	}
+	view := m.View()
+	if strings.Contains(view, "CachedNet") {
+		t.Errorf("cached prefill clobbered the loaded list in\n%s", view)
+	}
+}
+
+func TestTuiModel_ScanDeferredUntilCachedPrefillLands(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	watch := &watchBackend{
+		Backend: backend,
+		networks: []wifi.Network{
+			{SSID: "DeferredNet", IsVisible: true},
+		},
+	}
+	m, err := NewModel(watch)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+	updatedModel, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = updatedModel.(*model)
+
+	// A scan is requested while the cached prefill is still in flight.
+	m.prefillPending = true
+	updatedModel, cmd := m.Update(scanMsg{mode: wifi.ScanForce})
+	m = updatedModel.(*model)
+	if cmd != nil {
+		t.Fatal("scanMsg during prefill should be deferred, not executed")
+	}
+	if !m.prefillPending {
+		t.Fatal("prefillPending was cleared by the deferred scan")
+	}
+
+	// When the cached snapshot lands, the deferred scan fires with its mode.
+	updatedModel, cmd = m.Update(cachedNetworksMsg{
+		{SSID: "CachedNet", IsVisible: true},
+	})
+	m = updatedModel.(*model)
+	if cmd == nil {
+		t.Fatal("cachedNetworksMsg did not return a command")
+	}
+	if m.prefillPending {
+		t.Fatal("prefillPending was not cleared after the cached snapshot landed")
+	}
+
+	// The deferred scan runs (with its requested mode) and replaces the prefill.
+	m = runTUITestCommand(t, m, cmd)
+	if len(watch.listScans) != 1 || watch.listScans[0] != wifi.ScanForce {
+		t.Fatalf("deferred scan used modes %#v, want only ScanForce", watch.listScans)
+	}
+	view := m.View()
+	if !strings.Contains(view, "DeferredNet") {
+		t.Errorf("View does not contain scan result in\n%s", view)
+	}
+}
+
 func TestTuiModel_ScanFinishedUpdatesList(t *testing.T) {
 	backend, err := mock.New()
 	if err != nil {
