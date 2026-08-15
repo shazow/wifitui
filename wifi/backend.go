@@ -106,6 +106,10 @@ type NetworksResult struct {
 }
 
 // Backend defines the interface for managing Wi-Fi networks.
+//
+// Implementations must be safe for concurrent use: frontends issue overlapping
+// calls, such as a fast ListNetworks(ScanNever) read while a slower scanning
+// ListNetworks call is still in flight.
 type Backend interface {
 	// ListNetworks returns all networks and optionally requests a scan first.
 	ListNetworks(scan ScanMode) (NetworksResult, error)

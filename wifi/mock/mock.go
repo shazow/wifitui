@@ -3,6 +3,7 @@ package mock
 import (
 	"fmt"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/shazow/wifitui/wifi"
@@ -18,6 +19,10 @@ type mockNetwork struct {
 
 // MockBackend is a mock implementation of the backend.Backend interface for testing.
 type MockBackend struct {
+	// mu guards all fields below; frontends issue concurrent backend calls
+	// (see the wifi.Backend contract).
+	mu sync.Mutex
+
 	VisibleNetworks        []wifi.Network
 	KnownNetworks          []mockNetwork
 	ActiveNetworkIndex     int
@@ -130,6 +135,9 @@ func (m *MockBackend) setActiveNetwork(ssid string) {
 func (m *MockBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) {
 	time.Sleep(m.ActionSleep)
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if !m.WirelessEnabled {
 		return wifi.NetworksResult{}, wifi.ErrWirelessDisabled
 	}
@@ -192,6 +200,9 @@ func (m *MockBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, err
 
 	var result []wifi.Network
 	for _, c := range processed {
+		// Clone so callers never share AccessPoints backing arrays with the
+		// mock's own state, which later scans mutate in place.
+		c.AccessPoints = append([]wifi.AccessPoint(nil), c.AccessPoints...)
 		wifi.SortAccessPoints(c.AccessPoints)
 		result = append(result, c)
 	}
@@ -201,6 +212,9 @@ func (m *MockBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, err
 
 func (m *MockBackend) ActivateNetwork(ssid string) error {
 	time.Sleep(m.ActionSleep)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if m.ActivateError != nil {
 		return m.ActivateError
@@ -219,6 +233,9 @@ func (m *MockBackend) ActivateNetwork(ssid string) error {
 
 func (m *MockBackend) ForgetNetwork(ssid string) error {
 	time.Sleep(m.ActionSleep)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if m.ForgetError != nil {
 		return m.ForgetError
@@ -256,6 +273,9 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 
 func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	time.Sleep(m.ActionSleep)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if m.JoinError != nil {
 		return m.JoinError
@@ -316,6 +336,9 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 	time.Sleep(m.ActionSleep)
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.GetSecretsError != nil {
 		return "", m.GetSecretsError
 	}
@@ -330,6 +353,9 @@ func (m *MockBackend) GetSecrets(ssid string) (string, error) {
 
 func (m *MockBackend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	time.Sleep(m.ActionSleep)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if m.UpdateNetworkError != nil {
 		return m.UpdateNetworkError
@@ -352,6 +378,9 @@ func (m *MockBackend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error 
 func (m *MockBackend) IsWirelessEnabled() (bool, error) {
 	time.Sleep(m.ActionSleep)
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if m.IsWirelessEnabledError != nil {
 		return false, m.IsWirelessEnabledError
 	}
@@ -360,6 +389,9 @@ func (m *MockBackend) IsWirelessEnabled() (bool, error) {
 
 func (m *MockBackend) SetWireless(enabled bool) error {
 	time.Sleep(m.ActionSleep)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	if m.SetWirelessError != nil {
 		return m.SetWirelessError

@@ -83,7 +83,26 @@ func (m *model) Init() tea.Cmd {
 
 	cmds = append(cmds, startNetworkChangeWatcher(m.backend))
 	cmds = append(cmds, m.spinner.Tick)
+	// Prefill the list with the backend's cached snapshot while the first scan
+	// runs. Backends are safe for concurrent calls (see wifi.Backend), and the
+	// list model ignores the snapshot if fresher results land first.
+	cmds = append(cmds, fetchCachedNetworks(m.backend))
 	return tea.Batch(cmds...)
+}
+
+// fetchCachedNetworks reads the backend's cached network snapshot, the same
+// fast scan-free path used by `wifitui list`. It is best effort: on failure it
+// returns an empty result so the concurrent scan surfaces the real error.
+func fetchCachedNetworks(b wifi.Backend) tea.Cmd {
+	return func() tea.Msg {
+		result, err := b.ListNetworks(wifi.ScanNever)
+		if err != nil {
+			return cachedNetworksMsg{}
+		}
+		networks := result.Networks
+		wifi.SortNetworks(networks)
+		return cachedNetworksMsg(networks)
+	}
 }
 
 // Update handles all incoming messages and updates the model accordingly
