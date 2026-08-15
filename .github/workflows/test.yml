@@ -17,7 +17,7 @@ jobs:
       - name: Check module metadata
         run: go mod tidy -diff
       - name: Run tests
-        run: go test -test.timeout 30s ./...
+        run: go test -race -test.timeout 60s ./...
 
   darwin:
     runs-on: macos-latest
@@ -29,7 +29,7 @@ jobs:
       - name: Run tests with cgo
         env:
           CGO_ENABLED: '1'
-        run: go test -test.timeout 30s ./...
+        run: go test -race -test.timeout 60s ./...
       - name: Build with CoreWLAN
         run: make build-darwin
       - name: Verify native CoreWLAN linkage

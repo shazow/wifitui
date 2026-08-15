@@ -332,6 +332,20 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.list.SetItems(items)
 		m.updateListSize()
 		return m, nil
+	case cachedNetworksMsg:
+		// Prefill with the backend's cached snapshot while the first scan is
+		// still in flight. Skipped when anything already populated the list —
+		// scan results and refreshes always win over the snapshot.
+		if len(m.list.Items()) == 0 {
+			m.refreshColumns(msg)
+			items := make([]list.Item, len(msg))
+			for i, c := range msg {
+				items[i] = networkItem{Network: c}
+			}
+			m.list.SetItems(items)
+			m.updateListSize()
+		}
+		return m, nil
 	case scanFinishedMsg:
 		m.refreshColumns(msg.networks)
 		items := make([]list.Item, len(msg.networks))
