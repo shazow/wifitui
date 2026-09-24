@@ -32,6 +32,9 @@ type Network struct {
 	Security      SecurityType
 	LastConnected *time.Time
 	AutoConnect   bool
+	// RandomizeMAC is true if a known network is configured to use a random
+	// MAC address when connecting.
+	RandomizeMAC bool
 }
 
 // Strength returns the strength of the strongest access point, or 0 if none.
@@ -71,6 +74,7 @@ func (c *Network) AddAccessPoint(other Network) error {
 	if other.IsKnown {
 		c.IsKnown = true
 		c.AutoConnect = other.AutoConnect
+		c.RandomizeMAC = other.RandomizeMAC
 		if other.LastConnected != nil {
 			c.LastConnected = other.LastConnected
 		}
@@ -81,8 +85,15 @@ func (c *Network) AddAccessPoint(other Network) error {
 // UpdateOptions specifies the properties to update for a known network.
 // A nil value for a field means that the property should not be changed.
 type UpdateOptions struct {
-	Password    *string
-	AutoConnect *bool
+	Password     *string
+	AutoConnect  *bool
+	RandomizeMAC *bool
+}
+
+// JoinOptions specifies additional settings for joining a network.
+type JoinOptions struct {
+	// RandomizeMAC requests a random MAC address when connecting to the network.
+	RandomizeMAC bool
 }
 
 // ScanMode controls whether listing networks should request a scan first.
@@ -114,7 +125,7 @@ type Backend interface {
 	// ForgetNetwork removes a known network configuration.
 	ForgetNetwork(ssid string) error
 	// JoinNetwork connects to a new network, potentially creating a new configuration.
-	JoinNetwork(ssid string, password string, security SecurityType, isHidden bool) error
+	JoinNetwork(ssid string, password string, security SecurityType, isHidden bool, opts JoinOptions) error
 	// GetSecrets retrieves the password for a known network.
 	GetSecrets(ssid string) (string, error)
 	// UpdateNetwork updates a known network.

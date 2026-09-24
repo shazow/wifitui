@@ -78,14 +78,16 @@ type (
 		mode wifi.ScanMode
 	}
 	connectMsg struct {
-		item        networkItem
-		autoConnect bool
+		item         networkItem
+		autoConnect  bool
+		randomizeMAC bool
 	}
 	joinNetworkMsg struct {
-		ssid     string
-		password string
-		security wifi.SecurityType
-		isHidden bool
+		ssid         string
+		password     string
+		security     wifi.SecurityType
+		isHidden     bool
+		randomizeMAC bool
 	}
 	loadSecretsMsg  struct{ item networkItem }
 	updateSecretMsg struct {

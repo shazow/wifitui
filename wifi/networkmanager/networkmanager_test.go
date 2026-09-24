@@ -1039,7 +1039,7 @@ func TestJoinNetwork_HiddenRequestsTargetedScan(t *testing.T) {
 		return nil
 	}
 
-	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true, wifi.JoinOptions{})
 	if err != nil {
 		t.Fatalf("JoinNetwork(hidden) returned error: %v", err)
 	}
@@ -1081,7 +1081,7 @@ func TestJoinNetwork_HiddenScanFailureDoesNotAbortActivation(t *testing.T) {
 		return errors.New("scan not allowed")
 	}
 
-	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true, wifi.JoinOptions{})
 	if err != nil {
 		t.Fatalf("JoinNetwork(hidden) returned error after targeted scan failure: %v", err)
 	}
@@ -1108,7 +1108,7 @@ func TestJoinNetwork_HiddenActivationFailureIncludesScanFailure(t *testing.T) {
 		return errors.New("targeted scan rejected")
 	}
 
-	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true, wifi.JoinOptions{})
 	if err == nil {
 		t.Fatal("JoinNetwork(hidden) returned nil after activation failure")
 	}
@@ -1262,3 +1262,98 @@ func TestIsUnavailableDBusError(t *testing.T) {
 type testError string
 
 func (e testError) Error() string { return string(e) }
+
+func TestJoinNetwork_RandomizeMACSetsAssignedAddress(t *testing.T) {
+	for _, randomize := range []bool{false, true} {
+		device := &mockDeviceWireless{}
+		var added gonetworkmanager.ConnectionSettings
+
+		b := newTestBackend(device, nil)
+		b.Settings = &mockSettings{
+			addConnectionUnsavedFunc: func(settings gonetworkmanager.ConnectionSettings) (gonetworkmanager.Connection, error) {
+				added = settings
+				return &mockConnection{}, nil
+			},
+		}
+		b.NM = &mockNM{
+			getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
+				return []gonetworkmanager.Device{device}, nil
+			},
+			activateConnectionFunc: func(conn gonetworkmanager.Connection, device gonetworkmanager.Device, specificObject *dbus.Object) (gonetworkmanager.ActiveConnection, error) {
+				return &mockActiveConnection{}, nil
+			},
+		}
+
+		err := b.JoinNetwork("Cafe", "password", wifi.SecurityWPA, false, wifi.JoinOptions{RandomizeMAC: randomize})
+		if err != nil {
+			t.Fatalf("JoinNetwork(RandomizeMAC=%v) returned error: %v", randomize, err)
+		}
+		assigned, ok := added["802-11-wireless"][assignedMACKey]
+		if randomize && assigned != assignedMACRandom {
+			t.Fatalf("JoinNetwork(RandomizeMAC=true) set %s = %#v, want %q", assignedMACKey, assigned, assignedMACRandom)
+		}
+		if !randomize && ok {
+			t.Fatalf("JoinNetwork(RandomizeMAC=false) set %s = %#v, want unset", assignedMACKey, assigned)
+		}
+	}
+}
+
+func TestListNetworks_ReportsRandomizeMAC(t *testing.T) {
+	random := newMockConnection("/org/freedesktop/NetworkManager/Settings/1", "Random", "Random", wifi.SecurityWPA)
+	random.settings["802-11-wireless"][assignedMACKey] = "random"
+	stable := newMockConnection("/org/freedesktop/NetworkManager/Settings/2", "Stable", "Stable", wifi.SecurityWPA)
+	stable.settings["802-11-wireless"][assignedMACKey] = "stable"
+	plain := newMockConnection("/org/freedesktop/NetworkManager/Settings/3", "Plain", "Plain", wifi.SecurityWPA)
+	b := newTestBackend(&mockDeviceWireless{}, []gonetworkmanager.Connection{random, stable, plain})
+
+	result, err := b.ListNetworks(wifi.ScanNever)
+	if err != nil {
+		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
+	}
+
+	want := map[string]bool{"Random": true, "Stable": false, "Plain": false}
+	for _, conn := range result.Networks {
+		if got := conn.RandomizeMAC; got != want[conn.SSID] {
+			t.Errorf("%s RandomizeMAC = %v, want %v", conn.SSID, got, want[conn.SSID])
+		}
+		delete(want, conn.SSID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("ListNetworks did not return networks %v", want)
+	}
+}
+
+func TestApplyRandomizeMAC(t *testing.T) {
+	tests := []struct {
+		name      string
+		wireless  map[string]interface{}
+		randomize bool
+		want      interface{} // nil means the key should be unset
+	}{
+		{"enable from unset", map[string]interface{}{}, true, assignedMACRandom},
+		{"enable replaces stable", map[string]interface{}{assignedMACKey: "stable", deprecatedClonedMACKey: []byte{}}, true, assignedMACRandom},
+		{"disable clears random", map[string]interface{}{assignedMACKey: "random", deprecatedClonedMACKey: []byte{}}, false, nil},
+		{"disable keeps stable", map[string]interface{}{assignedMACKey: "stable"}, false, "stable"},
+		{"disable when unset", map[string]interface{}{}, false, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			settings := map[string]map[string]interface{}{"802-11-wireless": tt.wireless}
+			applyRandomizeMAC(settings, tt.randomize)
+
+			got, ok := settings["802-11-wireless"][assignedMACKey]
+			if tt.want == nil {
+				if ok {
+					t.Fatalf("%s = %#v, want unset", assignedMACKey, got)
+				}
+			} else if got != tt.want {
+				t.Fatalf("%s = %#v, want %#v", assignedMACKey, got, tt.want)
+			}
+			if got == assignedMACRandom || tt.want == nil {
+				if cloned, ok := settings["802-11-wireless"][deprecatedClonedMACKey]; ok {
+					t.Fatalf("%s = %#v, want cleared", deprecatedClonedMACKey, cloned)
+				}
+			}
+		})
+	}
+}

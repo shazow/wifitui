@@ -368,3 +368,54 @@ func runTUITestCommand(t *testing.T, m *model, cmd tea.Cmd) *model {
 	}
 	return runTUITestCommand(t, updated, nextCmd)
 }
+
+type recordingBackend struct {
+	wifi.Backend
+	calls []string
+	opts  wifi.UpdateOptions
+}
+
+func (b *recordingBackend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
+	b.calls = append(b.calls, "update")
+	b.opts = opts
+	return b.Backend.UpdateNetwork(ssid, opts)
+}
+
+func (b *recordingBackend) ActivateNetwork(ssid string) error {
+	b.calls = append(b.calls, "activate")
+	return b.Backend.ActivateNetwork(ssid)
+}
+
+func TestTuiModel_ConnectAppliesRandomizeMACBeforeActivating(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("mock.New() failed: %v", err)
+	}
+	backend.(*mock.MockBackend).ActionSleep = 0
+	recorder := &recordingBackend{Backend: backend}
+
+	m, err := NewModel(recorder)
+	if err != nil {
+		t.Fatalf("NewModel failed: %v", err)
+	}
+
+	item := networkItem{Network: wifi.Network{SSID: "HideYoKidsHideYoWiFi", IsKnown: true, AutoConnect: true}}
+	_, cmd := m.Update(connectMsg{item: item, autoConnect: true, randomizeMAC: true})
+	for _, c := range cmd().(tea.BatchMsg) {
+		if msg := c(); msg != nil {
+			if errMsg, ok := msg.(errorMsg); ok {
+				t.Fatalf("connect returned error: %v", errMsg.err)
+			}
+		}
+	}
+
+	if len(recorder.calls) != 2 || recorder.calls[0] != "update" || recorder.calls[1] != "activate" {
+		t.Fatalf("backend calls = %v, want [update activate]", recorder.calls)
+	}
+	if recorder.opts.RandomizeMAC == nil || !*recorder.opts.RandomizeMAC {
+		t.Errorf("UpdateNetwork RandomizeMAC = %v, want true", recorder.opts.RandomizeMAC)
+	}
+	if recorder.opts.AutoConnect != nil {
+		t.Errorf("UpdateNetwork AutoConnect = %v, want nil since it did not change", *recorder.opts.AutoConnect)
+	}
+}

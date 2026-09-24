@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -279,5 +280,87 @@ func TestSecretLoadingLoop(t *testing.T) {
 		t.Fatal("Loop detected: loadSecretsMsg was triggered after connectionFailedMsg")
 	} else {
 		t.Log("No loadSecretsMsg found, loop broken")
+	}
+}
+
+func focusEditItem(t *testing.T, m *EditModel, target Focusable) {
+	t.Helper()
+	for i := 0; m.focusManager.Focused() != target; i++ {
+		if i > len(m.focusManager.items) {
+			t.Fatalf("could not focus %T", target)
+		}
+		m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	}
+}
+
+func TestEditModel_RandomizeMACCheckboxShown(t *testing.T) {
+	items := map[string]*networkItem{
+		"new":     nil,
+		"unknown": {Network: wifi.Network{SSID: "Cafe", Security: wifi.SecurityOpen, IsVisible: true}},
+		"known":   {Network: wifi.Network{SSID: "Home", Security: wifi.SecurityWPA, IsKnown: true, RandomizeMAC: true}},
+	}
+	for name, item := range items {
+		m := NewEditModel(item)
+		if !strings.Contains(m.View(), "Randomize MAC address") {
+			t.Errorf("%s: view does not contain the Randomize MAC address checkbox", name)
+		}
+		want := item != nil && item.RandomizeMAC
+		if got := m.randomizeMACCheckbox.Checked(); got != want {
+			t.Errorf("%s: checkbox checked = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestEditModel_JoinWithRandomizeMAC(t *testing.T) {
+	m := NewEditModel(&networkItem{
+		Network: wifi.Network{SSID: "Cafe", Security: wifi.SecurityOpen, IsVisible: true},
+	})
+
+	focusEditItem(t, m, m.randomizeMACCheckbox)
+	m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
+	if !m.randomizeMACCheckbox.Checked() {
+		t.Fatal("expected space to check the Randomize MAC address checkbox")
+	}
+
+	focusEditItem(t, m, m.buttonGroup)
+	m.buttonGroup.selected = 0 // Join
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	msg, ok := cmd().(joinNetworkMsg)
+	if !ok {
+		t.Fatalf("expected joinNetworkMsg, got %T", msg)
+	}
+	if !msg.randomizeMAC {
+		t.Error("expected joinNetworkMsg to request MAC randomization")
+	}
+}
+
+func TestEditModel_SaveOnlySendsChangedRandomizeMAC(t *testing.T) {
+	for _, toggle := range []bool{false, true} {
+		m := NewEditModel(&networkItem{
+			Network: wifi.Network{SSID: "Home", Security: wifi.SecurityWPA, IsKnown: true, IsVisible: true},
+		})
+		if toggle {
+			focusEditItem(t, m, m.randomizeMACCheckbox)
+			m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
+		}
+
+		focusEditItem(t, m, m.buttonGroup)
+		m.buttonGroup.selected = 1 // Save
+		_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+		msg, ok := cmd().(updateNetworkMsg)
+		if !ok {
+			t.Fatalf("expected updateNetworkMsg, got %T", msg)
+		}
+		if !toggle {
+			if msg.RandomizeMAC != nil {
+				t.Errorf("unchanged checkbox sent RandomizeMAC = %v, want nil", *msg.RandomizeMAC)
+			}
+			continue
+		}
+		if msg.RandomizeMAC == nil || !*msg.RandomizeMAC {
+			t.Errorf("toggled checkbox sent RandomizeMAC = %v, want true", msg.RandomizeMAC)
+		}
 	}
 }

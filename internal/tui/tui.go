@@ -174,16 +174,24 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return statusMsg{status: fmt.Sprintf("Connecting to %q...", msg.item.SSID), loading: true}
 			},
 		}
+		var opts wifi.UpdateOptions
+		var needsUpdate bool
 		if msg.autoConnect != msg.item.AutoConnect {
-			batch = append(batch, func() tea.Msg {
-				err := m.backend.UpdateNetwork(msg.item.SSID, wifi.UpdateOptions{AutoConnect: &msg.autoConnect})
-				if err != nil {
-					return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
-				}
-				return networkSavedMsg{}
-			})
+			opts.AutoConnect = &msg.autoConnect
+			needsUpdate = true
+		}
+		if msg.randomizeMAC != msg.item.RandomizeMAC {
+			opts.RandomizeMAC = &msg.randomizeMAC
+			needsUpdate = true
 		}
 		batch = append(batch, func() tea.Msg {
+			// Settings must be saved before activating so that they apply to
+			// this connection (e.g. the MAC address used).
+			if needsUpdate {
+				if err := m.backend.UpdateNetwork(msg.item.SSID, opts); err != nil {
+					return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
+				}
+			}
 			err := m.backend.ActivateNetwork(msg.item.SSID)
 			if err != nil {
 				return errorMsg{fmt.Errorf("failed to activate connection: %w", err)}
@@ -195,7 +203,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Joining %q...", msg.ssid), loading: true} },
 			func() tea.Msg {
-				err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden)
+				err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden, wifi.JoinOptions{RandomizeMAC: msg.randomizeMAC})
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 				}

@@ -20,19 +20,20 @@ type startForgettingMsg struct{}
 type connectionFailedMsg struct{ err error }
 
 type EditModel struct {
-	focusManager        *FocusManager
-	ssidAdapter         *TextInput
-	passwordAdapter     *TextInput
-	securityGroup       *ChoiceComponent
-	autoConnectCheckbox *Checkbox
-	buttonGroup         *MultiButtonComponent
-	passwordRevealed    bool
-	isForgetting        bool
-	secretsLoaded       bool
-	hasError            bool
-	selectedItem        networkItem
-	width               int
-	window              *WindowState
+	focusManager         *FocusManager
+	ssidAdapter          *TextInput
+	passwordAdapter      *TextInput
+	securityGroup        *ChoiceComponent
+	autoConnectCheckbox  *Checkbox
+	randomizeMACCheckbox *Checkbox
+	buttonGroup          *MultiButtonComponent
+	passwordRevealed     bool
+	isForgetting         bool
+	secretsLoaded        bool
+	hasError             bool
+	selectedItem         networkItem
+	width                int
+	window               *WindowState
 }
 
 const (
@@ -121,6 +122,9 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 		items = append(items, m.autoConnectCheckbox)
 	}
 
+	m.randomizeMACCheckbox = NewCheckbox("Randomize MAC address", m.selectedItem.RandomizeMAC)
+	items = append(items, m.randomizeMACCheckbox)
+
 	var buttons []string
 	if isNew {
 		buttons = []string{"Join", "Cancel"}
@@ -136,10 +140,11 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 			case 0: // Join
 				return func() tea.Msg {
 					return joinNetworkMsg{
-						ssid:     m.ssidAdapter.Model.Value(),
-						password: m.passwordAdapter.Model.Value(),
-						security: wifi.SecurityType(m.securityGroup.Selected()),
-						isHidden: true,
+						ssid:         m.ssidAdapter.Model.Value(),
+						password:     m.passwordAdapter.Model.Value(),
+						security:     wifi.SecurityType(m.securityGroup.Selected()),
+						isHidden:     true,
+						randomizeMAC: m.randomizeMACCheckbox.Checked(),
 					}
 				}
 			case 1: // Cancel
@@ -149,10 +154,10 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 			switch index {
 			case 0: // Connect
 				return func() tea.Msg {
-					autoConnect := m.autoConnectCheckbox.Checked()
 					return connectMsg{
-						item:        m.selectedItem,
-						autoConnect: autoConnect,
+						item:         m.selectedItem,
+						autoConnect:  m.autoConnectCheckbox.Checked(),
+						randomizeMAC: m.randomizeMACCheckbox.Checked(),
 					}
 				}
 			case 1: // Save
@@ -164,6 +169,11 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 					}
 					if newPassword != "" {
 						opts.Password = &newPassword
+					}
+					// Only send the MAC setting when it changed, since not
+					// every backend supports it.
+					if randomizeMAC := m.randomizeMACCheckbox.Checked(); randomizeMAC != m.selectedItem.RandomizeMAC {
+						opts.RandomizeMAC = &randomizeMAC
 					}
 					return updateNetworkMsg{
 						item:          m.selectedItem,
@@ -180,10 +190,11 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 			case 0: // Join
 				return func() tea.Msg {
 					return joinNetworkMsg{
-						ssid:     m.selectedItem.SSID,
-						password: m.passwordAdapter.Model.Value(),
-						security: m.selectedItem.Security,
-						isHidden: m.selectedItem.IsHidden,
+						ssid:         m.selectedItem.SSID,
+						password:     m.passwordAdapter.Model.Value(),
+						security:     m.selectedItem.Security,
+						isHidden:     m.selectedItem.IsHidden,
+						randomizeMAC: m.randomizeMACCheckbox.Checked(),
 					}
 				}
 			case 1: // Cancel

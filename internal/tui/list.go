@@ -390,7 +390,13 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				selected, ok := m.list.SelectedItem().(networkItem)
 				if ok {
 					if selected.IsKnown {
-						return m, func() tea.Msg { return connectMsg{item: selected} }
+						return m, func() tea.Msg {
+							return connectMsg{
+								item:         selected,
+								autoConnect:  selected.AutoConnect,
+								randomizeMAC: selected.RandomizeMAC,
+							}
+						}
 					} else {
 						editModel := m.newEditModel(&selected)
 						return editModel, nil

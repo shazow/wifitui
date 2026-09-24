@@ -79,7 +79,21 @@ type savedProfile struct {
 	lastConnected *time.Time
 	autoConnect   bool
 	hidden        bool
+	randomizeMAC  bool
 }
+
+// assignedMACKey is the 802-11-wireless setting that controls which MAC
+// address NetworkManager uses for a connection (nmcli's cloned-mac-address).
+const assignedMACKey = "assigned-mac-address"
+
+// deprecatedClonedMACKey is the older byte-array form of assignedMACKey.
+// NetworkManager reports both, so it must be cleared when changing the
+// assigned MAC address to avoid conflicting values.
+const deprecatedClonedMACKey = "cloned-mac-address"
+
+// assignedMACRandom tells NetworkManager to generate a new random MAC address
+// each time the connection is activated.
+const assignedMACRandom = "random"
 
 // New creates a new dbus.Backend.
 func New() (wifi.Backend, error) {
@@ -682,6 +696,9 @@ func parseSavedProfile(conn gonetworkmanager.Connection) (savedProfile, bool) {
 	if hidden, ok := wireless["hidden"].(bool); ok {
 		profile.hidden = hidden
 	}
+	if assigned, ok := wireless[assignedMACKey].(string); ok {
+		profile.randomizeMAC = assigned == assignedMACRandom
+	}
 	return profile, true
 }
 
@@ -796,6 +813,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		conn.IsKnown = true
 		conn.LastConnected = profile.lastConnected
 		conn.AutoConnect = profile.autoConnect
+		conn.RandomizeMAC = profile.randomizeMAC
 		if activeConnectionPath != "" {
 			conn.IsActive = profile.path == activeConnectionPath
 		} else if activeConnectionID != "" {
@@ -908,6 +926,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 			Security:      profile.security,
 			LastConnected: profile.lastConnected,
 			AutoConnect:   profile.autoConnect,
+			RandomizeMAC:  profile.randomizeMAC,
 		})
 		appendedInvisible[profile.path] = true
 	}
@@ -1139,7 +1158,7 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Delete()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, opts wifi.JoinOptions) error {
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
 		return err
@@ -1167,6 +1186,9 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 	}
 	if isHidden {
 		connection["802-11-wireless"]["hidden"] = true
+	}
+	if opts.RandomizeMAC {
+		connection["802-11-wireless"][assignedMACKey] = assignedMACRandom
 	}
 
 	switch security {
@@ -1288,6 +1310,26 @@ func applyUpdateWorkaround(settings map[string]map[string]interface{}) {
 	}
 }
 
+// applyRandomizeMAC enables or disables per-connection MAC address
+// randomization. Disabling it only clears a "random" setting, so other
+// explicit choices (such as "stable" or a fixed address) are left intact.
+func applyRandomizeMAC(settings map[string]map[string]interface{}, randomize bool) {
+	wireless, ok := settings["802-11-wireless"]
+	if !ok {
+		wireless = make(map[string]interface{})
+		settings["802-11-wireless"] = wireless
+	}
+	if randomize {
+		delete(wireless, deprecatedClonedMACKey)
+		wireless[assignedMACKey] = assignedMACRandom
+		return
+	}
+	if assigned, _ := wireless[assignedMACKey].(string); assigned == assignedMACRandom {
+		delete(wireless, deprecatedClonedMACKey)
+		delete(wireless, assignedMACKey)
+	}
+}
+
 func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	conn, err := b.getConnection(ssid)
 	if err != nil {
@@ -1312,6 +1354,10 @@ func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 			settings["connection"] = make(map[string]interface{})
 		}
 		settings["connection"]["autoconnect"] = *opts.AutoConnect
+	}
+
+	if opts.RandomizeMAC != nil {
+		applyRandomizeMAC(settings, *opts.RandomizeMAC)
 	}
 
 	applyUpdateWorkaround(settings)

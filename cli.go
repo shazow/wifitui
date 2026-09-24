@@ -173,7 +173,7 @@ func attemptConnect(ssid string, passphrase string, security wifi.SecurityType, 
 
 	var connectErr error
 	if passphrase != "" || isHidden {
-		connectErr = b.JoinNetwork(ssid, passphrase, security, isHidden)
+		connectErr = b.JoinNetwork(ssid, passphrase, security, isHidden, wifi.JoinOptions{})
 	} else {
 		connectErr = b.ActivateNetwork(ssid)
 	}

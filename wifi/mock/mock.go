@@ -254,7 +254,7 @@ func (m *MockBackend) ForgetNetwork(ssid string) error {
 	return nil
 }
 
-func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, opts wifi.JoinOptions) error {
 	time.Sleep(m.ActionSleep)
 
 	if m.JoinError != nil {
@@ -282,6 +282,7 @@ func (m *MockBackend) JoinNetwork(ssid string, password string, security wifi.Se
 
 	c.IsKnown = true
 	c.AutoConnect = true
+	c.RandomizeMAC = opts.RandomizeMAC
 	if found {
 		m.VisibleNetworks[foundIndex] = c
 	}
@@ -342,6 +343,9 @@ func (m *MockBackend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error 
 			}
 			if opts.AutoConnect != nil {
 				m.KnownNetworks[i].AutoConnect = *opts.AutoConnect
+			}
+			if opts.RandomizeMAC != nil {
+				m.KnownNetworks[i].RandomizeMAC = *opts.RandomizeMAC
 			}
 			return nil
 		}
