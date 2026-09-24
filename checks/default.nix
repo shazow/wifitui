@@ -6,13 +6,64 @@
 
 let
   lib = pkgs.lib;
-in
-lib.optionalAttrs pkgs.stdenv.isLinux {
-  networkmanager-hwsim = pkgs.nixosTest {
-    name = "wifitui-networkmanager-hwsim";
+
+  # Python helpers to drive the TUI in tmux. randomize_mac_from_tui opens the
+  # active network, checks "Randomize MAC address" and presses Connect.
+  tuiHelpers = ''
+    def tui_screen():
+        return machine.succeed("tmux capture-pane -p -t tui")
+
+    def tui_keys(*keys):
+        machine.succeed("tmux send-keys -t tui " + " ".join(keys))
+        machine.sleep(1)
+
+    def wait_for_tui_text(text):
+        try:
+            machine.wait_until_succeeds(f"tmux capture-pane -p -t tui | grep -qF '{text}'", timeout=60)
+        except Exception:
+            print(machine.execute("tmux capture-pane -p -t tui")[1])
+            raise
+
+    def randomize_mac_from_tui(ssid):
+        # Redirect tmux's stdio so the test driver doesn't wait on the tmux
+        # server, which keeps running in the background.
+        machine.succeed("tmux new-session -d -s tui -x 120 -y 50 'NO_COLOR=1 wifitui tui' </dev/null >/dev/null 2>&1")
+        wait_for_tui_text(ssid)
+        tui_keys("Enter")  # The active network is sorted first.
+        wait_for_tui_text("Randomize MAC address")
+        tui_keys("BTab")  # From the buttons to the checkbox.
+        tui_keys("Space")
+        screen = tui_screen()
+        assert "[x] Randomize MAC address" in screen, screen
+        tui_keys("Tab")  # Back to the buttons, where Connect is selected.
+        tui_keys("Enter")
+
+    def wait_for_new_mac(old_mac, connected_cmd, diagnostics):
+        try:
+            machine.wait_until_succeeds(
+                f"test \"$(cat /sys/class/net/wlan1/address)\" != {old_mac} && {connected_cmd}",
+                timeout=60,
+            )
+        except Exception:
+            print(diagnostics())
+            raise
+        finally:
+            machine.execute("tmux kill-session -t tui")
+  '';
+
+  # wifiBackend is NetworkManager's wifi.backend: "wpa_supplicant" or "iwd".
+  mkNetworkManagerTest =
+    { name, wifiBackend }:
+    let
+      viaIwd = wifiBackend == "iwd";
+    in
+    pkgs.nixosTest {
+    inherit name;
 
     nodes.machine =
       { lib, pkgs, ... }:
+      {
+        config = lib.mkMerge [
       {
         virtualisation.memorySize = 1024;
 
@@ -31,6 +82,7 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
 
         networking.networkmanager = {
           enable = true;
+          wifi.backend = wifiBackend;
           unmanaged = [
             "interface-name:wlan0"
             "interface-name:wlan0_*"
@@ -111,10 +163,23 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
           after = [ "hwsim-ap-network.service" ];
           requires = [ "hwsim-ap-network.service" ];
         };
+      }
+      (lib.mkIf viaIwd {
+        # iwd only honors per-network MAC randomization with this.
+        networking.wireless.iwd.settings.General.AddressRandomization = "network";
+        # hostapd runs the access point on wlan0, so iwd must leave it alone.
+        systemd.services.iwd.serviceConfig.ExecStart = [
+          ""
+          "${pkgs.iwd}/libexec/iwd --nointerfaces wlan0"
+        ];
+      })
+        ];
       };
 
     testScript = ''
       import json
+
+      ${tuiHelpers}
 
       def list_networks(scan=False, all_networks=False):
           flags = ["--json"]
@@ -179,50 +244,34 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
       assert rescanned["IsActive"], rescanned
       assert rescanned["IsKnown"], rescanned
 
-      # Enable MAC randomization for the active network from the TUI's edit
-      # screen, like a user would, and check that NetworkManager reconnects
-      # with a random MAC address.
-      def tui_screen():
-          return machine.succeed("tmux capture-pane -p -t tui")
-
-      def tui_keys(*keys):
-          machine.succeed("tmux send-keys -t tui " + " ".join(keys))
-          machine.sleep(1)
+      # Enable MAC randomization for the active network from the TUI, like a
+      # user would, and check that it reconnects with a new MAC address.
+      via_iwd = ${if viaIwd then "True" else "False"}
 
       def mac_diagnostics():
-          return "\n".join([
-              "TUI screen:\n" + tui_screen(),
-              "cloned-mac-address: " + machine.succeed("nmcli -g 802-11-wireless.cloned-mac-address connection show Home_Network"),
-              "wlan1: " + machine.succeed("ip link show wlan1"),
-              machine.succeed("journalctl -u NetworkManager --no-pager | grep -iE 'hw-addr|hwaddr|mac' | tail -n 40 || true"),
-          ])
+          parts = [
+              "TUI screen:\n" + machine.execute("tmux capture-pane -p -t tui")[1],
+              "cloned-mac-address: " + machine.execute("nmcli -g 802-11-wireless.cloned-mac-address connection show Home_Network")[1],
+              machine.execute("ip link show wlan1")[1],
+              machine.execute("journalctl -u NetworkManager --no-pager | grep -iE 'hw-addr|hwaddr|mac|iwd' | tail -n 40")[1],
+          ]
+          if via_iwd:
+              parts.append(machine.execute("cat /etc/iwd/main.conf /var/lib/iwd/*.psk")[1])
+              parts.append(machine.execute("journalctl -u iwd --no-pager | tail -n 40")[1])
+          return "\n".join(parts)
 
       initial_mac = machine.succeed("cat /sys/class/net/wlan1/address").strip()
-      machine.succeed("tmux new-session -d -s tui -x 120 -y 50 'NO_COLOR=1 wifitui tui'")
-      machine.wait_until_succeeds("tmux capture-pane -p -t tui | grep -q Home_Network")
-      tui_keys("Enter")  # The active network is sorted first.
-      machine.wait_until_succeeds("tmux capture-pane -p -t tui | grep -q 'Randomize MAC address'")
-      tui_keys("BTab")  # From the buttons to the checkbox.
-      tui_keys("Space")
-      screen = tui_screen()
-      assert "[x] Randomize MAC address" in screen, screen
-      tui_keys("Tab")  # Back to the buttons, where Connect is selected.
-      tui_keys("Enter")
-
-      try:
-          machine.wait_until_succeeds(
-              "test \"$(nmcli -g 802-11-wireless.cloned-mac-address connection show Home_Network)\" = random",
-              timeout=30,
-          )
-          machine.wait_until_succeeds(
-              f"test \"$(cat /sys/class/net/wlan1/address)\" != {initial_mac}"
-              " && nmcli -t -f ACTIVE,SSID dev wifi | grep '^yes:Home_Network$'",
-              timeout=60,
-          )
-      except Exception:
-          print(mac_diagnostics())
-          raise
-      machine.succeed("tmux kill-session -t tui")
+      randomize_mac_from_tui("Home_Network")
+      wait_for_new_mac(
+          initial_mac,
+          "nmcli -t -f ACTIVE,SSID dev wifi | grep -q '^yes:Home_Network$'",
+          mac_diagnostics,
+      )
+      cloned = machine.succeed("nmcli -g 802-11-wireless.cloned-mac-address connection show Home_Network").strip()
+      assert cloned == "random", cloned
+      if via_iwd:
+          # NetworkManager copies the setting into iwd's settings file.
+          machine.succeed("grep -qx AlwaysRandomizeAddress=true /var/lib/iwd/Home_Network.psk")
 
       randomized = network_by_ssid(list_networks(all_networks=True), "Home_Network")
       assert randomized["RandomizeMAC"], randomized
@@ -239,6 +288,17 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
       assert not forgotten["IsActive"], forgotten
       assert not forgotten["IsKnown"], forgotten
     '';
+  };
+in
+lib.optionalAttrs pkgs.stdenv.isLinux {
+  networkmanager-hwsim = mkNetworkManagerTest {
+    name = "wifitui-networkmanager-hwsim";
+    wifiBackend = "wpa_supplicant";
+  };
+
+  networkmanager-iwd-hwsim = mkNetworkManagerTest {
+    name = "wifitui-networkmanager-iwd-hwsim";
+    wifiBackend = "iwd";
   };
 
   iwd-hwsim = pkgs.nixosTest {
@@ -257,6 +317,7 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
         environment.systemPackages = [
           self.packages.${system}.default
           pkgs.iwd
+          pkgs.tmux
         ];
 
         networking.firewall.enable = false;
@@ -265,6 +326,8 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
           enable = true;
           settings = {
             General.EnableNetworkConfiguration = true;
+            # iwd only honors per-network MAC randomization with this.
+            General.AddressRandomization = "network";
             DriverQuirks.UseDefaultInterface = "mac80211_hwsim";
           };
         };
@@ -273,6 +336,8 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
 
     testScript = ''
       import json
+
+      ${tuiHelpers}
 
       def list_networks(scan=False, all_networks=False):
           flags = ["--json"]
@@ -330,6 +395,29 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
       rescanned = network_by_ssid(list_networks(scan=True, all_networks=True), "Home_Network")
       assert rescanned["IsActive"], rescanned
       assert rescanned["IsKnown"], rescanned
+
+      # Enable MAC randomization for the active network from the TUI, like a
+      # user would, and check that it reconnects with a new MAC address.
+      def mac_diagnostics():
+          return "\n".join([
+              "TUI screen:\n" + machine.execute("tmux capture-pane -p -t tui")[1],
+              machine.execute("ip link show wlan1")[1],
+              machine.execute("iwctl station wlan1 show")[1],
+              machine.execute("cat /etc/iwd/main.conf /var/lib/iwd/*.psk")[1],
+              machine.execute("journalctl -u iwd --no-pager | tail -n 40")[1],
+          ])
+
+      initial_mac = machine.succeed("cat /sys/class/net/wlan1/address").strip()
+      randomize_mac_from_tui("Home_Network")
+      wait_for_new_mac(
+          initial_mac,
+          "iwctl station wlan1 show | grep 'Connected network' | grep -q Home_Network",
+          mac_diagnostics,
+      )
+      machine.succeed("grep -qx AlwaysRandomizeAddress=true /var/lib/iwd/Home_Network.psk")
+
+      randomized = network_by_ssid(list_networks(all_networks=True), "Home_Network")
+      assert randomized["RandomizeMAC"], randomized
 
       machine.succeed("iwctl station wlan1 disconnect")
       machine.wait_until_succeeds("iwctl station wlan1 show | grep -E 'State[[:space:]]+disconnected'")

@@ -5,14 +5,28 @@ package iwd
 import (
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/godbus/dbus/v5"
+	"golang.org/x/sys/unix"
+
 	"github.com/shazow/wifitui/wifi"
 )
 
 const scanCompletionTimeout = 30 * time.Second
 const propertyChangeTimeout = 5 * time.Second
+
+// configReloadDelay is how long to wait after editing a known network's
+// settings file. iwd rereads the file when inotify reports the change and does
+// not signal when it is done, so this gives it time before a following
+// connection relies on the new settings.
+const configReloadDelay = 500 * time.Millisecond
+
+// knownNetworkTimeout is how long to wait for iwd to load a new settings file.
+const knownNetworkTimeout = 5 * time.Second
 
 const dbusPropertiesIface = "org.freedesktop.DBus.Properties"
 
@@ -56,7 +70,18 @@ func (a *agent) Cancel(_ dbus.ObjectPath) *dbus.Error {
 }
 
 // Backend implements the backend.Backend interface using iwd.
-type Backend struct{}
+type Backend struct {
+	// stateDir is iwd's state directory, set only when MAC randomization
+	// can be configured (see macRandomizationStateDir).
+	stateDir string
+}
+
+// randomMACBackend is a Backend that also implements wifi.MACRandomizer.
+type randomMACBackend struct {
+	*Backend
+}
+
+var _ wifi.MACRandomizer = randomMACBackend{}
 
 // New creates a new iwd.Backend.
 func New() (wifi.Backend, error) {
@@ -75,7 +100,28 @@ func New() (wifi.Backend, error) {
 		return nil, fmt.Errorf("iwd is not available: %w", wifi.ErrNotAvailable)
 	}
 
-	return &Backend{}, nil
+	b := &Backend{}
+	if dir, ok := macRandomizationStateDir(conn); ok {
+		b.stateDir = dir
+		return randomMACBackend{b}, nil
+	}
+	return b, nil
+}
+
+// macRandomizationStateDir returns iwd's state directory if per-network MAC
+// randomization can be configured: iwd's main.conf must set
+// AddressRandomization=network, and wifitui must be able to edit the network
+// files in the state directory, which normally requires root.
+func macRandomizationStateDir(conn *dbus.Conn) (string, bool) {
+	enabled, err := PerNetworkAddressRandomization(DefaultConfigDir)
+	if err != nil || !enabled {
+		return "", false
+	}
+	dir := stateDirectory(conn)
+	if unix.Access(dir, unix.R_OK|unix.W_OK|unix.X_OK) != nil {
+		return "", false
+	}
+	return dir, true
 }
 
 // getManagedObjects returns all iwd managed objects from D-Bus ObjectManager.
@@ -311,13 +357,23 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 				}
 			}
 
+			randomizeMAC := false
+			if b.stateDir != "" {
+				if path, err := b.knownNetworkFile(knownObj, ssid); err == nil {
+					if data, err := os.ReadFile(path); err == nil {
+						randomizeMAC = keyfileBool(data, settingsGroup, alwaysRandomizeAddressKey)
+					}
+				}
+			}
+
 			if c, exists := visibleNetworks[ssid]; exists {
 				c.IsKnown = true
 				c.IsHidden = isHidden
 				c.AutoConnect = autoConnect
+				c.RandomizeMAC = randomizeMAC
 				visibleNetworks[ssid] = c
 			} else {
-				connections = append(connections, wifi.Network{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect})
+				connections = append(connections, wifi.Network{SSID: ssid, IsKnown: true, IsHidden: isHidden, AutoConnect: autoConnect, RandomizeMAC: randomizeMAC})
 			}
 		}
 	}
@@ -451,8 +507,23 @@ func (b *Backend) ActivateNetwork(ssid string) error {
 	if networkPath == "" {
 		return fmt.Errorf("network %s not found: %w", ssid, wifi.ErrNotFound)
 	}
+	network := conn.Object(iwdDest, networkPath)
+
+	// iwd treats connecting to the connected network as a no-op. Reconnect
+	// instead, like NetworkManager does, so that changed settings such as
+	// MAC randomization take effect.
+	if connected, err := network.GetProperty(iwdNetworkIface + ".Connected"); err == nil && connected.Value() == true {
+		station, err := getStationDevice(conn)
+		if err != nil {
+			return err
+		}
+		if err := conn.Object(iwdDest, station).Call(iwdStationIface+".Disconnect", 0).Err; err != nil {
+			return fmt.Errorf("failed to disconnect before reconnecting: %w", err)
+		}
+	}
+
 	// Network.Connect takes no arguments
-	return conn.Object(iwdDest, networkPath).Call(iwdNetworkIface+".Connect", 0).Err
+	return network.Call(iwdNetworkIface+".Connect", 0).Err
 }
 
 func (b *Backend) ForgetNetwork(ssid string) error {
@@ -524,6 +595,138 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 		return fmt.Errorf("network %s not found: %w", ssid, wifi.ErrNotFound)
 	}
 	return conn.Object(iwdDest, networkPath).Call(iwdNetworkIface+".Connect", 0).Err
+}
+
+// knownNetworkFile returns the path of the settings file for a known network.
+func (b *Backend) knownNetworkFile(known dbus.BusObject, ssid string) (string, error) {
+	typeVar, err := known.GetProperty(iwdKnownNetworkIface + ".Type")
+	if err != nil {
+		return "", err
+	}
+	networkType, _ := typeVar.Value().(string)
+	if networkType == "" {
+		return "", fmt.Errorf("unknown iwd network type for %s: %w", ssid, wifi.ErrOperationFailed)
+	}
+	return filepath.Join(b.stateDir, networkFileName(ssid, networkType)), nil
+}
+
+// waitForKnownNetwork waits for iwd to load the settings file for ssid.
+func waitForKnownNetwork(conn *dbus.Conn, ssid string) error {
+	deadline := time.Now().Add(knownNetworkTimeout)
+	for {
+		path, err := findKnownNetworkPath(conn, ssid)
+		if err != nil {
+			return err
+		}
+		if path != "" {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("iwd did not load the settings for %s: %w", ssid, wifi.ErrOperationFailed)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+// JoinNetworkRandomMAC implements wifi.MACRandomizer. It writes the network's
+// settings file before connecting, so the first connection already uses a
+// random MAC address.
+func (b randomMACBackend) JoinNetworkRandomMAC(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+	networkType, ok := iwdNetworkType(security)
+	if !ok {
+		return fmt.Errorf("MAC randomization is only supported for open and WPA networks with iwd: %w", wifi.ErrNotSupported)
+	}
+
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+
+	path := filepath.Join(b.stateDir, networkFileName(ssid, networkType))
+	data, err := os.ReadFile(path)
+	created := errors.Is(err, fs.ErrNotExist)
+	if err != nil && !created {
+		return err
+	}
+	if created {
+		// A new network is provisioned with its credentials. An existing
+		// one keeps its own, as iwd ignores new credentials for known
+		// networks when connecting.
+		if networkType == "psk" && password != "" {
+			data = setKeyfileValue(data, securityGroup, "Passphrase", escapeKeyfileValue(password))
+		}
+		if isHidden {
+			data = setKeyfileValue(data, settingsGroup, "Hidden", "true")
+		}
+	}
+	data = setKeyfileValue(data, settingsGroup, alwaysRandomizeAddressKey, "true")
+	if err := writeFileAtomic(path, data); err != nil {
+		return fmt.Errorf("failed to write iwd settings for %s: %w", ssid, err)
+	}
+
+	err = b.connectProvisioned(conn, ssid, isHidden, created)
+	if err != nil && created {
+		// Don't leave a network that never connected behind as known.
+		_ = os.Remove(path)
+	}
+	return err
+}
+
+// connectProvisioned connects to a network after its settings file was
+// written. Hidden networks with a settings file can't use
+// ConnectHiddenNetwork, so they are found with a scan instead.
+func (b randomMACBackend) connectProvisioned(conn *dbus.Conn, ssid string, isHidden bool, created bool) error {
+	if created {
+		if err := waitForKnownNetwork(conn, ssid); err != nil {
+			return err
+		}
+	} else {
+		time.Sleep(configReloadDelay)
+	}
+
+	if isHidden {
+		station, err := getStationDevice(conn)
+		if err != nil {
+			return err
+		}
+		if err := scanAndWait(conn, station); err != nil {
+			return err
+		}
+	}
+	return b.ActivateNetwork(ssid)
+}
+
+// SetRandomizeMAC implements wifi.MACRandomizer.
+func (b randomMACBackend) SetRandomizeMAC(ssid string, randomize bool) error {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return err
+	}
+	knownPath, err := findKnownNetworkPath(conn, ssid)
+	if err != nil {
+		return err
+	}
+	if knownPath == "" {
+		return fmt.Errorf("cannot set MAC randomization: network %s is not known: %w", ssid, wifi.ErrNotFound)
+	}
+	path, err := b.knownNetworkFile(conn.Object(iwdDest, knownPath), ssid)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("failed to read iwd settings for %s: %w", ssid, err)
+	}
+
+	value := ""
+	if randomize {
+		value = "true"
+	}
+	if err := writeFileAtomic(path, setKeyfileValue(data, settingsGroup, alwaysRandomizeAddressKey, value)); err != nil {
+		return fmt.Errorf("failed to write iwd settings for %s: %w", ssid, err)
+	}
+	time.Sleep(configReloadDelay)
+	return nil
 }
 
 func (b *Backend) GetSecrets(ssid string) (string, error) {

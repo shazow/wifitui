@@ -15,6 +15,7 @@ import (
 	"github.com/godbus/dbus/v5"
 	"github.com/google/uuid"
 	"github.com/shazow/wifitui/wifi"
+	"github.com/shazow/wifitui/wifi/iwd"
 )
 
 const (
@@ -51,7 +52,26 @@ type Backend struct {
 	lastScanAttempt  time.Time
 	scanMu           sync.Mutex
 	scanInFlight     *scanOperation
+
+	// macRandomization is true when NetworkManager applies the MAC address
+	// setting of connections (see macRandomizationSupport).
+	macRandomization bool
+	// viaIwd is true when NetworkManager uses iwd for Wi-Fi.
+	viaIwd bool
 }
+
+// iwdReloadDelay is how long to wait after changing a connection's MAC address
+// setting when NetworkManager uses iwd. NetworkManager copies the setting into
+// iwd's settings file, which iwd rereads asynchronously without signaling when
+// it is done, so this gives it time before the connection is activated.
+const iwdReloadDelay = 500 * time.Millisecond
+
+// randomMACBackend is a Backend that also implements wifi.MACRandomizer.
+type randomMACBackend struct {
+	*Backend
+}
+
+var _ wifi.MACRandomizer = randomMACBackend{}
 
 type scanOperation struct {
 	key  string
@@ -117,12 +137,40 @@ func New() (wifi.Backend, error) {
 		return nil, fmt.Errorf("failed to get settings: %w", wifi.ErrOperationFailed)
 	}
 
-	return &Backend{
+	b := &Backend{
 		NM:           nm,
 		Settings:     settings,
 		connections:  make(map[networkKey]gonetworkmanager.Connection),
 		accessPoints: make(map[networkKey]gonetworkmanager.AccessPoint),
-	}, nil
+	}
+	b.macRandomization, b.viaIwd = macRandomizationSupport()
+	if b.macRandomization {
+		return randomMACBackend{b}, nil
+	}
+	return b, nil
+}
+
+// macRandomizationSupport reports whether NetworkManager will use the MAC
+// address setting of connections, and whether it uses iwd for Wi-Fi.
+//
+// With wpa_supplicant, NetworkManager sets the MAC address itself. With iwd
+// (wifi.backend=iwd), it instead copies "random" into iwd's settings file for
+// the network as AlwaysRandomizeAddress=true, which iwd only honors when its
+// main.conf sets AddressRandomization=network.
+func macRandomizationSupport() (supported bool, viaIwd bool) {
+	conn, err := dbus.SystemBus()
+	if err != nil {
+		return false, false
+	}
+	err = conn.BusObject().Call("org.freedesktop.DBus.NameHasOwner", 0, "net.connman.iwd").Store(&viaIwd)
+	if err != nil {
+		return false, false
+	}
+	if !viaIwd {
+		return true, false
+	}
+	enabled, err := iwd.PerNetworkAddressRandomization(iwd.DefaultConfigDir)
+	return err == nil && enabled, true
 }
 
 func isUnavailableDBusError(err error) bool {
@@ -813,7 +861,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		conn.IsKnown = true
 		conn.LastConnected = profile.lastConnected
 		conn.AutoConnect = profile.autoConnect
-		conn.RandomizeMAC = profile.randomizeMAC
+		conn.RandomizeMAC = b.macRandomization && profile.randomizeMAC
 		if activeConnectionPath != "" {
 			conn.IsActive = profile.path == activeConnectionPath
 		} else if activeConnectionID != "" {
@@ -926,7 +974,7 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 			Security:      profile.security,
 			LastConnected: profile.lastConnected,
 			AutoConnect:   profile.autoConnect,
-			RandomizeMAC:  profile.randomizeMAC,
+			RandomizeMAC:  b.macRandomization && profile.randomizeMAC,
 		})
 		appendedInvisible[profile.path] = true
 	}
@@ -1158,14 +1206,12 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Delete()
 }
 
-var _ wifi.MACRandomizer = (*Backend)(nil)
-
 func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	return b.joinNetwork(ssid, password, security, isHidden, false)
 }
 
 // JoinNetworkRandomMAC implements wifi.MACRandomizer.
-func (b *Backend) JoinNetworkRandomMAC(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+func (b randomMACBackend) JoinNetworkRandomMAC(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	return b.joinNetwork(ssid, password, security, isHidden, true)
 }
 
@@ -1229,6 +1275,9 @@ func (b *Backend) joinNetwork(ssid string, password string, security wifi.Securi
 			_ = conn.Delete()
 		}
 	}()
+	if randomizeMAC && b.viaIwd {
+		time.Sleep(iwdReloadDelay)
+	}
 
 	var activeConn gonetworkmanager.ActiveConnection
 	if isHidden {
@@ -1372,7 +1421,7 @@ func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 }
 
 // SetRandomizeMAC implements wifi.MACRandomizer.
-func (b *Backend) SetRandomizeMAC(ssid string, randomize bool) error {
+func (b randomMACBackend) SetRandomizeMAC(ssid string, randomize bool) error {
 	conn, err := b.getConnection(ssid)
 	if err != nil {
 		return err
@@ -1385,7 +1434,13 @@ func (b *Backend) SetRandomizeMAC(ssid string, randomize bool) error {
 
 	applyRandomizeMAC(settings, randomize)
 	applyUpdateWorkaround(settings)
-	return conn.Update(settings)
+	if err := conn.Update(settings); err != nil {
+		return err
+	}
+	if b.viaIwd {
+		time.Sleep(iwdReloadDelay)
+	}
+	return nil
 }
 
 func (b *Backend) IsWirelessEnabled() (bool, error) {

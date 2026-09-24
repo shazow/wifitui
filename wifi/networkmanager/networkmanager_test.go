@@ -1292,7 +1292,7 @@ func TestJoinNetworkRandomMAC_SetsAssignedAddress(t *testing.T) {
 
 		join := b.JoinNetwork
 		if randomize {
-			join = b.JoinNetworkRandomMAC
+			join = randomMACBackend{b}.JoinNetworkRandomMAC
 		}
 		if err := join("Cafe", "password", wifi.SecurityWPA, false); err != nil {
 			t.Fatalf("join (randomize=%v) returned error: %v", randomize, err)
@@ -1313,22 +1313,37 @@ func TestListNetworks_ReportsRandomizeMAC(t *testing.T) {
 	stable := newMockConnection("/org/freedesktop/NetworkManager/Settings/2", "Stable", "Stable", wifi.SecurityWPA)
 	stable.settings["802-11-wireless"][assignedMACKey] = "stable"
 	plain := newMockConnection("/org/freedesktop/NetworkManager/Settings/3", "Plain", "Plain", wifi.SecurityWPA)
-	b := newTestBackend(&mockDeviceWireless{}, []gonetworkmanager.Connection{random, stable, plain})
+	for _, supported := range []bool{true, false} {
+		b := newTestBackend(&mockDeviceWireless{}, []gonetworkmanager.Connection{random, stable, plain})
+		b.macRandomization = supported
 
-	result, err := b.ListNetworks(wifi.ScanNever)
-	if err != nil {
-		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
-	}
-
-	want := map[string]bool{"Random": true, "Stable": false, "Plain": false}
-	for _, conn := range result.Networks {
-		if got := conn.RandomizeMAC; got != want[conn.SSID] {
-			t.Errorf("%s RandomizeMAC = %v, want %v", conn.SSID, got, want[conn.SSID])
+		result, err := b.ListNetworks(wifi.ScanNever)
+		if err != nil {
+			t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 		}
-		delete(want, conn.SSID)
+
+		// Without support, NetworkManager ignores the setting, so it isn't reported.
+		want := map[string]bool{"Random": supported, "Stable": false, "Plain": false}
+		for _, conn := range result.Networks {
+			if got := conn.RandomizeMAC; got != want[conn.SSID] {
+				t.Errorf("supported=%v: %s RandomizeMAC = %v, want %v", supported, conn.SSID, got, want[conn.SSID])
+			}
+			delete(want, conn.SSID)
+		}
+		if len(want) != 0 {
+			t.Fatalf("ListNetworks did not return networks %v", want)
+		}
 	}
-	if len(want) != 0 {
-		t.Fatalf("ListNetworks did not return networks %v", want)
+}
+
+func TestBackendOnlyImplementsMACRandomizerWhenSupported(t *testing.T) {
+	var b wifi.Backend = &Backend{}
+	if _, ok := b.(wifi.MACRandomizer); ok {
+		t.Error("*Backend implements wifi.MACRandomizer, want only randomMACBackend to")
+	}
+	b = randomMACBackend{&Backend{}}
+	if _, ok := b.(wifi.MACRandomizer); !ok {
+		t.Error("randomMACBackend does not implement wifi.MACRandomizer")
 	}
 }
 
@@ -1371,7 +1386,7 @@ func TestSetRandomizeMAC_UpdatesSavedProfile(t *testing.T) {
 	conn := newMockConnection("/org/freedesktop/NetworkManager/Settings/1", "Home", "Home", wifi.SecurityWPA)
 	b := newTestBackend(&mockDeviceWireless{}, []gonetworkmanager.Connection{conn})
 
-	if err := b.SetRandomizeMAC("Home", true); err != nil {
+	if err := (randomMACBackend{b}).SetRandomizeMAC("Home", true); err != nil {
 		t.Fatalf("SetRandomizeMAC(true) returned error: %v", err)
 	}
 	if conn.updated == nil {

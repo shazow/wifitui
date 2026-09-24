@@ -14,6 +14,7 @@
 - [x] QR code for sharing a known network with your phone
 - [x] Join new and hidden networks (`c` and `n` keys)
 - [x] Initiate a scan (`s` key)
+- [x] Randomize the MAC address per network (see [MAC address randomization](#mac-address-randomization))
 - [x] Multiple backends (experimental `iwd` and darwin support, untested)
 - [x] Non-interactive modes (`list` `show` `connect` `radio` commands), perfect for scripts and bots.
 - [x] Bring your own color scheme and theme (`--theme=./theme.toml` or set `WIFITUI_THEME=./theme.toml`)
@@ -93,6 +94,22 @@ $ ./wifitui show --json "GET off my LAN"
   "AutoConnect": false
 }
 ```
+
+## MAC address randomization
+
+The connection screen has a "Randomize MAC address" checkbox, which makes the network use a new random MAC address each time you connect. The checkbox only appears when the setting will take effect:
+
+- **NetworkManager with wpa_supplicant** (the default): always available.
+- **NetworkManager with iwd** (`wifi.backend=iwd`) **and iwd on its own**: iwd ignores per-network randomization unless `/etc/iwd/main.conf` has:
+
+  ```ini
+  [General]
+  AddressRandomization=network
+  ```
+
+  Restart iwd after changing it. Note that this also gives every other network its own stable MAC address instead of the hardware one.
+- **iwd on its own**: wifitui also needs write access to iwd's state directory (usually `/var/lib/iwd`), so it has to run as root.
+- **macOS**: not supported.
 
 ##  Why not `nmtui` or `impala`?
 
