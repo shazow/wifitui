@@ -24,6 +24,7 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
         environment.systemPackages = [
           self.packages.${system}.default
           pkgs.networkmanager
+          pkgs.tmux
         ];
 
         networking.firewall.enable = false;
@@ -177,6 +178,54 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
       rescanned = network_by_ssid(list_networks(scan=True, all_networks=True), "Home_Network")
       assert rescanned["IsActive"], rescanned
       assert rescanned["IsKnown"], rescanned
+
+      # Enable MAC randomization for the active network from the TUI's edit
+      # screen, like a user would, and check that NetworkManager reconnects
+      # with a random MAC address.
+      def tui_screen():
+          return machine.succeed("tmux capture-pane -p -t tui")
+
+      def tui_keys(*keys):
+          machine.succeed("tmux send-keys -t tui " + " ".join(keys))
+          machine.sleep(1)
+
+      def mac_diagnostics():
+          return "\n".join([
+              "TUI screen:\n" + tui_screen(),
+              "cloned-mac-address: " + machine.succeed("nmcli -g 802-11-wireless.cloned-mac-address connection show Home_Network"),
+              "wlan1: " + machine.succeed("ip link show wlan1"),
+              machine.succeed("journalctl -u NetworkManager --no-pager | grep -iE 'hw-addr|hwaddr|mac' | tail -n 40 || true"),
+          ])
+
+      initial_mac = machine.succeed("cat /sys/class/net/wlan1/address").strip()
+      machine.succeed("tmux new-session -d -s tui -x 120 -y 50 'NO_COLOR=1 wifitui tui'")
+      machine.wait_until_succeeds("tmux capture-pane -p -t tui | grep -q Home_Network")
+      tui_keys("Enter")  # The active network is sorted first.
+      machine.wait_until_succeeds("tmux capture-pane -p -t tui | grep -q 'Randomize MAC address'")
+      tui_keys("BTab")  # From the buttons to the checkbox.
+      tui_keys("Space")
+      screen = tui_screen()
+      assert "[x] Randomize MAC address" in screen, screen
+      tui_keys("Tab")  # Back to the buttons, where Connect is selected.
+      tui_keys("Enter")
+
+      try:
+          machine.wait_until_succeeds(
+              "test \"$(nmcli -g 802-11-wireless.cloned-mac-address connection show Home_Network)\" = random",
+              timeout=30,
+          )
+          machine.wait_until_succeeds(
+              f"test \"$(cat /sys/class/net/wlan1/address)\" != {initial_mac}"
+              " && nmcli -t -f ACTIVE,SSID dev wifi | grep '^yes:Home_Network$'",
+              timeout=60,
+          )
+      except Exception:
+          print(mac_diagnostics())
+          raise
+      machine.succeed("tmux kill-session -t tui")
+
+      randomized = network_by_ssid(list_networks(all_networks=True), "Home_Network")
+      assert randomized["RandomizeMAC"], randomized
 
       machine.succeed("nmcli connection modify Home_Network connection.autoconnect no")
       machine.succeed("nmcli device disconnect wlan1")
