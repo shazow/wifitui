@@ -497,12 +497,12 @@ func (f *flakyBackend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, er
 	return f.MockBackend.ListNetworks(scan)
 }
 
-func (f *flakyBackend) JoinNetwork(ssid, passphrase string, security wifi.SecurityType, isHidden bool, opts wifi.JoinOptions) error {
+func (f *flakyBackend) JoinNetwork(ssid, passphrase string, security wifi.SecurityType, isHidden bool) error {
 	if f.failCount < f.maxFails {
 		f.failCount++
 		return errors.New("transient failure")
 	}
-	return f.MockBackend.JoinNetwork(ssid, passphrase, security, isHidden, opts)
+	return f.MockBackend.JoinNetwork(ssid, passphrase, security, isHidden)
 }
 
 func TestRunConnectRetry(t *testing.T) {

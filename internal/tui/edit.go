@@ -47,6 +47,12 @@ func NewEditModel(item *networkItem) *EditModel {
 }
 
 func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
+	return newEditModelWithFeatures(item, window, features{})
+}
+
+// newEditModelWithFeatures creates an EditModel that also shows the controls
+// for the optional backend features that are enabled.
+func newEditModelWithFeatures(item *networkItem, window *WindowState, features features) *EditModel {
 	if item == nil {
 		item = &networkItem{}
 	}
@@ -122,8 +128,10 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 		items = append(items, m.autoConnectCheckbox)
 	}
 
-	m.randomizeMACCheckbox = NewCheckbox("Randomize MAC address", m.selectedItem.RandomizeMAC)
-	items = append(items, m.randomizeMACCheckbox)
+	if features.randomizeMAC {
+		m.randomizeMACCheckbox = NewCheckbox("Randomize MAC address", m.selectedItem.RandomizeMAC)
+		items = append(items, m.randomizeMACCheckbox)
+	}
 
 	var buttons []string
 	if isNew {
@@ -144,7 +152,7 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 						password:     m.passwordAdapter.Model.Value(),
 						security:     wifi.SecurityType(m.securityGroup.Selected()),
 						isHidden:     true,
-						randomizeMAC: m.randomizeMACCheckbox.Checked(),
+						randomizeMAC: m.randomizeMAC(),
 					}
 				}
 			case 1: // Cancel
@@ -157,7 +165,7 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 					return connectMsg{
 						item:         m.selectedItem,
 						autoConnect:  m.autoConnectCheckbox.Checked(),
-						randomizeMAC: m.randomizeMACCheckbox.Checked(),
+						randomizeMAC: m.randomizeMAC(),
 					}
 				}
 			case 1: // Save
@@ -170,15 +178,14 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 					if newPassword != "" {
 						opts.Password = &newPassword
 					}
-					// Only send the MAC setting when it changed, since not
-					// every backend supports it.
-					if randomizeMAC := m.randomizeMACCheckbox.Checked(); randomizeMAC != m.selectedItem.RandomizeMAC {
-						opts.RandomizeMAC = &randomizeMAC
-					}
-					return updateNetworkMsg{
+					msg := updateNetworkMsg{
 						item:          m.selectedItem,
 						UpdateOptions: opts,
 					}
+					if randomizeMAC := m.randomizeMAC(); randomizeMAC != m.selectedItem.RandomizeMAC {
+						msg.randomizeMAC = &randomizeMAC
+					}
+					return msg
 				}
 			case 2: // Forget
 				return func() tea.Msg { return startForgettingMsg{} }
@@ -194,7 +201,7 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 						password:     m.passwordAdapter.Model.Value(),
 						security:     m.selectedItem.Security,
 						isHidden:     m.selectedItem.IsHidden,
-						randomizeMAC: m.randomizeMACCheckbox.Checked(),
+						randomizeMAC: m.randomizeMAC(),
 					}
 				}
 			case 1: // Cancel
@@ -214,6 +221,15 @@ func NewEditModelWithWindow(item *networkItem, window *WindowState) *EditModel {
 		m.focusManager.Focus()
 	}
 	return &m
+}
+
+// randomizeMAC returns whether the Randomize MAC address checkbox is checked,
+// or the network's current setting when the checkbox is not shown.
+func (m *EditModel) randomizeMAC() bool {
+	if m.randomizeMACCheckbox == nil {
+		return m.selectedItem.RandomizeMAC
+	}
+	return m.randomizeMACCheckbox.Checked()
 }
 
 func (m *EditModel) SetPassword(password string) {

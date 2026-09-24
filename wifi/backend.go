@@ -33,7 +33,8 @@ type Network struct {
 	LastConnected *time.Time
 	AutoConnect   bool
 	// RandomizeMAC is true if a known network is configured to use a random
-	// MAC address when connecting.
+	// MAC address when connecting. It is only set by backends that implement
+	// MACRandomizer.
 	RandomizeMAC bool
 }
 
@@ -85,15 +86,8 @@ func (c *Network) AddAccessPoint(other Network) error {
 // UpdateOptions specifies the properties to update for a known network.
 // A nil value for a field means that the property should not be changed.
 type UpdateOptions struct {
-	Password     *string
-	AutoConnect  *bool
-	RandomizeMAC *bool
-}
-
-// JoinOptions specifies additional settings for joining a network.
-type JoinOptions struct {
-	// RandomizeMAC requests a random MAC address when connecting to the network.
-	RandomizeMAC bool
+	Password    *string
+	AutoConnect *bool
 }
 
 // ScanMode controls whether listing networks should request a scan first.
@@ -125,7 +119,7 @@ type Backend interface {
 	// ForgetNetwork removes a known network configuration.
 	ForgetNetwork(ssid string) error
 	// JoinNetwork connects to a new network, potentially creating a new configuration.
-	JoinNetwork(ssid string, password string, security SecurityType, isHidden bool, opts JoinOptions) error
+	JoinNetwork(ssid string, password string, security SecurityType, isHidden bool) error
 	// GetSecrets retrieves the password for a known network.
 	GetSecrets(ssid string) (string, error)
 	// UpdateNetwork updates a known network.
@@ -135,4 +129,14 @@ type Backend interface {
 	IsWirelessEnabled() (bool, error)
 	// SetWireless enables or disables the wireless radio.
 	SetWireless(enabled bool) error
+}
+
+// MACRandomizer is an optional extension of Backend for backends that can use
+// a random MAC address when connecting to a network.
+type MACRandomizer interface {
+	// JoinNetworkRandomMAC is like JoinNetwork, but configures the new network
+	// to use a random MAC address before it is first activated.
+	JoinNetworkRandomMAC(ssid string, password string, security SecurityType, isHidden bool) error
+	// SetRandomizeMAC enables or disables MAC randomization for a known network.
+	SetRandomizeMAC(ssid string, randomize bool) error
 }

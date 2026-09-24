@@ -1158,7 +1158,18 @@ func (b *Backend) ForgetNetwork(ssid string) error {
 	return conn.Delete()
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, opts wifi.JoinOptions) error {
+var _ wifi.MACRandomizer = (*Backend)(nil)
+
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+	return b.joinNetwork(ssid, password, security, isHidden, false)
+}
+
+// JoinNetworkRandomMAC implements wifi.MACRandomizer.
+func (b *Backend) JoinNetworkRandomMAC(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
+	return b.joinNetwork(ssid, password, security, isHidden, true)
+}
+
+func (b *Backend) joinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, randomizeMAC bool) error {
 	wirelessDevice, err := b.getWirelessDevice()
 	if err != nil {
 		return err
@@ -1187,7 +1198,7 @@ func (b *Backend) JoinNetwork(ssid string, password string, security wifi.Securi
 	if isHidden {
 		connection["802-11-wireless"]["hidden"] = true
 	}
-	if opts.RandomizeMAC {
+	if randomizeMAC {
 		connection["802-11-wireless"][assignedMACKey] = assignedMACRandom
 	}
 
@@ -1356,10 +1367,23 @@ func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 		settings["connection"]["autoconnect"] = *opts.AutoConnect
 	}
 
-	if opts.RandomizeMAC != nil {
-		applyRandomizeMAC(settings, *opts.RandomizeMAC)
+	applyUpdateWorkaround(settings)
+	return conn.Update(settings)
+}
+
+// SetRandomizeMAC implements wifi.MACRandomizer.
+func (b *Backend) SetRandomizeMAC(ssid string, randomize bool) error {
+	conn, err := b.getConnection(ssid)
+	if err != nil {
+		return err
 	}
 
+	settings, err := conn.GetSettings()
+	if err != nil {
+		return err
+	}
+
+	applyRandomizeMAC(settings, randomize)
 	applyUpdateWorkaround(settings)
 	return conn.Update(settings)
 }

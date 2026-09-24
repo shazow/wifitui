@@ -134,6 +134,7 @@ type mockConnection struct {
 	settings     gonetworkmanager.ConnectionSettings
 	saveCalled   bool
 	deleteCalled bool
+	updated      gonetworkmanager.ConnectionSettings
 }
 
 func newMockConnection(path, id, ssid string, security wifi.SecurityType) *mockConnection {
@@ -177,6 +178,11 @@ func (m *mockConnection) GetSettings() (gonetworkmanager.ConnectionSettings, err
 
 func (m *mockConnection) Save() error {
 	m.saveCalled = true
+	return nil
+}
+
+func (m *mockConnection) Update(settings gonetworkmanager.ConnectionSettings) error {
+	m.updated = settings
 	return nil
 }
 
@@ -1039,7 +1045,7 @@ func TestJoinNetwork_HiddenRequestsTargetedScan(t *testing.T) {
 		return nil
 	}
 
-	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true, wifi.JoinOptions{})
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
 	if err != nil {
 		t.Fatalf("JoinNetwork(hidden) returned error: %v", err)
 	}
@@ -1081,7 +1087,7 @@ func TestJoinNetwork_HiddenScanFailureDoesNotAbortActivation(t *testing.T) {
 		return errors.New("scan not allowed")
 	}
 
-	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true, wifi.JoinOptions{})
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
 	if err != nil {
 		t.Fatalf("JoinNetwork(hidden) returned error after targeted scan failure: %v", err)
 	}
@@ -1108,7 +1114,7 @@ func TestJoinNetwork_HiddenActivationFailureIncludesScanFailure(t *testing.T) {
 		return errors.New("targeted scan rejected")
 	}
 
-	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true, wifi.JoinOptions{})
+	err := b.JoinNetwork("HiddenNet", "password", wifi.SecurityWPA, true)
 	if err == nil {
 		t.Fatal("JoinNetwork(hidden) returned nil after activation failure")
 	}
@@ -1263,7 +1269,7 @@ type testError string
 
 func (e testError) Error() string { return string(e) }
 
-func TestJoinNetwork_RandomizeMACSetsAssignedAddress(t *testing.T) {
+func TestJoinNetworkRandomMAC_SetsAssignedAddress(t *testing.T) {
 	for _, randomize := range []bool{false, true} {
 		device := &mockDeviceWireless{}
 		var added gonetworkmanager.ConnectionSettings
@@ -1284,16 +1290,19 @@ func TestJoinNetwork_RandomizeMACSetsAssignedAddress(t *testing.T) {
 			},
 		}
 
-		err := b.JoinNetwork("Cafe", "password", wifi.SecurityWPA, false, wifi.JoinOptions{RandomizeMAC: randomize})
-		if err != nil {
-			t.Fatalf("JoinNetwork(RandomizeMAC=%v) returned error: %v", randomize, err)
+		join := b.JoinNetwork
+		if randomize {
+			join = b.JoinNetworkRandomMAC
+		}
+		if err := join("Cafe", "password", wifi.SecurityWPA, false); err != nil {
+			t.Fatalf("join (randomize=%v) returned error: %v", randomize, err)
 		}
 		assigned, ok := added["802-11-wireless"][assignedMACKey]
 		if randomize && assigned != assignedMACRandom {
-			t.Fatalf("JoinNetwork(RandomizeMAC=true) set %s = %#v, want %q", assignedMACKey, assigned, assignedMACRandom)
+			t.Fatalf("JoinNetworkRandomMAC set %s = %#v, want %q", assignedMACKey, assigned, assignedMACRandom)
 		}
 		if !randomize && ok {
-			t.Fatalf("JoinNetwork(RandomizeMAC=false) set %s = %#v, want unset", assignedMACKey, assigned)
+			t.Fatalf("JoinNetwork set %s = %#v, want unset", assignedMACKey, assigned)
 		}
 	}
 }
@@ -1355,5 +1364,20 @@ func TestApplyRandomizeMAC(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSetRandomizeMAC_UpdatesSavedProfile(t *testing.T) {
+	conn := newMockConnection("/org/freedesktop/NetworkManager/Settings/1", "Home", "Home", wifi.SecurityWPA)
+	b := newTestBackend(&mockDeviceWireless{}, []gonetworkmanager.Connection{conn})
+
+	if err := b.SetRandomizeMAC("Home", true); err != nil {
+		t.Fatalf("SetRandomizeMAC(true) returned error: %v", err)
+	}
+	if conn.updated == nil {
+		t.Fatal("SetRandomizeMAC(true) did not update the connection")
+	}
+	if got := conn.updated["802-11-wireless"][assignedMACKey]; got != assignedMACRandom {
+		t.Fatalf("SetRandomizeMAC(true) set %s = %#v, want %q", assignedMACKey, got, assignedMACRandom)
 	}
 }

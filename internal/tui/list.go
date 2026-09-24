@@ -111,6 +111,7 @@ type ListModel struct {
 	window             *WindowState
 	ssidColumnWidth    int
 	desiredColumnWidth int
+	features           features
 }
 
 const (
@@ -283,9 +284,9 @@ func (m *ListModel) SetItems(items []list.Item) {
 
 func (m *ListModel) newEditModel(item *networkItem) *EditModel {
 	if m.window != nil {
-		return NewEditModelWithWindow(item, m.window)
+		return newEditModelWithFeatures(item, m.window, m.features)
 	}
-	editModel := NewEditModel(item)
+	editModel := newEditModelWithFeatures(item, nil, m.features)
 	editModel.applyWindowWidth(m.width)
 	return editModel
 }

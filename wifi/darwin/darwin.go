@@ -64,10 +64,7 @@ func (b *Backend) SetWireless(enabled bool) error {
 }
 
 // JoinNetwork connects to a new network, potentially creating a new configuration.
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, opts wifi.JoinOptions) error {
-	if opts.RandomizeMAC {
-		return fmt.Errorf("MAC randomization is not supported on darwin: %w", wifi.ErrNotSupported)
-	}
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
 	if err := runOnly(cmd); err != nil {
 		return err
@@ -98,9 +95,6 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 
 // UpdateNetwork updates a known network.
 func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
-	if opts.RandomizeMAC != nil {
-		return fmt.Errorf("MAC randomization is not supported on darwin: %w", wifi.ErrNotSupported)
-	}
 	if opts.Password != nil {
 		// In macOS, we need to delete the old password and add a new one.
 		// The -U flag in add-generic-password updates the item if it exists,

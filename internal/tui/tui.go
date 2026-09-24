@@ -49,6 +49,7 @@ func NewModel(b wifi.Backend) (*model, error) {
 
 	window := &WindowState{}
 	listModel := NewListModelWithWindow(window)
+	listModel.features = backendFeatures(b)
 
 	m := model{
 		stack:     NewComponentStack(listModel),
@@ -57,6 +58,25 @@ func NewModel(b wifi.Backend) (*model, error) {
 		listModel: listModel,
 	}
 	return &m, nil
+}
+
+// features lists the optional backend extensions that the UI can offer.
+type features struct {
+	// randomizeMAC is true when the backend implements wifi.MACRandomizer.
+	randomizeMAC bool
+}
+
+func backendFeatures(b wifi.Backend) features {
+	_, randomizeMAC := b.(wifi.MACRandomizer)
+	return features{randomizeMAC: randomizeMAC}
+}
+
+func macRandomizer(b wifi.Backend) (wifi.MACRandomizer, error) {
+	r, ok := b.(wifi.MACRandomizer)
+	if !ok {
+		return nil, fmt.Errorf("MAC randomization is not supported by this backend: %w", wifi.ErrNotSupported)
+	}
+	return r, nil
 }
 
 type radioEnabledMsg struct{}
@@ -71,6 +91,8 @@ type networkDebouncedMsg struct{}
 type updateNetworkMsg struct {
 	item networkItem
 	wifi.UpdateOptions
+	// randomizeMAC is set when the MAC randomization setting changed.
+	randomizeMAC *bool
 }
 
 // Init is the first command that is run when the program starts
@@ -174,22 +196,22 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return statusMsg{status: fmt.Sprintf("Connecting to %q...", msg.item.SSID), loading: true}
 			},
 		}
-		var opts wifi.UpdateOptions
-		var needsUpdate bool
-		if msg.autoConnect != msg.item.AutoConnect {
-			opts.AutoConnect = &msg.autoConnect
-			needsUpdate = true
-		}
-		if msg.randomizeMAC != msg.item.RandomizeMAC {
-			opts.RandomizeMAC = &msg.randomizeMAC
-			needsUpdate = true
-		}
 		batch = append(batch, func() tea.Msg {
 			// Settings must be saved before activating so that they apply to
 			// this connection (e.g. the MAC address used).
-			if needsUpdate {
-				if err := m.backend.UpdateNetwork(msg.item.SSID, opts); err != nil {
-					return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
+			if msg.autoConnect != msg.item.AutoConnect {
+				err := m.backend.UpdateNetwork(msg.item.SSID, wifi.UpdateOptions{AutoConnect: &msg.autoConnect})
+				if err != nil {
+					return errorMsg{fmt.Errorf("failed to update autoconnect: %w", err)}
+				}
+			}
+			if msg.randomizeMAC != msg.item.RandomizeMAC {
+				r, err := macRandomizer(m.backend)
+				if err == nil {
+					err = r.SetRandomizeMAC(msg.item.SSID, msg.randomizeMAC)
+				}
+				if err != nil {
+					return errorMsg{fmt.Errorf("failed to update MAC randomization: %w", err)}
 				}
 			}
 			err := m.backend.ActivateNetwork(msg.item.SSID)
@@ -203,7 +225,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			func() tea.Msg { return statusMsg{status: fmt.Sprintf("Joining %q...", msg.ssid), loading: true} },
 			func() tea.Msg {
-				err := m.backend.JoinNetwork(msg.ssid, msg.password, msg.security, msg.isHidden, wifi.JoinOptions{RandomizeMAC: msg.randomizeMAC})
+				join := m.backend.JoinNetwork
+				if msg.randomizeMAC {
+					r, err := macRandomizer(m.backend)
+					if err != nil {
+						return errorMsg{fmt.Errorf("failed to join network: %w", err)}
+					}
+					join = r.JoinNetworkRandomMAC
+				}
+				err := join(msg.ssid, msg.password, msg.security, msg.isHidden)
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to join network: %w", err)}
 				}
@@ -228,6 +258,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				err := m.backend.UpdateNetwork(msg.item.SSID, msg.UpdateOptions)
 				if err != nil {
 					return errorMsg{fmt.Errorf("failed to update connection: %w", err)}
+				}
+				if msg.randomizeMAC != nil {
+					r, err := macRandomizer(m.backend)
+					if err == nil {
+						err = r.SetRandomizeMAC(msg.item.SSID, *msg.randomizeMAC)
+					}
+					if err != nil {
+						return errorMsg{fmt.Errorf("failed to update MAC randomization: %w", err)}
+					}
 				}
 				return networkSavedMsg{}
 			},

@@ -493,11 +493,7 @@ func registerAgent(conn *dbus.Conn, password string) (cleanup func(), err error)
 	}, nil
 }
 
-func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool, opts wifi.JoinOptions) error {
-	if opts.RandomizeMAC {
-		return fmt.Errorf("per-network MAC randomization is not supported by the iwd backend: %w", wifi.ErrNotSupported)
-	}
-
+func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	conn, err := dbus.SystemBus()
 	if err != nil {
 		return err
@@ -537,9 +533,6 @@ func (b *Backend) GetSecrets(ssid string) (string, error) {
 func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 	if opts.Password != nil {
 		return fmt.Errorf("updating secrets is not supported by the iwd backend: %w", wifi.ErrNotSupported)
-	}
-	if opts.RandomizeMAC != nil {
-		return fmt.Errorf("per-network MAC randomization is not supported by the iwd backend: %w", wifi.ErrNotSupported)
 	}
 
 	if opts.AutoConnect != nil {

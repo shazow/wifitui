@@ -293,6 +293,8 @@ func focusEditItem(t *testing.T, m *EditModel, target Focusable) {
 	}
 }
 
+var withRandomizeMAC = features{randomizeMAC: true}
+
 func TestEditModel_RandomizeMACCheckboxShown(t *testing.T) {
 	items := map[string]*networkItem{
 		"new":     nil,
@@ -300,7 +302,7 @@ func TestEditModel_RandomizeMACCheckboxShown(t *testing.T) {
 		"known":   {Network: wifi.Network{SSID: "Home", Security: wifi.SecurityWPA, IsKnown: true, RandomizeMAC: true}},
 	}
 	for name, item := range items {
-		m := NewEditModel(item)
+		m := newEditModelWithFeatures(item, nil, withRandomizeMAC)
 		if !strings.Contains(m.View(), "Randomize MAC address") {
 			t.Errorf("%s: view does not contain the Randomize MAC address checkbox", name)
 		}
@@ -308,13 +310,36 @@ func TestEditModel_RandomizeMACCheckboxShown(t *testing.T) {
 		if got := m.randomizeMACCheckbox.Checked(); got != want {
 			t.Errorf("%s: checkbox checked = %v, want %v", name, got, want)
 		}
+
+		m = NewEditModel(item)
+		if m.randomizeMACCheckbox != nil || strings.Contains(m.View(), "Randomize MAC address") {
+			t.Errorf("%s: Randomize MAC address checkbox shown without backend support", name)
+		}
+	}
+}
+
+func TestEditModel_UnsupportedRandomizeMACKeepsSetting(t *testing.T) {
+	m := NewEditModel(&networkItem{
+		Network: wifi.Network{SSID: "Home", Security: wifi.SecurityWPA, IsKnown: true, IsVisible: true},
+	})
+
+	focusEditItem(t, m, m.buttonGroup)
+	m.buttonGroup.selected = 1 // Save
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	msg, ok := cmd().(updateNetworkMsg)
+	if !ok {
+		t.Fatalf("expected updateNetworkMsg, got %T", msg)
+	}
+	if msg.randomizeMAC != nil {
+		t.Errorf("save without backend support sent randomizeMAC = %v, want nil", *msg.randomizeMAC)
 	}
 }
 
 func TestEditModel_JoinWithRandomizeMAC(t *testing.T) {
-	m := NewEditModel(&networkItem{
+	m := newEditModelWithFeatures(&networkItem{
 		Network: wifi.Network{SSID: "Cafe", Security: wifi.SecurityOpen, IsVisible: true},
-	})
+	}, nil, withRandomizeMAC)
 
 	focusEditItem(t, m, m.randomizeMACCheckbox)
 	m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
@@ -337,9 +362,9 @@ func TestEditModel_JoinWithRandomizeMAC(t *testing.T) {
 
 func TestEditModel_SaveOnlySendsChangedRandomizeMAC(t *testing.T) {
 	for _, toggle := range []bool{false, true} {
-		m := NewEditModel(&networkItem{
+		m := newEditModelWithFeatures(&networkItem{
 			Network: wifi.Network{SSID: "Home", Security: wifi.SecurityWPA, IsKnown: true, IsVisible: true},
-		})
+		}, nil, withRandomizeMAC)
 		if toggle {
 			focusEditItem(t, m, m.randomizeMACCheckbox)
 			m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
@@ -354,13 +379,13 @@ func TestEditModel_SaveOnlySendsChangedRandomizeMAC(t *testing.T) {
 			t.Fatalf("expected updateNetworkMsg, got %T", msg)
 		}
 		if !toggle {
-			if msg.RandomizeMAC != nil {
-				t.Errorf("unchanged checkbox sent RandomizeMAC = %v, want nil", *msg.RandomizeMAC)
+			if msg.randomizeMAC != nil {
+				t.Errorf("unchanged checkbox sent randomizeMAC = %v, want nil", *msg.randomizeMAC)
 			}
 			continue
 		}
-		if msg.RandomizeMAC == nil || !*msg.RandomizeMAC {
-			t.Errorf("toggled checkbox sent RandomizeMAC = %v, want true", msg.RandomizeMAC)
+		if msg.randomizeMAC == nil || !*msg.randomizeMAC {
+			t.Errorf("toggled checkbox sent randomizeMAC = %v, want true", msg.randomizeMAC)
 		}
 	}
 }

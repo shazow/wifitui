@@ -143,7 +143,7 @@ func TestJoinNetwork(t *testing.T) {
 
 	newSSID := "new-network"
 	password := "password"
-	err := b.JoinNetwork(newSSID, password, wifi.SecurityWPA, false, wifi.JoinOptions{})
+	err := b.JoinNetwork(newSSID, password, wifi.SecurityWPA, false)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed: %v", err)
 	}
@@ -157,26 +157,25 @@ func TestJoinNetwork(t *testing.T) {
 	}
 }
 
-func TestJoinAndUpdateNetwork_RandomizeMAC(t *testing.T) {
+func TestMACRandomizer(t *testing.T) {
 	b, _ := New()
 	mockBackend := b.(*MockBackend)
 	mockBackend.ActionSleep = 0
 
 	ssid := "private-network"
-	if err := b.JoinNetwork(ssid, "password", wifi.SecurityWPA, false, wifi.JoinOptions{RandomizeMAC: true}); err != nil {
-		t.Fatalf("JoinNetwork() failed: %v", err)
+	if err := mockBackend.JoinNetworkRandomMAC(ssid, "password", wifi.SecurityWPA, false); err != nil {
+		t.Fatalf("JoinNetworkRandomMAC() failed: %v", err)
 	}
 	lastIndex := len(mockBackend.KnownNetworks) - 1
 	if !mockBackend.KnownNetworks[lastIndex].RandomizeMAC {
-		t.Fatal("JoinNetwork() did not store RandomizeMAC")
+		t.Fatal("JoinNetworkRandomMAC() did not store RandomizeMAC")
 	}
 
-	randomize := false
-	if err := b.UpdateNetwork(ssid, wifi.UpdateOptions{RandomizeMAC: &randomize}); err != nil {
-		t.Fatalf("UpdateNetwork() failed: %v", err)
+	if err := mockBackend.SetRandomizeMAC(ssid, false); err != nil {
+		t.Fatalf("SetRandomizeMAC() failed: %v", err)
 	}
 	if mockBackend.KnownNetworks[lastIndex].RandomizeMAC {
-		t.Fatal("UpdateNetwork() did not clear RandomizeMAC")
+		t.Fatal("SetRandomizeMAC() did not clear RandomizeMAC")
 	}
 }
 
@@ -219,7 +218,7 @@ func TestGetSecretsForKnownNetworkWithoutSecret(t *testing.T) {
 	b, _ := New()
 	ssid := "Unencrypted_Honeypot"
 
-	err := b.JoinNetwork(ssid, "", wifi.SecurityOpen, false, wifi.JoinOptions{})
+	err := b.JoinNetwork(ssid, "", wifi.SecurityOpen, false)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed: %v", err)
 	}
@@ -320,7 +319,7 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 	password := "password123"
 
 	// 1. Join the network for the first time
-	err := b.JoinNetwork(ssid, password, wifi.SecurityWPA, false, wifi.JoinOptions{})
+	err := b.JoinNetwork(ssid, password, wifi.SecurityWPA, false)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed on first join: %v", err)
 	}
@@ -350,7 +349,7 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 
 	// 3. Join the same network again with a new password
 	newPassword := "newPassword456"
-	err = b.JoinNetwork(ssid, newPassword, wifi.SecurityWPA, false, wifi.JoinOptions{})
+	err = b.JoinNetwork(ssid, newPassword, wifi.SecurityWPA, false)
 	if err != nil {
 		t.Fatalf("JoinNetwork() failed on second join: %v", err)
 	}
