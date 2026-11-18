@@ -54,6 +54,22 @@ func TestLoadTheme(t *testing.T) {
 	}
 }
 
+func TestLoadTheme_PartialTheme(t *testing.T) {
+	theme, err := LoadTheme(strings.NewReader(`
+		SignalHigh = "#008000"
+		TitleIcon = ""
+	`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := NewDefaultTheme()
+	want.SignalHigh = Color{lipgloss.Color("#008000")}
+	want.TitleIcon = ""
+	if theme != want {
+		t.Errorf("partial theme got %+v, want %+v", theme, want)
+	}
+}
+
 func TestLoadTheme_NilReader(t *testing.T) {
 	_, err := LoadTheme(nil)
 	if err == nil {

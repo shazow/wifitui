@@ -119,7 +119,9 @@ func runList(w io.Writer, errW io.Writer, jsonOut bool, all bool, scan bool, b w
 	}
 
 	for _, c := range networks {
-		fmt.Fprintf(w, "%s\t%s\n", c.SSID, formatNetwork(c))
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", c.SSID, formatNetwork(c)); err != nil {
+			return fmt.Errorf("failed to write network list: %w", err)
+		}
 	}
 	return nil
 }

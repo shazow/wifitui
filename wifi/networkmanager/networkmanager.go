@@ -138,6 +138,10 @@ func dbusErrorName(err error) string {
 }
 
 func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
+	return b.findWirelessDevice(false)
+}
+
+func (b *Backend) findWirelessDevice(allowUnavailable bool) (gonetworkmanager.DeviceWireless, error) {
 	if b.Device != nil {
 		return b.Device, nil
 	}
@@ -147,6 +151,7 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 		return nil, err
 	}
 
+	var unavailableDevice gonetworkmanager.DeviceWireless
 	for _, device := range devices {
 		if dev, ok := device.(gonetworkmanager.DeviceWireless); ok {
 			// In hwsim and other multi-radio setups, NetworkManager can report AP-side
@@ -160,8 +165,16 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 			}
 
 			state, err := dev.GetPropertyState()
-			if err == nil && (state == gonetworkmanager.NmDeviceStateUnmanaged || state == gonetworkmanager.NmDeviceStateUnavailable) {
-				continue
+			if err == nil {
+				switch state {
+				case gonetworkmanager.NmDeviceStateUnmanaged:
+					continue
+				case gonetworkmanager.NmDeviceStateUnavailable:
+					if allowUnavailable && managed && unavailableDevice == nil {
+						unavailableDevice = dev
+					}
+					continue
+				}
 			}
 
 			b.Device = dev
@@ -169,6 +182,9 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 		}
 	}
 
+	if unavailableDevice != nil {
+		return unavailableDevice, nil
+	}
 	return nil, fmt.Errorf("no wireless device found: %w", wifi.ErrNotFound)
 }
 
@@ -1329,7 +1345,8 @@ func (b *Backend) SetWireless(enabled bool) error {
 		return nil
 	}
 
-	wirelessDevice, err := b.getWirelessDevice()
+	// A managed device can be unavailable until the radio is enabled.
+	wirelessDevice, err := b.findWirelessDevice(enabled)
 	if err != nil {
 		return err
 	}

@@ -111,7 +111,7 @@ func NewDefaultTheme() Theme {
 	}
 }
 
-// LoadTheme loads a theme from the given reader and returns a Theme object.
+// LoadTheme loads a theme from the given reader, retaining defaults for omitted fields.
 func LoadTheme(r io.Reader) (Theme, error) {
 	if r == nil {
 		return Theme{}, fmt.Errorf("reader cannot be nil")
@@ -122,7 +122,7 @@ func LoadTheme(r io.Reader) (Theme, error) {
 		return Theme{}, err
 	}
 
-	var theme Theme
+	theme := NewDefaultTheme()
 	if err := toml.Unmarshal(data, &theme); err != nil {
 		return Theme{}, err
 	}

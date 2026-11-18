@@ -189,6 +189,12 @@ lib.optionalAttrs pkgs.stdenv.isLinux {
       forgotten = network_by_ssid(list_networks(scan=True, all_networks=True), "Home_Network")
       assert not forgotten["IsActive"], forgotten
       assert not forgotten["IsKnown"], forgotten
+
+      # Turning Wi-Fi off can interrupt hostapd, so check radio-on last.
+      machine.succeed("nmcli radio wifi off")
+      machine.wait_until_succeeds("nmcli -t -f DEVICE,STATE device | grep '^wlan1:unavailable$'")
+      machine.succeed("NO_COLOR=1 wifitui radio on")
+      machine.wait_until_succeeds("nmcli -t -f DEVICE,STATE device | grep -E '^wlan1:(disconnected|connected)$'")
     '';
   };
 

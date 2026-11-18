@@ -278,7 +278,29 @@ func (m *ListModel) updateListSize() {
 }
 
 func (m *ListModel) SetItems(items []list.Item) {
-	m.list.SetItems(items)
+	selectedIndex := m.list.Index()
+	refilter := m.list.SetItems(items)
+	if refilter != nil {
+		// Apply the matches before resizing so pagination uses the new results.
+		m.list, _ = m.list.Update(refilter())
+		matchCount := len(m.list.VisibleItems())
+		m.list.Paginator.SetTotalPages(max(1, matchCount))
+		m.list.Select(max(0, min(selectedIndex, matchCount-1)))
+	}
+	m.updateListSize()
+	if refilter != nil {
+		// Refresh the page key bindings after recomputing pagination.
+		m.list.SetFilteringEnabled(m.list.FilteringEnabled())
+	}
+}
+
+func (m *ListModel) setNetworks(networks []wifi.Network) {
+	m.refreshColumns(networks)
+	items := make([]list.Item, len(networks))
+	for i, network := range networks {
+		items[i] = networkItem{Network: network}
+	}
+	m.SetItems(items)
 }
 
 func (m *ListModel) newEditModel(item *networkItem) *EditModel {
@@ -324,23 +346,11 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 		m.updateListSize()
 		return m, nil
 	case networksLoadedMsg:
-		m.refreshColumns(msg)
-		items := make([]list.Item, len(msg))
-		for i, c := range msg {
-			items[i] = networkItem{Network: c}
-		}
-		m.list.SetItems(items)
-		m.updateListSize()
+		m.setNetworks(msg)
 		return m, nil
 	case scanFinishedMsg:
-		m.refreshColumns(msg.networks)
-		items := make([]list.Item, len(msg.networks))
-		for i, c := range msg.networks {
-			items[i] = networkItem{Network: c}
-		}
-		m.list.SetItems(items)
-		m.updateListSize()
-		if len(items) > 0 {
+		m.setNetworks(msg.networks)
+		if len(msg.networks) > 0 {
 			m.numScans++
 		}
 		if m.numScans == 3 {
@@ -390,7 +400,9 @@ func (m *ListModel) Update(msg tea.Msg) (Component, tea.Cmd) {
 				selected, ok := m.list.SelectedItem().(networkItem)
 				if ok {
 					if selected.IsKnown {
-						return m, func() tea.Msg { return connectMsg{item: selected} }
+						return m, func() tea.Msg {
+							return connectMsg{item: selected, autoConnect: selected.AutoConnect}
+						}
 					} else {
 						editModel := m.newEditModel(&selected)
 						return editModel, nil

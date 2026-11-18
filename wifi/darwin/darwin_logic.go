@@ -34,6 +34,15 @@ func runOnly(command *exec.Cmd) error {
 	return nil
 }
 
+// runPasswordCommand keeps command arguments and output out of errors because
+// both can contain the Wi-Fi password.
+func runPasswordCommand(command *exec.Cmd, operation string) error {
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("%s: %w", operation, err)
+	}
+	return nil
+}
+
 type scannedNetwork struct {
 	ssid      string
 	bssid     string

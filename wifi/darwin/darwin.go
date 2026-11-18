@@ -66,7 +66,7 @@ func (b *Backend) SetWireless(enabled bool) error {
 // JoinNetwork connects to a new network, potentially creating a new configuration.
 func (b *Backend) JoinNetwork(ssid string, password string, security wifi.SecurityType, isHidden bool) error {
 	cmd := exec.Command("networksetup", "-setairportnetwork", b.WifiInterface, ssid, password)
-	if err := runOnly(cmd); err != nil {
+	if err := runPasswordCommand(cmd, "failed to join Wi-Fi network"); err != nil {
 		return err
 	}
 	// Add to preferred networks so it becomes "known"
@@ -103,7 +103,7 @@ func (b *Backend) UpdateNetwork(ssid string, opts wifi.UpdateOptions) error {
 		_ = runOnly(cmd) // Ignore error if it doesn't exist
 
 		cmd = exec.Command("security", "add-generic-password", "-a", ssid, "-s", ssid, "-w", *opts.Password)
-		if err := runOnly(cmd); err != nil {
+		if err := runPasswordCommand(cmd, "failed to save Wi-Fi password"); err != nil {
 			return err
 		}
 	}

@@ -56,6 +56,19 @@ func TestRunListDefault(t *testing.T) {
 	}
 }
 
+func TestRunListReturnsOutputWriteError(t *testing.T) {
+	backend, err := mock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock backend: %v", err)
+	}
+	wantErr := errors.New("write failed")
+
+	err = runList(errorWriter{err: wantErr}, io.Discard, false, false, false, backend)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("runList() error = %v, want an error wrapping %v", err, wantErr)
+	}
+}
+
 func TestRunListShowsScanWarningWithCachedResults(t *testing.T) {
 	mockBackend, err := mock.New()
 	if err != nil {
