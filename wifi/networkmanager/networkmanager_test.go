@@ -18,6 +18,7 @@ type mockNM struct {
 	gonetworkmanager.NetworkManager
 	getDevicesFunc                   func() ([]gonetworkmanager.Device, error)
 	getPropertyWirelessEnabledFunc   func() (bool, error)
+	setPropertyWirelessEnabledFunc   func(bool) error
 	getPropertyActiveConnectionsFunc func() ([]gonetworkmanager.ActiveConnection, error)
 	activateConnectionFunc           func(gonetworkmanager.Connection, gonetworkmanager.Device, *dbus.Object) (gonetworkmanager.ActiveConnection, error)
 	activateWirelessConnectionFunc   func(gonetworkmanager.Connection, gonetworkmanager.Device, gonetworkmanager.AccessPoint) (gonetworkmanager.ActiveConnection, error)
@@ -35,6 +36,10 @@ func (m *mockNM) GetPropertyWirelessEnabled() (bool, error) {
 		return m.getPropertyWirelessEnabledFunc()
 	}
 	return true, nil
+}
+
+func (m *mockNM) SetPropertyWirelessEnabled(enabled bool) error {
+	return m.setPropertyWirelessEnabledFunc(enabled)
 }
 
 func (m *mockNM) GetPropertyActiveConnections() ([]gonetworkmanager.ActiveConnection, error) {
@@ -68,6 +73,7 @@ type mockDeviceWireless struct {
 	getAllAccessPointsCalled bool
 	managed                  bool
 	state                    gonetworkmanager.NmDeviceState
+	subscribedToState        bool
 }
 
 func (m *mockDeviceWireless) GetPath() dbus.ObjectPath {
@@ -96,6 +102,11 @@ func (m *mockDeviceWireless) GetPropertyState() (gonetworkmanager.NmDeviceState,
 		return gonetworkmanager.NmDeviceStateDisconnected, nil
 	}
 	return m.state, nil
+}
+
+func (m *mockDeviceWireless) SubscribeState(_ chan gonetworkmanager.DeviceStateChange, _ chan struct{}) error {
+	m.subscribedToState = true
+	return nil
 }
 
 func (m *mockDeviceWireless) GetAccessPoints() ([]gonetworkmanager.AccessPoint, error) {
@@ -1214,6 +1225,38 @@ func TestGetWirelessDevice_SkipsUnavailableDevices(t *testing.T) {
 	}
 	if dev != available {
 		t.Errorf("expected available device %v, got %v", available, dev)
+	}
+}
+
+func TestSetWireless_EnablesUnavailableManagedDevice(t *testing.T) {
+	unmanaged := &mockDeviceWireless{state: gonetworkmanager.NmDeviceStateUnavailable}
+	station := &mockDeviceWireless{managed: true, state: gonetworkmanager.NmDeviceStateUnavailable}
+	var setEnabled bool
+	b := &Backend{NM: &mockNM{
+		getDevicesFunc: func() ([]gonetworkmanager.Device, error) {
+			return []gonetworkmanager.Device{unmanaged, station}, nil
+		},
+		getPropertyWirelessEnabledFunc: func() (bool, error) {
+			return false, nil
+		},
+		setPropertyWirelessEnabledFunc: func(enabled bool) error {
+			if !station.subscribedToState || unmanaged.subscribedToState {
+				t.Fatal("SetWireless did not subscribe to the managed device before setting WirelessEnabled")
+			}
+			setEnabled = enabled
+			station.state = gonetworkmanager.NmDeviceStateDisconnected
+			return nil
+		},
+	}}
+
+	if _, err := b.getWirelessDevice(); !errors.Is(err, wifi.ErrNotFound) {
+		t.Fatalf("getWirelessDevice() before enabling Wi-Fi returned %v, want ErrNotFound", err)
+	}
+	if err := b.SetWireless(true); err != nil {
+		t.Fatalf("SetWireless(true) failed: %v", err)
+	}
+	if !setEnabled {
+		t.Fatal("SetWireless(true) did not enable Wi-Fi")
 	}
 }
 

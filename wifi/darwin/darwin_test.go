@@ -30,12 +30,31 @@ func TestRunWithOutputPreservesExitErrorAndStderr(t *testing.T) {
 	}
 }
 
+func TestRunPasswordCommandDoesNotExposePassword(t *testing.T) {
+	const password = "test-fixture-password"
+	const operation = "failed to join Wi-Fi network"
+	command := exec.Command(os.Args[0], "-test.run=^TestCommandHelperProcess$", "--", password)
+	command.Env = append(os.Environ(), "WIFITUI_TEST_COMMAND_HELPER=1")
+
+	err := runPasswordCommand(command, operation)
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 7 {
+		t.Fatalf("runPasswordCommand error = %v, want wrapped exit status 7", err)
+	}
+	if !strings.Contains(err.Error(), operation) || strings.Contains(err.Error(), password) {
+		t.Fatalf("runPasswordCommand error = %q, want operation without password", err)
+	}
+}
+
 func TestCommandHelperProcess(t *testing.T) {
 	if os.Getenv("WIFITUI_TEST_COMMAND_HELPER") != "1" {
 		return
 	}
 	_, _ = fmt.Fprint(os.Stdout, "partial output")
 	_, _ = fmt.Fprint(os.Stderr, "diagnostic detail")
+	if len(os.Args) > 3 && os.Args[2] == "--" {
+		_, _ = fmt.Fprint(os.Stderr, os.Args[3])
+	}
 	os.Exit(7)
 }
 
