@@ -130,22 +130,30 @@ func LoadTheme(r io.Reader) (Theme, error) {
 	return theme, nil
 }
 
-// FormatSignalStrength returns a color based on the signal strength.
-func (theme *Theme) FormatSignalStrength(strength uint8) string {
-	var signalHigh, signalLow string
-	if adaptiveHigh, ok := theme.SignalHigh.TerminalColor.(lipgloss.AdaptiveColor); ok {
-		if adaptiveLow, ok := theme.SignalLow.TerminalColor.(lipgloss.AdaptiveColor); ok {
-			if lipgloss.HasDarkBackground() {
-				signalHigh = adaptiveHigh.Dark
-				signalLow = adaptiveLow.Dark
-			} else {
-				signalHigh = adaptiveHigh.Light
-				signalLow = adaptiveLow.Light
-			}
+func (c Color) hexForBackground(dark bool) (string, bool) {
+	switch color := c.TerminalColor.(type) {
+	case lipgloss.Color:
+		return string(color), true
+	case lipgloss.AdaptiveColor:
+		if dark {
+			return color.Dark, true
 		}
+		return color.Light, true
+	default:
+		return "", false
 	}
-	start, _ := colorful.Hex(signalLow)
-	end, _ := colorful.Hex(signalHigh)
+}
+
+// FormatSignalStrength renders the signal percentage in a color from the theme gradient.
+func (theme *Theme) FormatSignalStrength(strength uint8) string {
+	dark := lipgloss.HasDarkBackground()
+	signalLow, lowOK := theme.SignalLow.hexForBackground(dark)
+	signalHigh, highOK := theme.SignalHigh.hexForBackground(dark)
+	var start, end colorful.Color
+	if lowOK && highOK {
+		start, _ = colorful.Hex(signalLow)
+		end, _ = colorful.Hex(signalHigh)
+	}
 	p := float64(strength) / 100.0
 	blend := start.BlendRgb(end, p)
 	c := lipgloss.Color(blend.Hex())
