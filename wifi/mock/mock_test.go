@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/shazow/wifitui/wifi"
@@ -370,4 +371,40 @@ func TestJoinNetwork_UpdatePassword(t *testing.T) {
 
 func init() {
 	DefaultActionSleep = 0
+}
+
+func TestListNetworks_ConcurrentCalls(t *testing.T) {
+	b, err := New()
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	backend := b.(*MockBackend)
+	backend.ActionSleep = 0
+
+	// Exercise the wifi.Backend concurrency contract: scan-free reads overlap
+	// with scans that re-randomize strengths. Reading the returned access
+	// points checks that results don't share state with the backend. Run with
+	// -race.
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		mode := wifi.ScanNever
+		if i%2 == 0 {
+			mode = wifi.ScanAuto
+		}
+		wg.Add(1)
+		go func(mode wifi.ScanMode) {
+			defer wg.Done()
+			result, err := b.ListNetworks(mode)
+			if err != nil {
+				t.Errorf("ListNetworks(%v) returned error: %v", mode, err)
+				return
+			}
+			for _, network := range result.Networks {
+				for _, ap := range network.AccessPoints {
+					_ = ap.Strength
+				}
+			}
+		}(mode)
+	}
+	wg.Wait()
 }

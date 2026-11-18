@@ -64,8 +64,8 @@ type mockDeviceWireless struct {
 	iface                    string
 	accessPoints             []gonetworkmanager.AccessPoint
 	allAccessPoints          []gonetworkmanager.AccessPoint
-	getAccessPointsCalled    bool
-	getAllAccessPointsCalled bool
+	getAccessPointsCalled    atomic.Bool
+	getAllAccessPointsCalled atomic.Bool
 	managed                  bool
 	state                    gonetworkmanager.NmDeviceState
 }
@@ -99,12 +99,12 @@ func (m *mockDeviceWireless) GetPropertyState() (gonetworkmanager.NmDeviceState,
 }
 
 func (m *mockDeviceWireless) GetAccessPoints() ([]gonetworkmanager.AccessPoint, error) {
-	m.getAccessPointsCalled = true
+	m.getAccessPointsCalled.Store(true)
 	return m.accessPoints, nil
 }
 
 func (m *mockDeviceWireless) GetAllAccessPoints() ([]gonetworkmanager.AccessPoint, error) {
-	m.getAllAccessPointsCalled = true
+	m.getAllAccessPointsCalled.Store(true)
 	if m.allAccessPoints != nil {
 		return m.allAccessPoints, nil
 	}
@@ -666,7 +666,7 @@ func TestListNetworks_UsesAllAccessPoints(t *testing.T) {
 		t.Fatalf("ListNetworks(ScanNever) returned error: %v", err)
 	}
 	connections := result.Networks
-	if !device.getAllAccessPointsCalled {
+	if !device.getAllAccessPointsCalled.Load() {
 		t.Fatal("ListNetworks(ScanNever) did not call GetAllAccessPoints")
 	}
 	if len(connections) != 1 || connections[0].SSID != "AllAP" {
@@ -1262,3 +1262,36 @@ func TestIsUnavailableDBusError(t *testing.T) {
 type testError string
 
 func (e testError) Error() string { return string(e) }
+
+func TestListNetworks_ConcurrentCalls(t *testing.T) {
+	device := &mockDeviceWireless{
+		accessPoints: []gonetworkmanager.AccessPoint{
+			newMockAccessPoint("Cafe", "00:00:00:00:00:01", 80),
+		},
+	}
+	b := newTestBackend(device, nil)
+	b.scanFunc = func(gonetworkmanager.DeviceWireless, map[string]dbus.Variant) error {
+		return nil
+	}
+
+	// Exercise the wifi.Backend concurrency contract: scan-free reads overlap
+	// with scanning calls and cache-backed lookups. Run with -race.
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		mode := wifi.ScanNever
+		if i%2 == 0 {
+			mode = wifi.ScanAuto
+		}
+		wg.Add(1)
+		go func(mode wifi.ScanMode) {
+			defer wg.Done()
+			if _, err := b.ListNetworks(mode); err != nil {
+				t.Errorf("ListNetworks(%v) returned error: %v", mode, err)
+			}
+			if _, err := b.getAccessPoint("Cafe"); err != nil {
+				t.Errorf("getAccessPoint returned error: %v", err)
+			}
+		}(mode)
+	}
+	wg.Wait()
+}

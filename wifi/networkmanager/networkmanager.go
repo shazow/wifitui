@@ -38,6 +38,10 @@ type Backend struct {
 	Settings gonetworkmanager.Settings
 	Device   gonetworkmanager.DeviceWireless
 
+	// cacheMu guards the lazily discovered Device and the cache maps below.
+	// ListNetworks replaces the maps wholesale and never mutates a published
+	// map, so a snapshot taken under the lock stays safe to read after release.
+	cacheMu           sync.RWMutex
 	connections       map[networkKey]gonetworkmanager.Connection
 	accessPoints      map[networkKey]gonetworkmanager.AccessPoint
 	networkKeysBySSID map[string][]networkKey
@@ -138,8 +142,11 @@ func dbusErrorName(err error) string {
 }
 
 func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
-	if b.Device != nil {
-		return b.Device, nil
+	b.cacheMu.RLock()
+	device := b.Device
+	b.cacheMu.RUnlock()
+	if device != nil {
+		return device, nil
 	}
 
 	devices, err := b.NM.GetDevices()
@@ -164,7 +171,9 @@ func (b *Backend) getWirelessDevice() (gonetworkmanager.DeviceWireless, error) {
 				continue
 			}
 
+			b.cacheMu.Lock()
 			b.Device = dev
+			b.cacheMu.Unlock()
 			return dev, nil
 		}
 	}
@@ -912,28 +921,37 @@ func (b *Backend) ListNetworks(scan wifi.ScanMode) (wifi.NetworksResult, error) 
 		appendedInvisible[profile.path] = true
 	}
 
+	b.cacheMu.Lock()
 	b.connections = newConnections
 	b.accessPoints = newAccessPoints
 	b.networkKeysBySSID = newNetworkKeysBySSID
+	b.cacheMu.Unlock()
 
 	wifi.SortNetworks(conns)
 	return wifi.NetworksResult{Networks: conns, ScanError: scanErr}, nil
 }
 
-func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
-	if b.connections == nil {
-		b.connections = make(map[networkKey]gonetworkmanager.Connection)
-	}
+// cacheSnapshot returns the current cache maps under the lock. The returned
+// maps are never mutated in place, only replaced, so they are safe to read
+// after the lock is released.
+func (b *Backend) cacheSnapshot() (map[networkKey]gonetworkmanager.Connection, map[networkKey]gonetworkmanager.AccessPoint, map[string][]networkKey) {
+	b.cacheMu.RLock()
+	defer b.cacheMu.RUnlock()
+	return b.connections, b.accessPoints, b.networkKeysBySSID
+}
 
-	if len(b.connections) == 0 {
+func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error) {
+	connections, _, networkKeysBySSID := b.cacheSnapshot()
+	if len(connections) == 0 {
 		_, err := b.ListNetworks(wifi.ScanNever)
 		if err != nil {
 			return nil, err
 		}
+		connections, _, networkKeysBySSID = b.cacheSnapshot()
 	}
 
-	for _, key := range b.networkKeysBySSID[ssid] {
-		if conn, ok := b.connections[key]; ok {
+	for _, key := range networkKeysBySSID[ssid] {
+		if conn, ok := connections[key]; ok {
 			return conn, nil
 		}
 	}
@@ -941,21 +959,19 @@ func (b *Backend) getConnection(ssid string) (gonetworkmanager.Connection, error
 }
 
 func (b *Backend) getAccessPoint(ssid string) (gonetworkmanager.AccessPoint, error) {
-	if b.accessPoints == nil {
-		b.accessPoints = make(map[networkKey]gonetworkmanager.AccessPoint)
-	}
-
-	if len(b.accessPoints) == 0 {
+	_, accessPoints, networkKeysBySSID := b.cacheSnapshot()
+	if len(accessPoints) == 0 {
 		_, err := b.ListNetworks(wifi.ScanNever)
 		if err != nil {
 			return nil, err
 		}
+		_, accessPoints, networkKeysBySSID = b.cacheSnapshot()
 	}
 
 	var best gonetworkmanager.AccessPoint
 	var bestStrength uint8
-	for _, key := range b.networkKeysBySSID[ssid] {
-		ap, ok := b.accessPoints[key]
+	for _, key := range networkKeysBySSID[ssid] {
+		ap, ok := accessPoints[key]
 		if !ok {
 			continue
 		}
@@ -972,19 +988,21 @@ func (b *Backend) getAccessPoint(ssid string) (gonetworkmanager.AccessPoint, err
 }
 
 func (b *Backend) getActivationTarget(ssid string) (gonetworkmanager.Connection, gonetworkmanager.AccessPoint, error) {
-	if len(b.connections) == 0 || len(b.accessPoints) == 0 {
+	connections, accessPoints, networkKeysBySSID := b.cacheSnapshot()
+	if len(connections) == 0 || len(accessPoints) == 0 {
 		_, err := b.ListNetworks(wifi.ScanNever)
 		if err != nil {
 			return nil, nil, err
 		}
+		connections, accessPoints, networkKeysBySSID = b.cacheSnapshot()
 	}
 
 	var bestConn gonetworkmanager.Connection
 	var bestAP gonetworkmanager.AccessPoint
 	var bestStrength uint8
-	for _, key := range b.networkKeysBySSID[ssid] {
-		conn, connOK := b.connections[key]
-		ap, apOK := b.accessPoints[key]
+	for _, key := range networkKeysBySSID[ssid] {
+		conn, connOK := connections[key]
+		ap, apOK := accessPoints[key]
 		if connOK && apOK {
 			strength, _ := ap.GetPropertyStrength()
 			if bestAP == nil || strength > bestStrength {
@@ -998,8 +1016,8 @@ func (b *Backend) getActivationTarget(ssid string) (gonetworkmanager.Connection,
 		return bestConn, bestAP, nil
 	}
 
-	for _, key := range b.networkKeysBySSID[ssid] {
-		if _, ok := b.accessPoints[key]; ok {
+	for _, key := range networkKeysBySSID[ssid] {
+		if _, ok := accessPoints[key]; ok {
 			return nil, nil, fmt.Errorf("connection not found for compatible access point for %s: %w", ssid, wifi.ErrNotFound)
 		}
 	}

@@ -64,7 +64,8 @@ type (
 		networks []wifi.Network
 		scanErr  error
 	}
-	secretsLoadedMsg struct {
+	cachedNetworksMsg []wifi.Network // Cached snapshot prefilled before the first scan finishes
+	secretsLoadedMsg  struct {
 		item   networkItem
 		secret string
 	}
