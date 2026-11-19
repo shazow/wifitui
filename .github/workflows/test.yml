@@ -30,13 +30,13 @@ jobs:
         env:
           CGO_ENABLED: '1'
         run: go test -test.timeout 30s ./...
-      - name: Build with CoreWLAN
+      - name: Build Darwin binary
         run: make build-darwin
-      - name: Verify native CoreWLAN linkage
+      - name: Verify CoreWLAN stays out of the shipped binary
         run: |
           linked_libraries="$(otool -L ./wifitui)"
           echo "$linked_libraries"
-          grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
+          ! grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
           ./wifitui --version
       - name: Build release snapshot
         uses: goreleaser/goreleaser-action@v6
@@ -50,4 +50,4 @@ jobs:
           package_path="$(nix build ".#packages.${native_system}.default" --no-link --print-out-paths -L)"
           linked_libraries="$(otool -L "$package_path/bin/wifitui")"
           echo "$linked_libraries"
-          grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
+          ! grep -q '/CoreWLAN.framework/' <<< "$linked_libraries"
