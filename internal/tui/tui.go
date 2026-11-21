@@ -28,6 +28,12 @@ type model struct {
 
 	networkChangeCancel   context.CancelFunc
 	networkRefreshPending bool
+
+	// prefillPending is true while the startup cached-list fetch is in flight.
+	// Scans are deferred until it lands so the two ListNetworks calls never
+	// run concurrently (the backends mutate shared caches).
+	prefillPending  bool
+	pendingScanMode wifi.ScanMode
 }
 
 // NetworkManager can send several AP/device signals for one scan update.
@@ -51,10 +57,11 @@ func NewModel(b wifi.Backend) (*model, error) {
 	listModel := NewListModelWithWindow(window)
 
 	m := model{
-		stack:     NewComponentStack(listModel),
-		spinner:   s,
-		backend:   b,
-		listModel: listModel,
+		stack:           NewComponentStack(listModel),
+		spinner:         s,
+		backend:         b,
+		listModel:       listModel,
+		pendingScanMode: wifi.ScanAuto,
 	}
 	return &m, nil
 }
@@ -83,7 +90,28 @@ func (m *model) Init() tea.Cmd {
 
 	cmds = append(cmds, startNetworkChangeWatcher(m.backend))
 	cmds = append(cmds, m.spinner.Tick)
+	// Prefill with the cached network list before the scan runs. Scans are
+	// deferred until this lands (see the scanMsg handler), so the two fetches
+	// never overlap.
+	m.prefillPending = true
+	cmds = append(cmds, fetchCachedNetworks(m.backend))
 	return tea.Batch(cmds...)
+}
+
+// fetchCachedNetworks prefills the list with the backend's cached network
+// snapshot, the same fast scan-free path used by `wifitui list`. It is best
+// effort: on failure it returns an empty result so the deferred scan still runs
+// and surfaces the real backend error.
+func fetchCachedNetworks(b wifi.Backend) tea.Cmd {
+	return func() tea.Msg {
+		result, err := b.ListNetworks(wifi.ScanNever)
+		if err != nil {
+			return cachedNetworksMsg{}
+		}
+		networks := result.Networks
+		wifi.SortNetworks(networks)
+		return cachedNetworksMsg(networks)
+	}
 }
 
 // Update handles all incoming messages and updates the model accordingly
@@ -154,6 +182,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Skip additional scans while we're still loading
 			return m, nil
 		}
+		if m.prefillPending {
+			// The cached-list prefill is still in flight. Defer the scan until
+			// it lands so the two ListNetworks calls never run concurrently.
+			m.pendingScanMode = msg.mode
+			return m, nil
+		}
 		m.statusMessage = "Scanning for networks..."
 		m.loading = true
 		return m, func() tea.Msg {
@@ -168,6 +202,15 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				scanErr:  result.ScanError,
 			}
 		}
+	case cachedNetworksMsg:
+		// The cached snapshot has landed: cancel the prefill and run the scan
+		// that was deferred while it was in flight. Fall through so the list
+		// model fills from the cached snapshot (it skips itself if a refresh
+		// already populated the list, i.e. the prefill is cancelled).
+		m.prefillPending = false
+		mode := m.pendingScanMode
+		m.pendingScanMode = wifi.ScanAuto
+		cmds = append(cmds, func() tea.Msg { return scanMsg{mode: mode} })
 	case connectMsg:
 		var batch []tea.Cmd = []tea.Cmd{
 			func() tea.Msg {
